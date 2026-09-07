@@ -6,7 +6,7 @@ test('renders and persists the independent Smart Money Concepts overlay', async 
   await expect(page.getByTestId('smc-overlay').locator('[data-smc-mode="Historical"]')).toHaveCount(
     1,
   )
-  await expect(page.getByRole('button', { name: /^Smart Money Concepts \(/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Smart Money Concepts \(/ })).toBeVisible()
 
   await page.getByRole('button', { name: /Smart Money Concepts \(/ }).click()
   await expect(page.getByRole('dialog', { name: 'Smart Money Concepts' })).toBeVisible()

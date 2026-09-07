@@ -1,5 +1,6 @@
 import { ASSETS, TIMEFRAMES } from './market'
 import { isProductId } from '../../shared/coinbase'
+import { isCmMacdSettings } from './cm-ult-macd'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -92,7 +93,7 @@ function indicator(value: unknown): Indicator {
   const i = record(value, 'indicator')
   const kind = choice(
     i.kind,
-    ['ema', 'sma', 'bb', 'rsi', 'macd', 'vwap', 'volume', 'custom'] as const,
+    ['ema', 'sma', 'bb', 'rsi', 'macd', 'cm-ult-macd', 'vwap', 'volume', 'custom'] as const,
     'indicator kind',
   )
   const period = number(i.period, 'indicator period', 1, 2000)
@@ -104,6 +105,23 @@ function indicator(value: unknown): Indicator {
     period,
     color: color(i.color),
     visible: boolean(i.visible, 'indicator visibility'),
+  }
+  if (kind === 'cm-ult-macd' && i.cmMacd !== undefined) {
+    const settings = i.cmMacd
+    if (!isCmMacdSettings(settings)) invalid('CM_Ult_MacD_MTF settings')
+    result.cmMacd = {
+      useCurrentRes: settings.useCurrentRes,
+      resCustom: settings.resCustom,
+      fastLength: settings.fastLength,
+      slowLength: settings.slowLength,
+      signalLength: settings.signalLength,
+      showLines: settings.showLines,
+      showDots: settings.showDots,
+      showHistogram: settings.showHistogram,
+      macdColorChange: settings.macdColorChange,
+      histogramColorChange: settings.histogramColorChange,
+    }
+    result.period = result.cmMacd.fastLength
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

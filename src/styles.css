@@ -765,12 +765,14 @@ button {
   overflow: hidden;
 }
 .chart-stage {
+  isolation: isolate;
   height: 100%;
   width: 100%;
   position: relative;
   overflow: hidden;
 }
 .chart-canvas {
+  z-index: 0;
   position: absolute;
   inset: 0;
 }
@@ -948,6 +950,10 @@ button {
 .indicator-legend:hover .legend-actions,
 .oscillator-legend:hover .legend-actions,
 .legend-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.muted-legend .legend-actions {
   opacity: 1;
   pointer-events: auto;
 }
@@ -6337,5 +6343,168 @@ input[type='color']::-webkit-color-swatch {
   }
   .market-summary strong {
     font-size: 16px;
+  }
+}
+
+/* CM_Ult_MacD_MTF — original inputs and plot palette, independent of chart theme. */
+.cm-macd-settings-modal {
+  width: min(560px, calc(100vw - 28px));
+}
+.cm-input-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: #c0c8d3;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.cm-input-toggle input {
+  accent-color: var(--accent, #b9ee82);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.cm-resolution-field {
+  margin-top: 10px;
+}
+.cm-resolution-field select {
+  width: 100%;
+}
+.cm-resolution-field select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cm-length-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.cm-length-fields .field {
+  min-width: 0;
+}
+.cm-length-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.cm-formula {
+  display: grid;
+  gap: 8px;
+  font-size: 11px;
+  color: #8290a4;
+}
+.cm-formula span {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.cm-formula b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: #c0c8d3;
+  text-align: right;
+}
+.cm-palette {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.cm-palette span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #99a5b7;
+  font-size: 10px;
+}
+.cm-palette i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #ffffff20;
+  flex-shrink: 0;
+}
+.cm-compatibility-note strong {
+  display: block;
+  color: #dfbd80;
+  margin-bottom: 5px;
+}
+.cm-compatibility-note a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: #b9ee82;
+}
+.cm-oscillator-legend {
+  flex-wrap: wrap;
+  gap: 4px 9px;
+}
+.cm-oscillator-legend > .legend-name {
+  font-size: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cm-resolution-badge {
+  padding: 1px 5px;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  color: #b3becd;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.cm-indicator-notice {
+  color: #dfbd80;
+  font-size: 9px;
+  max-width: 100%;
+}
+.cm-oscillator-legend .legend-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (max-width: 640px) {
+  .cm-macd-settings-modal .modal-body {
+    padding: 16px;
+  }
+  .cm-input-toggle {
+    font-size: 11px;
+  }
+  .cm-length-fields {
+    gap: 8px;
+  }
+  .cm-length-fields .field {
+    font-size: 10px;
+  }
+  .cm-oscillator-legend {
+    display: grid;
+    grid-template-columns: max-content repeat(4, minmax(0, 1fr));
+    width: calc(100% - 90px);
+    max-width: calc(100% - 90px);
+    gap: 2px 5px;
+  }
+  .cm-oscillator-legend > .legend-name {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-width: 0;
+    padding-right: 60px;
+    text-align: left;
+  }
+  .cm-oscillator-legend .legend-actions {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .cm-oscillator-legend > .mono,
+  .cm-oscillator-legend .cm-resolution-badge {
+    grid-row: 2;
+    font-size: 7px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cm-oscillator-legend .cm-indicator-notice {
+    grid-column: 1 / -1;
   }
 }

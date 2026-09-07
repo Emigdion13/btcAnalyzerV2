@@ -1,4 +1,6 @@
 import { ta } from './indicator-runtime'
+import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
+import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
 export const INDICATOR_CATALOG: {
@@ -47,6 +49,16 @@ export const INDICATOR_CATALOG: {
     color: '#ad91e5',
   },
   {
+    kind: 'cm-ult-macd',
+    name: 'CM_Ult_MacD_MTF',
+    short: 'CM_Ult_MacD_MTF',
+    description:
+      'ChrisMoody’s original: EMA 12/26, SMA 9 signal, four-color histogram, crossover dots, and multi-timeframe controls.',
+    category: 'Momentum',
+    period: 12,
+    color: '#00ff00',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -74,7 +86,15 @@ export const INDICATOR_CATALOG: {
     color: '#2bb99b',
   },
 ]
-export function builtInPlots(candles: Candle[], indicator: Indicator): Plot[] {
+export function builtInPlots(
+  candles: Candle[],
+  indicator: Indicator,
+  context?: IndicatorContext,
+): Plot[] {
+  if (indicator.kind === 'cm-ult-macd') {
+    const settings = cmMacdSettings(indicator)
+    return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
+  }
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

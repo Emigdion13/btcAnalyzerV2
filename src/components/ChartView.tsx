@@ -38,6 +38,9 @@ import type {
   Tool,
 } from '../lib/types'
 import { builtInPlots } from '../lib/indicators'
+import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
+import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
+import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
 import { uid } from '../lib/storage'
 import { CoinIcon, IconButton } from './ui'
@@ -58,6 +61,7 @@ interface Props {
   chartType: ChartType
   indicators: Indicator[]
   customResults: Record<string, ScriptResult>
+  indicatorTimeframes: IndicatorTimeframes
   settings: ChartSettings
   drawings: Drawing[]
   drawingTool: Tool
@@ -71,10 +75,11 @@ interface Props {
   onIndicatorEdit: (indicator: Indicator) => void
   onIndicatorToggle: (id: string) => void
   onIndicatorRemove: (id: string) => void
+  onIndicatorRetry: () => void
   replay: boolean
 }
 interface IndicatorSeries {
-  series: ISeriesApi<'Line'>[]
+  series: ISeriesApi<SeriesType>[]
   pane: number
 }
 interface Geometry {
@@ -91,6 +96,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     chartType,
     indicators,
     customResults,
+    indicatorTimeframes,
+    replay,
     settings,
     drawings,
     drawingTool,
@@ -116,6 +123,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const [legendOpen, setLegendOpen] = useState(true)
   const refreshRef = useRef<() => void>(() => {})
   const dataInfo = useRef({ length: 0, first: 0, last: 0, candles: [] as Candle[] })
+  const cmSessionKey = `${props.source}:${asset.symbol}:${timeframe}:${indicators
+    .filter((i) => i.kind === 'cm-ult-macd' && i.visible)
+    .map(
+      (i) =>
+        `${i.id}:${JSON.stringify(cmMacdSettings(i))}:${!!indicatorTimeframes[cmMacdResolution(cmMacdSettings(i), timeframe)]?.candles.length}`,
+    )
+    .join(';')}`
+  const hasIndicatorCandles = candles.length > 0
+  const [cmSession, setCmSession] = useState({ key: '', start: Infinity })
+  useEffect(() => {
+    setCmSession({ key: cmSessionKey, start: propsRef.current.candles.at(-1)?.time ?? Infinity })
+  }, [cmSessionKey, hasIndicatorCandles])
+  const realtimeFrom =
+    cmSession.key === cmSessionKey ? cmSession.start : (candles.at(-1)?.time ?? Infinity)
   const generated = useMemo(
     () =>
       indicators
@@ -125,14 +146,22 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           plots:
             indicator.kind === 'custom'
               ? (customResults[indicator.id]?.plots ?? [])
-              : builtInPlots(candles, indicator),
+              : builtInPlots(candles, indicator, {
+                  timeframe,
+                  timeframes: indicatorTimeframes,
+                  replay,
+                  realtimeFrom,
+                }),
         })),
-    [candles, indicators, customResults],
+    [candles, indicators, customResults, timeframe, indicatorTimeframes, replay, realtimeFrom],
   )
   const generatedRef = useRef(generated)
   generatedRef.current = generated
   const structure = generated
-    .map((g) => `${g.indicator.id}:${g.plots.map((p) => p.pane).join(',')}`)
+    .map(
+      (g) =>
+        `${g.indicator.id}:${g.plots.map((p) => `${p.pane}:${p.style ?? 'line'}:${p.horizontalLine ?? ''}`).join(',')}`,
+    )
     .join(';')
   const visibleVolume = indicators.some((i) => i.kind === 'volume' && i.visible)
 
@@ -547,21 +576,41 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const series = plots.map((plot) => {
         const pane = plot.pane === 'oscillator' ? targetPane : 0
         const rsi = indicator.kind === 'rsi'
-        const line = chart.addSeries(
-          LineSeries,
-          {
+        const base = {
+          color: plot.color,
+          lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          priceFormat: { type: 'price' as const, precision: 2, minMove: 0.01 },
+        }
+        const line = (
+          plot.style === 'histogram' || plot.style === 'circles'
+            ? chart.addCustomSeries(new IndicatorPlotSeries(plot.style), base, pane)
+            : chart.addSeries(
+                LineSeries,
+                {
+                  ...base,
+                  lineVisible: plot.horizontalLine === undefined,
+                  ...(rsi
+                    ? {
+                        autoscaleInfoProvider: () => ({
+                          priceRange: { minValue: 0, maxValue: 100 },
+                        }),
+                      }
+                    : {}),
+                },
+                pane,
+              )
+        ) as ISeriesApi<SeriesType>
+        if (plot.horizontalLine !== undefined)
+          line.createPriceLine({
+            price: plot.horizontalLine,
             color: plot.color,
             lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
-            ...(rsi
-              ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) }
-              : {}),
-          },
-          pane,
-        )
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: false,
+          })
         if (pane > 0)
           line.priceScale().applyOptions({
             mode: PriceScaleMode.Normal,
@@ -583,9 +632,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       })
       indicatorSeries.current.set(indicator.id, { series, pane: targetPane })
     }
-    chart.panes().forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4.4 : 1))
+    const cmPanes = new Set(
+      generatedRef.current
+        .filter((g) => g.indicator.kind === 'cm-ult-macd')
+        .map((g) => indicatorSeries.current.get(g.indicator.id)?.pane),
+    )
+    chart
+      .panes()
+      .forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4.4 : cmPanes.has(i) ? 1.8 : 1))
     refreshRef.current()
   }, [structure])
+
+  useEffect(() => {
+    // Reserve room for the compact two-row legend instead of covering the curves.
+    for (const { indicator } of generatedRef.current) {
+      if (indicator.kind !== 'cm-ult-macd') continue
+      indicatorSeries.current
+        .get(indicator.id)
+        ?.series[0]?.priceScale()
+        .applyOptions({
+          scaleMargins: { top: geometry.width <= 560 ? 0.4 : 0.2, bottom: 0.15 },
+        })
+    }
+  }, [geometry.width, structure])
 
   useEffect(() => {
     for (const { indicator, plots } of generated) {
@@ -596,13 +665,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           color: plot.color,
           lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
         })
-        entry.series[index]?.setData(
-          plot.values.map((value, i) =>
-            value === null
-              ? { time: candles[i].time as UTCTimestamp }
-              : { time: candles[i].time as UTCTimestamp, value },
-          ),
-        )
+        entry.series[index]?.setData(indicatorPlotData(candles, plot))
       })
     }
     refreshRef.current()
@@ -707,6 +770,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const plotValue = (plot?: Plot) => {
     const value = plot?.values[hoverIndex]
     return value === null || value === undefined ? '—' : formatPrice(value)
+  }
+  const cmNotice = (indicator: Indicator) => {
+    const s = cmMacdSettings(indicator)
+    const resolution = cmMacdResolution(s, timeframe)
+    const data = resolution === timeframe ? candles : indicatorTimeframes[resolution]?.candles
+    const feed = indicatorTimeframes[resolution]
+    if (
+      resolution !== timeframe &&
+      feed &&
+      ['offline', 'stale', 'reconnecting', 'loading'].includes(feed.state)
+    )
+      return `${resolution} feed ${feed.state} · ${feed.message}`
+    if (!data?.length)
+      return replay && resolution !== timeframe
+        ? `No ${resolution} history in this replay snapshot. Exit replay to load it.`
+        : `Loading ${resolution} source candles…`
+    if (resolution !== timeframe) {
+      if (data[0].time > candles[0]?.time)
+        return `${resolution} history limited to ${data.length} source candles; earlier bars unavailable.`
+    }
+    return data.length < s.signalLength
+      ? `Warming up · ${data.length}/${s.signalLength} source candles`
+      : ''
   }
   const drawingList = [...drawings]
   if (pending && preview && drawingTool !== 'cursor')
@@ -984,12 +1070,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             {indicators
               .filter(
                 (ind) =>
-                  ind.kind !== 'rsi' &&
-                  ind.kind !== 'macd' &&
-                  !(
-                    ind.kind === 'custom' &&
-                    customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')
-                  ),
+                  !ind.visible ||
+                  (ind.kind !== 'rsi' &&
+                    ind.kind !== 'macd' &&
+                    ind.kind !== 'cm-ult-macd' &&
+                    !(
+                      ind.kind === 'custom' &&
+                      customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')
+                    )),
               )
               .map((indicator) => {
                 const group = generated.find((g) => g.indicator.id === indicator.id)
@@ -1003,10 +1091,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                       className="legend-name"
                       onClick={() => props.onIndicatorEdit(indicator)}
                     >
-                      {indicator.name}
-                      {!['volume', 'vwap', 'custom'].includes(indicator.kind)
-                        ? ` ${indicator.period}`
-                        : ''}
+                      {indicatorLabel(indicator)}
                     </button>
                     <span className="legend-value" style={{ color: indicator.color }}>
                       {indicator.kind === 'volume'
@@ -1044,22 +1129,42 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         if (!pane || !geometry.paneTops[pane]) return null
         return (
           <div
-            className="oscillator-legend"
+            className={`oscillator-legend ${indicator.kind === 'cm-ult-macd' ? 'cm-oscillator-legend' : ''}`}
+            data-indicator={indicator.kind}
             key={indicator.id}
             style={{ top: geometry.paneTops[pane] + 9, background: settings.background }}
           >
-            <span>
-              {indicator.name}
-              {indicator.kind !== 'custom' ? ` ${indicator.period}` : ''}
-            </span>
+            <button className="legend-name" onClick={() => props.onIndicatorEdit(indicator)}>
+              {indicatorLabel(indicator)}
+            </button>
+            {indicator.kind === 'cm-ult-macd' && (
+              <span
+                className="cm-resolution-badge"
+                title="Original Pine v1 historical lookahead. Open-bar values and crossover dots can repaint."
+              >
+                {cmMacdSettings(indicator).useCurrentRes ? 'Chart' : 'MTF'} ·{' '}
+                {cmMacdResolution(cmMacdSettings(indicator), timeframe)}
+              </span>
+            )}
             {plots
-              .filter((plot) => plot.pane === 'oscillator')
+              .filter((plot) => plot.pane === 'oscillator' && !plot.hideLegend)
               .map((plot) => (
-                <span className="mono" key={plot.title} style={{ color: plot.color }}>
+                <span
+                  className="mono"
+                  key={plot.title}
+                  title={plot.title}
+                  data-plot={plot.title}
+                  style={{ color: plot.colors?.[hoverIndex] ?? plot.color }}
+                >
                   {plotValue(plot)}
                 </span>
               ))}
             <div className="legend-actions">
+              <IconButton
+                icon={Eye}
+                label={`Toggle ${indicator.name} visibility`}
+                onClick={() => props.onIndicatorToggle(indicator.id)}
+              />
               <IconButton
                 icon={Settings2}
                 label={`Settings for ${indicator.name} ${indicator.period}`}
@@ -1071,6 +1176,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                 onClick={() => props.onIndicatorRemove(indicator.id)}
               />
             </div>
+            {indicator.kind === 'cm-ult-macd' && cmNotice(indicator) && (
+              <span className="cm-indicator-notice" role="status">
+                {cmNotice(indicator)}
+                {!replay &&
+                  cmMacdResolution(cmMacdSettings(indicator), timeframe) !== timeframe && (
+                    <IconButton
+                      icon={RotateCcw}
+                      label="Retry CM_Ult_MacD_MTF timeframe data"
+                      onClick={props.onIndicatorRetry}
+                    />
+                  )}
+              </span>
+            )}
           </div>
         )
       })}

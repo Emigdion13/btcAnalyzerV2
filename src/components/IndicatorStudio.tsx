@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import type { Candle, DataSource, Drawing, Indicator, SavedScript } from '../lib/types'
 import { SCRIPT_TEMPLATES } from '../lib/indicators'
+import { indicatorLabel } from '../lib/cm-ult-macd'
 import { compactNumber, formatPrice } from '../lib/market'
 import { Dropdown, IconButton, MenuItem } from './ui'
 
@@ -379,10 +380,7 @@ export function IndicatorStudio(props: Props) {
                   <div className="object-row" key={indicator.id}>
                     <span className="legend-dot" style={{ background: indicator.color }} />
                     <span>
-                      {indicator.name}
-                      {!['volume', 'vwap', 'custom'].includes(indicator.kind)
-                        ? ` ${indicator.period}`
-                        : ''}
+                      {indicatorLabel(indicator)}
                       {indicator.kind === 'custom' && <em>Custom</em>}
                     </span>
                     <div>

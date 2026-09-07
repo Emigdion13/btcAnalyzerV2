@@ -79,9 +79,16 @@ async function mockCoinbase(page: Page, failHistory = false) {
     Object.defineProperty(window, 'EventSource', { value: TestEventSource })
     Object.assign(window, {
       __testStreams: streams,
-      __marketMessage: (message: unknown) => {
-        for (const stream of streams)
-          if (!stream.closed) stream.onmessage?.({ data: JSON.stringify(message) })
+      __marketMessage: (message: { product: string; interval: string }) => {
+        for (const stream of streams) {
+          const url = new URL(stream.url, window.location.origin)
+          if (
+            !stream.closed &&
+            url.searchParams.get('product') === message.product &&
+            url.searchParams.get('interval') === message.interval
+          )
+            stream.onmessage?.({ data: JSON.stringify(message) })
+        }
       },
       __marketDisconnect: () => {
         for (const stream of streams) if (!stream.closed) stream.onerror?.()
@@ -281,4 +288,129 @@ test('does not trigger live alerts from a disconnected or demo quote', async ({ 
       ).length,
   )
   expect(count).toBe(0)
+})
+
+async function fixedCmTimeframe(page: Page, interval: Interval = '1h') {
+  await page.locator('.cm-oscillator-legend .legend-name').click()
+  await page.getByRole('checkbox', { name: 'Use Current Chart Resolution?', exact: true }).uncheck()
+  await page.getByRole('combobox', { name: /Use Different Timeframe/ }).selectOption(interval)
+  await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
+  await expect(page.locator('.cm-resolution-badge')).toHaveText(`MTF · ${interval}`)
+}
+
+test('CM MTF loads native hourly history, handles corrections, freezes replay and scopes feeds to the pair', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const requests = await mockCoinbase(page)
+  await page.goto('/')
+  await expect(page.locator('.cm-oscillator-legend')).toBeVisible()
+  await fixedCmTimeframe(page)
+  await expect
+    .poll(() => requests.some((r) => r.includes('candles?product=BTC-USD&interval=1h&limit=900')))
+    .toBe(true)
+  const macd = page.locator('.cm-oscillator-legend [data-plot="MACD"]')
+  await expect(macd).not.toHaveText('—')
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          window as unknown as { __testStreams: { closed: boolean; url: string }[] }
+        ).__testStreams.some((s) => !s.closed && s.url.includes('interval=1h')),
+      ),
+    )
+    .toBe(true)
+  await expect(
+    page.getByRole('img', { name: /Bitcoin 15m candles chart with 300 Coinbase/ }),
+  ).toBeVisible()
+  const before = await macd.textContent()
+  const hourly = history('BTC-USD', '1h', 900)
+  const corrected = hourly.candles.at(-2)!
+  await emit(page, {
+    ...payload('BTC-USD', '1h', 10),
+    candles: [{ ...corrected, close: corrected.close + 2000, high: corrected.high + 2000 }],
+  })
+  await expect(macd).not.toHaveText(before!)
+  // A correction in the native EMA history changes the oscillator, not the price chart/feed.
+  await expect(page.locator('.market-stale-banner')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Replay', exact: true }).click()
+  const frozen = await macd.textContent()
+  await emit(page, payload('BTC-USD', '15m', 11))
+  await emit(page, payload('BTC-USD', '1h', 12))
+  await expect(macd).toHaveText(frozen!)
+  await page.getByRole('button', { name: 'Exit replay', exact: true }).click()
+  await page.getByRole('tab', { name: /ETH-USD/ }).click()
+  await expect
+    .poll(() => requests.some((r) => r.includes('candles?product=ETH-USD&interval=1h&limit=900')))
+    .toBe(true)
+  await expect(macd).not.toHaveText('—')
+  await page.locator('.cm-oscillator-legend .legend-name').click()
+  await page.getByRole('checkbox', { name: 'Use Current Chart Resolution?', exact: true }).check()
+  await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
+  await expect(page.locator('.cm-resolution-badge')).toHaveText('Chart · 15m')
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as { __testStreams: { closed: boolean; url: string }[] }
+          ).__testStreams.filter((s) => !s.closed && s.url.includes('interval=1h')).length,
+      ),
+    )
+    .toBe(0)
+  expect(errors).toEqual([])
+})
+
+test('CM target feed failure is explicit, never replaced with chart MACD, and can be retried', async ({
+  page,
+}) => {
+  await mockCoinbase(page)
+  let failed = true
+  await page.route('**/api/coinbase/candles?**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('interval') !== '1h') return route.fallback()
+    if (failed)
+      return route.fulfill({
+        status: 502,
+        json: { message: 'Hourly Coinbase history unavailable in this test.' },
+      })
+    return route.fulfill({ json: history('BTC-USD', '1h', 900) })
+  })
+  await page.goto('/')
+  await expect(page.locator('.cm-oscillator-legend')).toBeVisible()
+  await fixedCmTimeframe(page)
+  await expect(page.locator('.cm-indicator-notice')).toContainText('1h feed offline')
+  await expect(page.locator('.cm-oscillator-legend [data-plot="MACD"]')).toHaveText('—')
+  await expect(page.locator('.cm-oscillator-legend [data-plot="Signal Line"]')).toHaveText('—')
+  await expect(
+    page.getByRole('img', { name: /Bitcoin 15m candles chart with 300 Coinbase/ }),
+  ).toBeVisible()
+  failed = false
+  await page
+    .getByRole('button', { name: 'Retry CM_Ult_MacD_MTF timeframe data', exact: true })
+    .click()
+  await expect(page.locator('.cm-oscillator-legend [data-plot="MACD"]')).not.toHaveText('—')
+  await expect(page.locator('.cm-indicator-notice')).toHaveCount(0)
+})
+
+test('CM lower-timeframe requests remain native and cannot leak across rapid timeframe switches', async ({
+  page,
+}) => {
+  const requests = await mockCoinbase(page)
+  await page.goto('/?interval=1h')
+  await expect(page.locator('.cm-oscillator-legend')).toBeVisible()
+  await fixedCmTimeframe(page, '5m')
+  await expect.poll(() => requests.some((r) => r.includes('interval=5m&limit=900'))).toBe(true)
+  await expect(page.locator('.cm-indicator-notice')).toContainText('earlier bars unavailable')
+  await expect(page.locator('.cm-oscillator-legend [data-plot="MACD"]')).not.toHaveText('—')
+  await page.getByRole('button', { name: '5m timeframe', exact: true }).click()
+  await expect(page.getByRole('img', { name: /Bitcoin 5m candles chart/ })).toBeVisible()
+  await expect(page.locator('.cm-indicator-notice')).toHaveCount(0)
+  await page.getByRole('button', { name: '15m timeframe', exact: true }).click()
+  await expect(page.locator('.cm-resolution-badge')).toHaveText('MTF · 5m')
+  await expect(
+    page.getByRole('img', { name: /Bitcoin 15m candles chart with 300 Coinbase/ }),
+  ).toBeVisible()
+  await expect(page.locator('.cm-oscillator-legend [data-plot="MACD"]')).not.toHaveText('—')
 })

@@ -8,7 +8,8 @@ export type Timeframe = import('../../shared/coinbase').Interval
 export type ChartType = 'candles' | 'hollow' | 'line' | 'area' | 'bars'
 export type Tool =
   'cursor' | 'trend' | 'horizontal' | 'rectangle' | 'fibonacci' | 'measure' | 'text'
-export type IndicatorKind = 'ema' | 'sma' | 'bb' | 'rsi' | 'macd' | 'vwap' | 'volume' | 'custom'
+export type IndicatorKind =
+  'ema' | 'sma' | 'bb' | 'rsi' | 'macd' | 'cm-ult-macd' | 'vwap' | 'volume' | 'custom'
 export interface Candle {
   time: number
   open: number
@@ -31,12 +32,29 @@ export interface Asset {
   priceIncrement?: number
   category: 'Layer 1' | 'DeFi' | 'Other'
 }
+export interface CmMacdSettings {
+  useCurrentRes: boolean
+  resCustom: Timeframe
+  fastLength: number
+  slowLength: number
+  signalLength: number
+  showLines: boolean
+  showDots: boolean
+  showHistogram: boolean
+  macdColorChange: boolean
+  histogramColorChange: boolean
+}
 export interface Plot {
   title: string
   color: string
   values: (number | null)[]
   pane: 'price' | 'oscillator'
   lineWidth: number
+  // Native built-ins only. The custom-script sandbox still accepts line plots only.
+  style?: 'line' | 'histogram' | 'circles'
+  colors?: string[]
+  horizontalLine?: number
+  hideLegend?: boolean
 }
 export interface ScriptInput {
   name: string
@@ -59,6 +77,7 @@ export interface Indicator {
   source?: string
   inputValues?: Record<string, number>
   scriptId?: string
+  cmMacd?: CmMacdSettings
 }
 export interface SavedScript {
   id: string
@@ -111,4 +130,12 @@ export const DEFAULT_INDICATORS: Indicator[] = [
   { id: 'ema-50', kind: 'ema', name: 'EMA', period: 50, color: '#7796e8', visible: true },
   { id: 'volume', kind: 'volume', name: 'Volume', period: 20, color: '#2bb99b', visible: true },
   { id: 'rsi-14', kind: 'rsi', name: 'RSI', period: 14, color: '#ad91e5', visible: true },
+  {
+    id: 'cm-ult-macd',
+    kind: 'cm-ult-macd',
+    name: 'CM_Ult_MacD_MTF',
+    period: 12,
+    color: '#00ff00',
+    visible: true,
+  },
 ]

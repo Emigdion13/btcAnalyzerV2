@@ -59,6 +59,7 @@ export function useCoinbaseMarket({
   playing,
   watched,
   limit = 300,
+  metadata = true,
 }: {
   product: string
   interval: Interval
@@ -66,6 +67,7 @@ export function useCoinbaseMarket({
   playing: boolean
   watched: string[]
   limit?: number
+  metadata?: boolean
 }) {
   const key = `${product}:${interval}:${limit}`
   const [view, setView] = useState<View>(() => freshView(key))
@@ -181,34 +183,36 @@ export function useCoinbaseMarket({
     }
     const bootstrap = async () => {
       if (controller.signal.aborted) return
-      void requestJson('/api/coinbase/products', controller.signal)
-        .then((value) => {
-          const data = value as { source: string; products: CoinbaseProduct[] }
-          if (
-            data?.source !== 'coinbase' ||
-            !Array.isArray(data.products) ||
-            !data.products.length ||
-            data.products.some(
-              (p) => !isProductId(p.id) || p.quote !== 'USD' || !Number.isFinite(p.increment),
+      if (metadata)
+        void requestJson('/api/coinbase/products', controller.signal)
+          .then((value) => {
+            const data = value as { source: string; products: CoinbaseProduct[] }
+            if (
+              data?.source !== 'coinbase' ||
+              !Array.isArray(data.products) ||
+              !data.products.length ||
+              data.products.some(
+                (p) => !isProductId(p.id) || p.quote !== 'USD' || !Number.isFinite(p.increment),
+              )
             )
-          )
-            throw new Error('Invalid Coinbase catalog.')
-          if (!controller.signal.aborted) setProducts(data.products)
-        })
-        .catch(() => {
-          /* The chart request presents actionable availability errors. */
-        })
-      void requestJson(
-        `/api/coinbase/quotes?${new URLSearchParams({ products: watchKey })}`,
-        controller.signal,
-      )
-        .then((value) => {
-          if (!controller.signal.aborted)
-            updateQuotes(quotesFrom((value as { quotes?: unknown })?.quotes))
-        })
-        .catch(() => {
-          /* No fabricated quote fallback. The stream may still supply valid quotes. */
-        })
+              throw new Error('Invalid Coinbase catalog.')
+            if (!controller.signal.aborted) setProducts(data.products)
+          })
+          .catch(() => {
+            /* The chart request presents actionable availability errors. */
+          })
+      if (metadata)
+        void requestJson(
+          `/api/coinbase/quotes?${new URLSearchParams({ products: watchKey })}`,
+          controller.signal,
+        )
+          .then((value) => {
+            if (!controller.signal.aborted)
+              updateQuotes(quotesFrom((value as { quotes?: unknown })?.quotes))
+          })
+          .catch(() => {
+            /* No fabricated quote fallback. The stream may still supply valid quotes. */
+          })
       try {
         const snapshot = validateHistory(
           await requestJson(
@@ -261,7 +265,7 @@ export function useCoinbaseMarket({
       clearTimeout(retryTimer)
       clearInterval(watchdog)
     }
-  }, [enabled, playing, visible, product, interval, limit, key, watchKey, retryId])
+  }, [enabled, playing, visible, product, interval, limit, key, watchKey, retryId, metadata])
   const active =
     view.key === key ? view : { ...freshView(key), snapshot: cache.current.get(key) ?? null }
   const assets = useMemo(

@@ -55,6 +55,8 @@ import {
   SR_BROKEN_FILL_OPACITY,
   SR_BREAKS_RETESTS_COLORS,
 } from '../lib/sr-breaks-retests'
+import { calculateCoinbaseStrike, coinbaseStrikeSettings } from '../lib/coinbase-strike'
+import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
 import { uid } from '../lib/storage'
@@ -191,6 +193,30 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         }),
     [candles, indicators],
   )
+  const strikeOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'coinbase-strike')
+        .map((indicator) => {
+          const settings = coinbaseStrikeSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateCoinbaseStrike(candles, settings),
+          }
+        }),
+    [candles, indicators],
+  )
+  const rsiIndicator = indicators.find((i) => i.visible && i.kind === 'rsi')
+  const rsiPeriod = rsiIndicator?.period ?? 14
+  const [rsiMinimized, setRsiMinimized] = useState(false)
+  const rsiValues = useMemo(() => {
+    if (candles.length < 2) return []
+    return ta.rsi(
+      candles.map((c) => c.close),
+      rsiPeriod,
+    )
+  }, [candles, rsiPeriod])
   const generated = useMemo(
     () =>
       indicators
@@ -850,6 +876,25 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const hoverIndex = hovered
     ? candles.findIndex((c) => c.time === hovered.time)
     : candles.length - 1
+  const activeRsi =
+    rsiValues[hoverIndex] ?? (rsiValues.length > 0 ? rsiValues[rsiValues.length - 1] : null)
+  const prevRsi =
+    hoverIndex > 0
+      ? rsiValues[hoverIndex - 1]
+      : rsiValues.length > 1
+        ? rsiValues[rsiValues.length - 2]
+        : null
+  const rsiDelta = activeRsi !== null && prevRsi !== null ? activeRsi - prevRsi : null
+  const rsiZoneClass =
+    activeRsi === null
+      ? ''
+      : activeRsi >= 70
+        ? 'rsi-zone-ob'
+        : activeRsi <= 30
+          ? 'rsi-zone-os'
+          : activeRsi >= 50
+            ? 'rsi-zone-bull'
+            : 'rsi-zone-bear'
   const plotValue = (plot?: Plot) => {
     const value = plot?.values[hoverIndex]
     return value === null || value === undefined ? '—' : formatPrice(value)
@@ -1683,6 +1728,77 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             </span>
           </div>
         )}
+        {strikeOverlays.map(({ indicator, settings: strikeSettings, result }) => {
+          if (!strikeSettings.showStatusBadge || result.currentStrike === null) return null
+          const strikeDisplay =
+            hovered && result.strikeLine[hoverIndex] !== null
+              ? result.strikeLine[hoverIndex]!
+              : result.currentStrike
+          const currentPrice = hovered
+            ? hovered.close
+            : (result.currentPrice ?? candles[candles.length - 1]?.close ?? strikeDisplay)
+          const delta = currentPrice - strikeDisplay
+          const deltaPct = strikeDisplay > 0 ? (delta / strikeDisplay) * 100 : 0
+          const isUp = delta >= 0
+          const minutesLeft = Math.floor(result.timeRemainingSeconds / 60)
+          const secondsLeft = result.timeRemainingSeconds % 60
+          const countdown = `${String(minutesLeft).padStart(2, '0')}:${String(secondsLeft).padStart(2, '0')}`
+
+          return (
+            <div
+              key={`strike-badge-${indicator.id}`}
+              className={`strike-hud-badge ${isUp ? 'strike-is-up' : 'strike-is-down'}`}
+              style={{
+                borderColor: isUp ? strikeSettings.upColor : strikeSettings.downColor,
+              }}
+            >
+              <div className="strike-hud-header">
+                <span
+                  className="strike-hud-dot"
+                  style={{ background: strikeSettings.strikeColor }}
+                />
+                <span className="strike-hud-title">
+                  COINBASE {strikeSettings.intervalMinutes}m STRIKE
+                </span>
+                {!hovered && (
+                  <span className="strike-hud-timer" title="Time to interval expiry">
+                    ⏱ {countdown}
+                  </span>
+                )}
+              </div>
+              <div className="strike-hud-values">
+                <div className="strike-hud-price-col">
+                  <span className="strike-hud-label">Strike</span>
+                  <span className="strike-hud-price" style={{ color: strikeSettings.strikeColor }}>
+                    ${formatPrice(strikeDisplay)}
+                  </span>
+                </div>
+                <div className="strike-hud-divider" />
+                <div className="strike-hud-status-col">
+                  <span
+                    className="strike-hud-status-tag"
+                    style={{
+                      color: isUp ? strikeSettings.upColor : strikeSettings.downColor,
+                      background: isUp
+                        ? `${strikeSettings.upColor}22`
+                        : `${strikeSettings.downColor}22`,
+                    }}
+                  >
+                    {isUp ? '▲ UP (WINNING)' : '▼ DOWN (WINNING)'}
+                  </span>
+                  <span
+                    className="strike-hud-delta"
+                    style={{ color: isUp ? strikeSettings.upColor : strikeSettings.downColor }}
+                  >
+                    {delta >= 0 ? '+' : ''}${formatPrice(Math.abs(delta), false)} (
+                    {deltaPct >= 0 ? '+' : ''}
+                    {deltaPct.toFixed(2)}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
         {legendOpen && (
           <div className="indicator-legends">
             {indicators
@@ -1756,6 +1872,93 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       <div className="chart-currency">
         {quoteCurrency(asset)} <ChevronDown size={10} />
       </div>
+      {rsiIndicator && activeRsi !== null && (
+        <div
+          className={`rsi-hud-card ${rsiZoneClass} ${rsiMinimized ? 'is-minimized' : ''}`}
+          role="region"
+          aria-label="RSI Meter"
+        >
+          <div className="rsi-hud-header">
+            <div className="rsi-hud-title-row">
+              <span className="rsi-hud-dot" />
+              <span className="rsi-hud-title">RSI {rsiPeriod}</span>
+              {hovered ? (
+                <span className="rsi-hud-hover-tag">BAR</span>
+              ) : (
+                <span className="rsi-hud-live-tag">LIVE</span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="rsi-hud-min-btn"
+              title={rsiMinimized ? 'Expand RSI Meter' : 'Minimize RSI Meter'}
+              aria-label={rsiMinimized ? 'Expand RSI Meter' : 'Minimize RSI Meter'}
+              onClick={() => setRsiMinimized((m) => !m)}
+            >
+              {rsiMinimized ? <Plus size={11} /> : <Minus size={11} />}
+            </button>
+          </div>
+
+          <div className="rsi-hud-body">
+            <div className="rsi-hud-value-row">
+              <span className="rsi-hud-number">{activeRsi.toFixed(1)}</span>
+              {rsiDelta !== null && (
+                <span
+                  className={`rsi-hud-delta ${rsiDelta >= 0 ? 'is-up' : 'is-down'}`}
+                  title={`Change from previous bar: ${rsiDelta >= 0 ? '+' : ''}${rsiDelta.toFixed(2)}`}
+                >
+                  {rsiDelta >= 0 ? '+' : ''}
+                  {rsiDelta.toFixed(1)} {rsiDelta >= 0 ? '▲' : '▼'}
+                </span>
+              )}
+            </div>
+
+            {!rsiMinimized && (
+              <>
+                <div className="rsi-hud-meter">
+                  <div className="rsi-hud-meter-track">
+                    <div
+                      className="rsi-hud-meter-fill"
+                      style={{ width: `${Math.min(100, Math.max(0, activeRsi))}%` }}
+                    />
+                    <div
+                      className="rsi-hud-meter-needle"
+                      style={{ left: `${Math.min(100, Math.max(0, activeRsi))}%` }}
+                    />
+                    <div
+                      className="rsi-hud-meter-marker marker-30"
+                      style={{ left: '30%' }}
+                      title="Oversold (30)"
+                    />
+                    <div
+                      className="rsi-hud-meter-marker marker-70"
+                      style={{ left: '70%' }}
+                      title="Overbought (70)"
+                    />
+                  </div>
+                  <div className="rsi-hud-meter-labels">
+                    <span>30 OS</span>
+                    <span>50</span>
+                    <span>70 OB</span>
+                  </div>
+                </div>
+
+                <div className="rsi-hud-badge">
+                  {activeRsi >= 70 ? (
+                    <span className="rsi-badge-ob">🔥 OVERBOUGHT ({activeRsi.toFixed(1)})</span>
+                  ) : activeRsi <= 30 ? (
+                    <span className="rsi-badge-os">⚡ OVERSOLD ({activeRsi.toFixed(1)})</span>
+                  ) : activeRsi >= 50 ? (
+                    <span className="rsi-badge-bull">▲ BULLISH MOMENTUM</span>
+                  ) : (
+                    <span className="rsi-badge-bear">▼ BEARISH MOMENTUM</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {generated.map(({ indicator, plots }) => {
         const pane = indicatorSeries.current.get(indicator.id)?.pane ?? 0
         if (!pane || !geometry.paneTops[pane]) return null

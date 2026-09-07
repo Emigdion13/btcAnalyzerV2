@@ -6722,3 +6722,404 @@ input[type='color']::-webkit-color-swatch {
     font-size: 10px;
   }
 }
+
+/* ==========================================================================
+   Coinbase Strike Indicator & HUD
+   ========================================================================== */
+.strike-hud-badge {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(16, 22, 31, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #f5a623;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 6px 0 4px;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: all 0.2s ease;
+  width: fit-content;
+  max-width: 100%;
+}
+.strike-hud-badge.strike-is-up {
+  border-color: rgba(43, 185, 155, 0.55);
+  box-shadow:
+    0 0 12px rgba(43, 185, 155, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.strike-hud-badge.strike-is-down {
+  border-color: rgba(237, 103, 115, 0.55);
+  box-shadow:
+    0 0 12px rgba(237, 103, 115, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.strike-hud-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #9ba7b7;
+}
+.strike-hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
+}
+.strike-hud-title {
+  color: #c5d1e0;
+}
+.strike-hud-timer {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: #f5a623;
+  background: rgba(245, 166, 35, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.strike-hud-values {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.strike-hud-price-col {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.strike-hud-label {
+  font-size: 9px;
+  color: #7b8796;
+  text-transform: uppercase;
+}
+.strike-hud-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+.strike-hud-divider {
+  width: 1px;
+  height: 14px;
+  background: #2a3443;
+}
+.strike-hud-status-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.strike-hud-status-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.strike-hud-delta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+.strike-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   RSI HUD Right-Side Glassmorphism Box
+   ========================================================================== */
+.rsi-hud-card {
+  position: absolute;
+  top: 34px;
+  right: 10px;
+  z-index: 6;
+  width: 154px;
+  background: rgba(14, 19, 28, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(80, 95, 115, 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.rsi-hud-card.is-minimized {
+  width: auto;
+  padding: 5px 8px;
+}
+
+/* Zone Glowing Effects */
+.rsi-hud-card.rsi-zone-ob {
+  border-color: rgba(237, 103, 115, 0.65);
+  box-shadow:
+    0 0 16px rgba(237, 103, 115, 0.25),
+    inset 0 0 12px rgba(237, 103, 115, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.rsi-hud-card.rsi-zone-os {
+  border-color: rgba(43, 185, 155, 0.65);
+  box-shadow:
+    0 0 16px rgba(43, 185, 155, 0.25),
+    inset 0 0 12px rgba(43, 185, 155, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.rsi-hud-card.rsi-zone-bull {
+  border-color: rgba(185, 238, 130, 0.45);
+  box-shadow:
+    0 0 12px rgba(185, 238, 130, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.rsi-hud-card.rsi-zone-bear {
+  border-color: rgba(245, 166, 35, 0.45);
+  box-shadow:
+    0 0 12px rgba(245, 166, 35, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.rsi-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.rsi-hud-title-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rsi-hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ad91e5;
+  box-shadow: 0 0 6px #ad91e5;
+}
+.rsi-zone-ob .rsi-hud-dot {
+  background: #ed6773;
+  box-shadow: 0 0 8px #ed6773;
+  animation: rsi-pulse 1.6s infinite;
+}
+.rsi-zone-os .rsi-hud-dot {
+  background: #2bb99b;
+  box-shadow: 0 0 8px #2bb99b;
+  animation: rsi-pulse 1.6s infinite;
+}
+.rsi-zone-bull .rsi-hud-dot {
+  background: #b9ee82;
+  box-shadow: 0 0 6px #b9ee82;
+}
+.rsi-zone-bear .rsi-hud-dot {
+  background: #f5a623;
+  box-shadow: 0 0 6px #f5a623;
+}
+
+@keyframes rsi-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.6;
+  }
+}
+
+.rsi-hud-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #c9d5e3;
+  text-transform: uppercase;
+}
+.rsi-hud-live-tag,
+.rsi-hud-hover-tag {
+  font-size: 7.5px;
+  font-weight: 700;
+  padding: 1px 3.5px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+}
+.rsi-hud-live-tag {
+  background: rgba(43, 185, 155, 0.18);
+  color: #2bb99b;
+}
+.rsi-hud-hover-tag {
+  background: rgba(144, 182, 255, 0.18);
+  color: #90b6ff;
+}
+.rsi-hud-min-btn {
+  background: transparent;
+  border: none;
+  color: #728094;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+.rsi-hud-min-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d9e2;
+}
+
+.rsi-hud-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.rsi-hud-card.is-minimized .rsi-hud-value-row {
+  margin-bottom: 0;
+  gap: 8px;
+}
+.rsi-hud-number {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  color: #ad91e5;
+  transition: color 0.2s;
+}
+.rsi-zone-ob .rsi-hud-number {
+  color: #ed6773;
+  text-shadow: 0 0 10px rgba(237, 103, 115, 0.4);
+}
+.rsi-zone-os .rsi-hud-number {
+  color: #2bb99b;
+  text-shadow: 0 0 10px rgba(43, 185, 155, 0.4);
+}
+.rsi-zone-bull .rsi-hud-number {
+  color: #b9ee82;
+  text-shadow: 0 0 8px rgba(185, 238, 130, 0.3);
+}
+.rsi-zone-bear .rsi-hud-number {
+  color: #f5a623;
+  text-shadow: 0 0 8px rgba(245, 166, 35, 0.3);
+}
+
+.rsi-hud-delta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.rsi-hud-delta.is-up {
+  color: #2bb99b;
+}
+.rsi-hud-delta.is-down {
+  color: #ed6773;
+}
+
+/* Progress Meter / Gauge */
+.rsi-hud-meter {
+  margin-bottom: 6px;
+}
+.rsi-hud-meter-track {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    #2bb99b 0%,
+    #2bb99b 30%,
+    #3f4857 30%,
+    #3f4857 70%,
+    #ed6773 70%,
+    #ed6773 100%
+  );
+  overflow: visible;
+}
+.rsi-hud-meter-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  opacity: 0.4;
+  background: #ffffff;
+  pointer-events: none;
+}
+.rsi-hud-meter-needle {
+  position: absolute;
+  top: -3px;
+  width: 5px;
+  height: 11px;
+  background: #ffffff;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 6px #ffffff;
+  transition: left 0.15s ease-out;
+}
+.rsi-hud-meter-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+.rsi-hud-meter-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7px;
+  color: #6d7b8d;
+  margin-top: 3px;
+}
+
+/* Regime Badge */
+.rsi-hud-badge {
+  text-align: center;
+}
+.rsi-badge-ob,
+.rsi-badge-os,
+.rsi-badge-bull,
+.rsi-badge-bear {
+  display: inline-block;
+  width: 100%;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 0;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+.rsi-badge-ob {
+  background: rgba(237, 103, 115, 0.18);
+  color: #ed6773;
+}
+.rsi-badge-os {
+  background: rgba(43, 185, 155, 0.18);
+  color: #2bb99b;
+}
+.rsi-badge-bull {
+  background: rgba(185, 238, 130, 0.14);
+  color: #b9ee82;
+}
+.rsi-badge-bear {
+  background: rgba(245, 166, 35, 0.14);
+  color: #f5a623;
+}
+
+@media (max-width: 640px) {
+  .rsi-hud-card {
+    top: 32px;
+    right: 6px;
+    width: 125px;
+    padding: 6px 8px;
+  }
+  .rsi-hud-number {
+    font-size: 16px;
+  }
+}

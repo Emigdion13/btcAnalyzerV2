@@ -93,8 +93,10 @@ tape, and its honest lead time is "until the size is pulled or filled".
 - `src/components/BookStrengthBox.tsx` — a floating readout of the walls, totals and near-mid
   imbalance (bids-vs-asks share), toggleable from the workspace menu.
 - `src/lib/demo-book.ts` — an explicitly **synthetic** book for the app's labeled demo mode
-  (swing extremes and round numbers of the demo candles become walls), so the whole overlay can
-  be explored offline. It is never shown in Coinbase mode and is tagged `DEMO BOOK` when shown.
+  (swing extremes and round numbers of the demo candles become walls), so the chart walls and
+  zone chips can be explored offline. It is never shown in Coinbase mode. The floating Book
+  panel is a live-connection element (Coinbase only, like the whale flow box); demo mode
+  renders the analysis layer only, never a pretend floating readout.
 
 ## Testing reality
 

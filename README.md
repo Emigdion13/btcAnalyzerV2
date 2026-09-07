@@ -97,7 +97,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
-- **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase; explicitly-labeled synthetic book in demo mode.
+- **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
 - **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
@@ -259,12 +259,14 @@ shared Coinbase WebSocket — no new vendor or API key.
   asks for resistance-side), weighted by how long that size has rested unchanged. Zones with no
   resting liquidity show no chip — the book is not defending them at this moment.
 - **Readout panel.** A floating "Book" panel (workspace menu → *Hide/Show book depth &
-  strength*) lists the current walls, bid/ask totals, and a near-mid imbalance meter. It is only
-  shown while the feed is live, never during replay, and cleared entirely when the book is
-  unavailable so no stale depth is implied.
-- **Demo mode.** Offline demo mode shows the same overlay over an explicitly **synthetic** book
-  (tagged `DEMO BOOK`), built from the demo candles' swing extremes, so the layer stays
-  explorable without a connection. Coinbase mode never shows it.
+  strength*) lists the current walls, bid/ask totals, and a near-mid imbalance meter. Like the
+  whale flow box it is a live-connection element: it only appears while a real Coinbase feed is
+  active, never during replay, and clears entirely when the book is unavailable so no stale
+  depth is implied.
+- **Demo mode.** Offline demo mode shows the chart walls and per-zone strength chips over an
+  explicitly **synthetic** book (built from the demo candles' swing extremes), so the analysis
+  layer stays explorable without a connection; the floating panel itself is Coinbase-live only.
+  Coinbase mode never mixes in synthetic data.
 
 Resting size is an invitation, not a lock: levels can be pulled or walked within seconds, the
 book sees only Coinbase, and hidden intent is invisible. See

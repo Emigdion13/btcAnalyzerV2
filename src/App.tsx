@@ -1578,12 +1578,8 @@ export default function App() {
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}
-                {bookBoxVisible && replayIndex === null && bookView && (
-                  <BookStrengthBox
-                    book={bookView}
-                    synthetic={source === 'demo'}
-                    onClose={() => setBookBoxVisible(false)}
-                  />
+                {source === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
+                  <BookStrengthBox book={bookView} onClose={() => setBookBoxVisible(false)} />
                 )}
                 {source === 'coinbase' && !hasData && (
                   <div className="market-feedback" role="status">

@@ -7429,8 +7429,8 @@ input[type='color']::-webkit-color-swatch {
 }
 .book-box {
   position: fixed;
-  right: 22px;
-  top: 122px;
+  left: 22px;
+  bottom: 78px;
   z-index: 30;
   width: 254px;
   padding: 0 0 8px;
@@ -7442,9 +7442,6 @@ input[type='color']::-webkit-color-swatch {
   font-size: 11px;
   color: var(--muted);
   user-select: none;
-}
-.book-box.is-synthetic {
-  border-color: rgba(245, 166, 35, 0.4);
 }
 .book-box-head {
   display: flex;
@@ -7462,16 +7459,6 @@ input[type='color']::-webkit-color-swatch {
 }
 .book-box-icon {
   color: var(--dim);
-}
-.book-box-synthetic {
-  margin-left: 2px;
-  font-family: var(--mono);
-  font-size: 7px;
-  letter-spacing: 0.6px;
-  color: #f5a623;
-  border: 1px solid rgba(245, 166, 35, 0.4);
-  border-radius: 3px;
-  padding: 1px 4px;
 }
 .book-box-info,
 .book-box-close {
@@ -7633,8 +7620,8 @@ input[type='color']::-webkit-color-swatch {
 
 @media (max-width: 640px) {
   .book-box {
-    right: 6px;
-    top: 108px;
+    left: 6px;
+    bottom: 62px;
     width: 212px;
   }
   .book-wall-depth {

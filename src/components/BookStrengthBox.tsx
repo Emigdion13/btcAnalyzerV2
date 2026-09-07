@@ -44,11 +44,9 @@ function WallList({ walls, side }: { walls: OrderBookView['supports']; side: 'su
  */
 export function BookStrengthBox({
   book,
-  synthetic,
   onClose,
 }: {
   book: OrderBookView
-  synthetic: boolean
   onClose: () => void
 }) {
   const [showInfo, setShowInfo] = useState(false)
@@ -56,11 +54,10 @@ export function BookStrengthBox({
   const bidShare = 50 + imbalance * 50 // 0..100, >50 = bids dominate
   const positive = imbalance >= 0
   return (
-    <section className={`book-box ${synthetic ? 'is-synthetic' : ''}`} data-testid="book-box">
+    <section className="book-box" data-testid="book-box">
       <header className="book-box-head">
         <BookOpenText size={12} className="book-box-icon" aria-hidden="true" />
         <h2>Book · {book.product}</h2>
-        {synthetic && <span className="book-box-synthetic">DEMO BOOK</span>}
         <button
           type="button"
           className={`book-box-info ${showInfo ? 'is-active' : ''}`}
@@ -76,9 +73,8 @@ export function BookStrengthBox({
       </header>
       {showInfo && (
         <p className="book-box-info-note">
-          Resting USD from the Coinbase level2 book, refreshed live. {synthetic
-            ? 'This is a labeled synthetic book for demo mode — not exchange data.'
-            : 'Walls are clusters that stand out from the book’s own depth; size can be pulled or walked at any moment.'}
+          Resting USD from the Coinbase level2 book, refreshed live. Walls are clusters that
+          stand out from the book’s own depth; size can be pulled or walked at any moment.
         </p>
       )}
       <div className="book-box-stats">

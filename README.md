@@ -229,4 +229,8 @@ Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas r
 4. A separate strategy/backtesting engine with realistic fees, slippage, and reproducible results. Pine Script compatibility is not implemented.
 5. Broader browser/device accessibility testing, performance profiling against larger datasets, and deployment/security hardening before any trading integration.
 
+## Research notes (not implemented)
+
+[Whale flow sources](docs/whale-flow-sources.md) surveys where large-holder inflows and outflows can be observed — raw on-chain transfers, labeled exchange-flow aggregates, the Coinbase Premium Index, ETF flows, derivatives positioning, and the executed tape — with published lead times, documented false positives, per-source pricing, and how each would (or would not) fit the same-origin adapter. **No whale or on-chain feed is wired into Atlas, no vendor account exists, and no API key is stored in this repository.** The note also records that the largest immediate opportunity needs no vendor at all: the Coinbase `matches` stream already parsed in `shared/coinbase.ts` carries per-fill size that is currently discarded after OHLCV aggregation.
+
 Atlas is independent of TradingView and Coinbase. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the bundled licenses. Lightweight Charts attribution is provided in the status bar and About dialog.

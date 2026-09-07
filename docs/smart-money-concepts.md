@@ -18,7 +18,7 @@ A new workspace includes the overlay. The defaults were selected to match the fa
 | FVG timeframe / extension                    | Active chart / 1 bar  |
 | Daily / weekly / monthly line styles         | Solid / Solid / Solid |
 
-Booleans that do not appear in the compact parameter summary are intentionally stored too: internal structure, swing structure, internal order blocks, and equal highs/lows begin enabled; swing order blocks, fair value gaps, higher-timeframe levels, pivot labels, candle recoloring, and premium/discount zones begin disabled.
+Booleans that do not appear in the compact parameter summary are intentionally stored too: every markup layer (internal/swing structure, swing points, strong/weak highs/lows, both order-block sets, equal highs/lows, fair value gaps, daily/weekly/monthly levels, premium/discount) begins enabled so the first paint resembles the familiar full overlay. Only candle recoloring and the confluence filter begin disabled.
 
 ## Calculation contract
 

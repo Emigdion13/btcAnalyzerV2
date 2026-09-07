@@ -1239,7 +1239,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             ? palette.internalBear
             : palette.swingBear
       const size = smcLabelSize(isInternal ? smc.internalLabelSize : smc.swingLabelSize)
-      const labelY = event.side === 'bullish' ? start.y - 6 : start.y + size + 4
+      // LuxAlgo-style: label pill anchored at the break bar, line runs pivot → break.
+      const label = event.type
+      const pillW = label.length * (size * 0.72) + 10
+      const pillH = size + 7
+      const pillX = end.x - pillW / 2
+      const pillY =
+        event.side === 'bullish' ? end.y - pillH - 3 : end.y + 3
       return (
         <g key={`${event.kind}:${event.side}:${event.pivotIndex}:${event.breakIndex}`}>
           <line
@@ -1248,21 +1254,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             x2={end.x}
             y2={end.y}
             stroke={color}
-            strokeWidth={isInternal ? '1' : '1.25'}
+            strokeWidth={isInternal ? '1' : '1.5'}
             strokeDasharray={isInternal ? '4 3' : undefined}
-            opacity=".9"
+            opacity=".95"
+          />
+          <rect
+            x={pillX}
+            y={pillY}
+            width={pillW}
+            height={pillH}
+            rx={2}
+            fill={color}
           />
           <text
-            x={(start.x + end.x) / 2}
-            y={labelY}
+            x={end.x}
+            y={pillY + pillH - 4}
             textAnchor="middle"
-            fill={color}
+            fill="#ffffff"
             fontSize={size}
-            fontWeight={isInternal ? '500' : '600'}
+            fontWeight="600"
             fontFamily="DM Sans, sans-serif"
             className="smc-label"
           >
-            {event.type}
+            {label}
           </text>
         </g>
       )
@@ -1271,7 +1285,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const visible =
         block.kind === 'internal' ? smc.showInternalOrderBlocks : smc.showSwingOrderBlocks
       if (!visible) return null
-      const rightIndex = Math.min(block.mitigatedAt ?? candles.length - 1, candles.length - 1)
+      // LuxAlgo-style: active boxes extend to the right edge; mitigation dims, invalidation removes.
+      const rightIndex = candles.length - 1
       const leftTop = smcPoint(block.startIndex, block.top)
       const leftBottom = smcPoint(block.startIndex, block.bottom)
       const right = smcPoint(rightIndex, block.bottom)
@@ -1321,7 +1336,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       if (!start || !end) return null
       const color = level.side === 'high' ? palette.swingBear : palette.swingBull
       const size = smcLabelSize(smc.equalHighLowLabelSize)
-      const y = level.side === 'high' ? start.y - 5 : start.y + size + 4
+      const text = level.side === 'high' ? 'EQH' : 'EQL'
+      const pillW = text.length * (size * 0.72) + 10
+      const pillH = size + 7
+      const pillX = end.x - pillW / 2
+      const pillY = level.side === 'high' ? end.y - pillH - 3 : end.y + 3
       return (
         <g key={`${level.side}:${level.firstIndex}:${level.secondIndex}`}>
           <line
@@ -1333,17 +1352,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeDasharray="2 3"
             strokeWidth="1"
           />
+          <rect x={pillX} y={pillY} width={pillW} height={pillH} rx={2} fill={color} />
           <text
-            x={(start.x + end.x) / 2}
-            y={y}
+            x={end.x}
+            y={pillY + pillH - 4}
             textAnchor="middle"
-            fill={color}
+            fill="#ffffff"
             fontSize={size}
             fontWeight="600"
             fontFamily="DM Sans, sans-serif"
             className="smc-label"
           >
-            {level.side === 'high' ? 'EQH' : 'EQL'}
+            {text}
           </text>
         </g>
       )

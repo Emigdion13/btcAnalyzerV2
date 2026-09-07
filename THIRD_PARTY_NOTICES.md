@@ -14,6 +14,10 @@ The native TypeScript `CM_Ult_MacD_MTF` implementation follows the calculations 
 
 This is an independent native implementation, not the later V2 update or a bundled Pine interpreter. Attribution does not imply endorsement by ChrisMoody, TheLark or TradingView, or permission to republish the original Pine script outside its applicable terms. See [the compatibility notes](docs/cm-ult-macd.md) for the behavioral contract, repainting and verification boundaries.
 
+## SR Breaks and Retests indicator
+
+The native TypeScript `SR Breaks and Retests` implementation is a port of **ChartPrime's "Support and Resistance (High Volume Boxes)"**, a TradingView indicator whose short title is "SR Breaks and Retests [ChartPrime]". The original Pine Script v5 source is published by ChartPrime at [chartprime.com/indicator/support-and-resistance-high-volume-boxes](https://chartprime.com/indicator/support-and-resistance-high-volume-boxes) under the **Mozilla Public License 2.0**, which permits derivative works with attribution and same-license availability of the source. This notice satisfies that attribution; it does not imply endorsement by ChartPrime or affiliation with TradingView. See [the compatibility notes](docs/sr-breaks-retests.md) for the behavioral contract, the single documented deviation, and verification boundaries.
+
 ## Fonts and icons
 
 - DM Sans: Copyright 2014 The DM Sans Project Authors. SIL Open Font License 1.1. See `node_modules/@fontsource/dm-sans/LICENSE`.

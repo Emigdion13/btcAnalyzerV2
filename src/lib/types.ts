@@ -16,6 +16,7 @@ export type IndicatorKind =
   | 'macd'
   | 'cm-ult-macd'
   | 'smart-money-concepts'
+  | 'sr-breaks-retests'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -146,6 +147,27 @@ export const SMC_DEFAULTS: Readonly<SmartMoneyConceptsSettings> = {
   showPremiumDiscount: false,
 }
 
+/**
+ * Settings for the Atlas port of ChartPrime's published "Support and
+ * Resistance (High Volume Boxes)" indicator, whose TradingView short title is
+ * "SR Breaks and Retests [ChartPrime]" and whose legend reads (20, 2, 1).
+ */
+export interface SrBreaksRetestsSettings {
+  /** Bars on each side of a close pivot. Pine input: "Lookback Period" (20). */
+  lookbackPeriod: number
+  /** Delta-volume filter window. Pine input: "Delta Volume Filter Length" (2). */
+  volumeFilterLength: number
+  /** Zone depth as an ATR(200) multiple. Pine input: "Adjust Box Width" (1). */
+  boxWidth: number
+}
+
+/** The published defaults, rendered in the legend as (20, 2, 1). */
+export const SR_BREAKS_RETESTS_DEFAULTS: Readonly<SrBreaksRetestsSettings> = {
+  lookbackPeriod: 20,
+  volumeFilterLength: 2,
+  boxWidth: 1,
+}
+
 export interface Plot {
   title: string
   color: string
@@ -181,6 +203,7 @@ export interface Indicator {
   scriptId?: string
   cmMacd?: CmMacdSettings
   smc?: SmartMoneyConceptsSettings
+  sr?: SrBreaksRetestsSettings
 }
 export interface SavedScript {
   id: string

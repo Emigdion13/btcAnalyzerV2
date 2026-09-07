@@ -48,6 +48,13 @@ import {
   smcSettings,
   structureAllowed,
 } from '../lib/smart-money-concepts'
+import {
+  calculateSrBreaksRetests,
+  SR_ATR_LENGTH,
+  srBreaksRetestsSettings,
+  SR_BROKEN_FILL_OPACITY,
+  SR_BREAKS_RETESTS_COLORS,
+} from '../lib/sr-breaks-retests'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
 import { uid } from '../lib/storage'
@@ -116,6 +123,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
+  const srSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const mainRef = useRef<ISeriesApi<SeriesType> | null>(null)
@@ -169,6 +177,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     [candles, indicatorTimeframes, indicators, replay, timeframe],
   )
   const candleTrendOverlay = smcOverlays.find((overlay) => overlay.settings.colorCandles)
+  const srOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'sr-breaks-retests')
+        .map((indicator) => {
+          const settings = srBreaksRetestsSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateSrBreaksRetests(candles, settings),
+          }
+        }),
+    [candles, indicators],
+  )
   const generated = useMemo(
     () =>
       indicators
@@ -276,6 +298,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         URL.revokeObjectURL(url)
       }
       await paintSvg(smcSvgRef.current)
+      await paintSvg(srSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
     },
@@ -359,7 +382,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           propsRef.current.drawings.length ||
           pendingRef.current ||
           propsRef.current.indicators.some(
-            (indicator) => indicator.visible && indicator.kind === 'smart-money-concepts',
+            (indicator) =>
+              (indicator.visible && indicator.kind === 'smart-money-concepts') ||
+              (indicator.visible && indicator.kind === 'sr-breaks-retests'),
           )
         )
           setRevision((r) => r + 1)
@@ -1440,6 +1465,147 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  // SR Breaks and Retests is drawn as a native SVG overlay, mirroring Pine's
+  // boxes, plotchar diamonds, and break labels.
+  const srPoint = (index: number, price: number) => {
+    const last = candles.length - 1
+    if (index <= last) {
+      const candle = candles[index]
+      return candle ? position({ time: candle.time, price }) : null
+    }
+    // Pine extends the live boxes one bar past the newest bar
+    // (`set_right(bar_index + 1)`), so extrapolate into the right offset.
+    const lastTime = candles.at(-1)?.time
+    if (lastTime === undefined) return null
+    const future = position({ time: lastTime + INTERVAL[timeframe] * (index - last), price })
+    return future ?? position({ time: lastTime, price })
+  }
+  const renderSrOverlay = (overlay: (typeof srOverlays)[number]) => {
+    const { indicator, result } = overlay
+    const renderZone = (zone: (typeof result.zones)[number]) => {
+      // A null boundary is Pine's `na` box bottom while ATR(200) warms up.
+      if (zone.boundary === null) return null
+      const leftEdge = srPoint(zone.pivotIndex, zone.level)
+      const rightEdge = srPoint(zone.rightIndex, zone.boundary)
+      if (!leftEdge || !rightEdge) return null
+      const x = Math.min(leftEdge.x, rightEdge.x)
+      const width = Math.max(2, Math.abs(rightEdge.x - leftEdge.x))
+      const topPrice = zone.side === 'support' ? zone.level : zone.boundary
+      const bottomPrice = zone.side === 'support' ? zone.boundary : zone.level
+      const topLeft = srPoint(zone.pivotIndex, topPrice)
+      const bottomLeft = srPoint(zone.pivotIndex, bottomPrice)
+      if (!topLeft || !bottomLeft) return null
+      const y = Math.min(topLeft.y, bottomLeft.y)
+      const height = Math.max(1, Math.abs(bottomLeft.y - topLeft.y))
+      const broken = zone.state === 'broken'
+      const color =
+        zone.side === 'support'
+          ? broken
+            ? SR_BREAKS_RETESTS_COLORS.resistance
+            : SR_BREAKS_RETESTS_COLORS.support
+          : broken
+            ? SR_BREAKS_RETESTS_COLORS.support
+            : SR_BREAKS_RETESTS_COLORS.resistance
+      return (
+        <g key={zone.id} className="sr-zone" data-testid="sr-zone">
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            fill={color}
+            fillOpacity={broken ? SR_BROKEN_FILL_OPACITY : Math.max(0.02, zone.fillOpacity)}
+            stroke={color}
+            strokeWidth="1"
+            strokeDasharray={broken ? '5 4' : undefined}
+          />
+          {height >= 9 && (
+            <text
+              x={x + width / 2}
+              y={y + height / 2 + 3}
+              textAnchor="middle"
+              fill={SR_BREAKS_RETESTS_COLORS.foreground}
+              fontSize="9"
+              fontFamily="DM Sans, sans-serif"
+              className="sr-zone-text"
+            >
+              {zone.volumeText}
+            </text>
+          )}
+        </g>
+      )
+    }
+    const renderMarker = (marker: (typeof result.markers)[number]) => {
+      const candle = candles[marker.index]
+      if (!candle) return null
+      const anchor = position({
+        time: candle.time,
+        price: marker.location === 'above' ? candle.high : candle.low,
+      })
+      if (!anchor) return null
+      return (
+        <text
+          key={`sr-marker:${marker.kind}:${marker.index}`}
+          x={anchor.x}
+          y={marker.location === 'above' ? anchor.y - 6 : anchor.y + 13}
+          textAnchor="middle"
+          fill={marker.color}
+          fontSize="10"
+          fontFamily="DM Sans, sans-serif"
+          className="smc-label"
+          data-testid="sr-marker"
+        >
+          ◆
+        </text>
+      )
+    }
+    const renderLabel = (label: (typeof result.labels)[number]) => {
+      const anchor = srPoint(label.index, label.price)
+      if (!anchor) return null
+      const text = label.kind === 'break-support' ? 'Break Sup' : 'Break Res'
+      const width = 60
+      const height = 17
+      const above = label.kind === 'break-support'
+      const x = anchor.x - width / 2
+      const y = above ? anchor.y - height - 7 : anchor.y + 7
+      return (
+        <g
+          key={`sr-label:${label.kind}:${label.index}`}
+          className="sr-break-label"
+          data-testid="sr-break-label"
+        >
+          <rect x={x} y={y} width={width} height={height} rx={3} fill={label.color} />
+          <path
+            d={
+              above
+                ? `M ${anchor.x - 4} ${y + height} L ${anchor.x + 4} ${y + height} L ${anchor.x} ${y + height + 5} Z`
+                : `M ${anchor.x - 4} ${y} L ${anchor.x + 4} ${y} L ${anchor.x} ${y - 5} Z`
+            }
+            fill={label.color}
+          />
+          <text
+            x={anchor.x}
+            y={y + 12}
+            textAnchor="middle"
+            fill={SR_BREAKS_RETESTS_COLORS.foreground}
+            fontSize="9.5"
+            fontWeight="600"
+            fontFamily="DM Sans, sans-serif"
+          >
+            {text}
+          </text>
+        </g>
+      )
+    }
+    return (
+      <g key={indicator.id} data-sr-inputs={`${overlay.settings.lookbackPeriod}`}>
+        {result.zones.map(renderZone)}
+        {result.markers.map(renderMarker)}
+        {result.labels.map(renderLabel)}
+      </g>
+    )
+  }
+
   return (
     <div
       className={`chart-stage ${drawingTool !== 'cursor' && !drawingsLocked ? 'is-drawing' : ''}`}
@@ -1550,8 +1716,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                         ? compactNumber(display?.volume)
                         : indicator.kind === 'smart-money-concepts'
                           ? `${smcSettings(indicator).mode} · ${smcSettings(indicator).swingLength}`
-                          : plotValue(group?.plots[0])}
+                          : indicator.kind === 'sr-breaks-retests'
+                            ? `${
+                                (
+                                  srOverlays.find((item) => item.indicator.id === indicator.id)
+                                    ?.result.zones ?? []
+                                ).filter((zone) => zone.boundary !== null).length
+                              } zones`
+                            : plotValue(group?.plots[0])}
                     </span>
+                    {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
+                      <span className="cm-indicator-notice" role="status">
+                        ATR({SR_ATR_LENGTH}) warming up · {candles.length}/{SR_ATR_LENGTH} bars
+                      </span>
+                    )}
                     <div className="legend-actions">
                       <IconButton
                         icon={indicator.visible ? Eye : EyeOff}
@@ -1670,6 +1848,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {smcOverlays.map(renderSmcOverlay)}
+      </svg>
+      <svg
+        ref={srSvgRef}
+        className="sr-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="sr-overlay"
+        data-revision={revision}
+      >
+        {srOverlays.map(renderSrOverlay)}
       </svg>
       <svg
         ref={svgRef}

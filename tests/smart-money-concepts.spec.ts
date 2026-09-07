@@ -8,7 +8,7 @@ test('renders and persists the independent Smart Money Concepts overlay', async 
   )
   await expect(page.getByRole('button', { name: /^Smart Money Concepts \(/ })).toBeVisible()
 
-  await page.getByRole('button', { name: /^Smart Money Concepts \(/ }).click()
+  await page.getByRole('button', { name: /Smart Money Concepts \(/ }).click()
   await expect(page.getByRole('dialog', { name: 'Smart Money Concepts' })).toBeVisible()
   await expect(page.getByLabel('SMC mode')).toHaveValue('Historical')
   await expect(page.getByLabel('SMC style')).toHaveValue('Colored')
@@ -20,8 +20,10 @@ test('renders and persists the independent Smart Money Concepts overlay', async 
 
   await page.getByLabel('SMC mode').selectOption('Present')
   await page.getByLabel('Fair value gap timeframe').selectOption('4h')
-  await page.getByRole('switch', { name: 'Show fair value gaps' }).click()
-  await page.getByRole('switch', { name: 'Show premium discount zones' }).click()
+  for (const name of ['Show fair value gaps', 'Show premium discount zones']) {
+    const toggle = page.getByRole('switch', { name })
+    if ((await toggle.getAttribute('aria-checked')) !== 'true') await toggle.click()
+  }
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
 
   await expect(page.getByTestId('smc-overlay').locator('[data-smc-mode="Present"]')).toHaveCount(1)

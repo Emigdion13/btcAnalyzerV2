@@ -97,7 +97,7 @@ import type {
   Timeframe,
   Tool,
 } from './lib/types'
-import { DEFAULT_INDICATORS, DEFAULT_SETTINGS } from './lib/types'
+import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, SMC_DEFAULTS } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
 import type { WorkspaceBackup } from './lib/workspace-backup'
 
@@ -723,11 +723,17 @@ export default function App() {
       {
         id: uid(),
         kind,
-        name: item.short === 'VOL' ? 'Volume' : item.short,
+        name:
+          item.kind === 'smart-money-concepts'
+            ? 'Smart Money Concepts'
+            : item.short === 'VOL'
+              ? 'Volume'
+              : item.short,
         period: item.period,
         color: item.color,
         visible: true,
         ...(kind === 'cm-ult-macd' ? { cmMacd: { ...CM_MACD_DEFAULTS } } : {}),
+        ...(kind === 'smart-money-concepts' ? { smc: { ...SMC_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)

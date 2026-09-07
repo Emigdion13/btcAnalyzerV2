@@ -5,6 +5,7 @@
  */
 import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase'
 import { ta } from './indicator-runtime'
+import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
 
 export const CM_MACD_SOURCE =
@@ -92,18 +93,28 @@ export function indicatorLabel(indicator: Indicator): string {
     const s = cmMacdSettings(indicator)
     return `CM_Ult_MacD_MTF (${CM_RESOLUTIONS[s.resCustom]}, ${s.fastLength}, ${s.slowLength}, ${s.signalLength})`
   }
+  if (indicator.kind === 'smart-money-concepts') return smcIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
 export function requestedIndicatorTimeframes(
   indicators: Indicator[],
   chart: Timeframe,
 ): Timeframe[] {
+  const cmResolutions = indicators
+    .filter((indicator) => indicator.kind === 'cm-ult-macd' && indicator.visible)
+    .map((indicator) => cmMacdResolution(cmMacdSettings(indicator), chart))
+  const smcFvgResolutions = indicators
+    .filter(
+      (indicator) =>
+        indicator.kind === 'smart-money-concepts' &&
+        indicator.visible &&
+        smcSettings(indicator).showFairValueGaps,
+    )
+    .map((indicator) => smcSettings(indicator).fvgTimeframe)
+    .filter((resolution): resolution is Timeframe => !!resolution)
   return [
     ...new Set(
-      indicators
-        .filter((i) => i.kind === 'cm-ult-macd' && i.visible)
-        .map((i) => cmMacdResolution(cmMacdSettings(i), chart))
-        .filter((res) => res !== chart),
+      [...cmResolutions, ...smcFvgResolutions].filter((resolution) => resolution !== chart),
     ),
   ].sort()
 }

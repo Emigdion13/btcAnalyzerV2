@@ -997,13 +997,25 @@ button {
   padding: 0 7px;
   pointer-events: none;
 }
+.smc-overlay,
 .drawing-overlay {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
-  z-index: 2;
   overflow: hidden;
+}
+.smc-overlay {
+  z-index: 1;
+}
+.smc-label {
+  paint-order: stroke;
+  stroke: #101318;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+.drawing-overlay {
+  z-index: 2;
 }
 .drawing-hint {
   position: absolute;
@@ -6506,5 +6518,165 @@ input[type='color']::-webkit-color-swatch {
   }
   .cm-oscillator-legend .cm-indicator-notice {
     grid-column: 1 / -1;
+  }
+}
+
+/* Smart Money Concepts — native price overlay and compact settings surface. */
+.smc-settings-modal {
+  width: min(650px, calc(100vw - 28px));
+}
+.smc-settings-modal .modal-body {
+  padding-bottom: 25px;
+}
+.smc-settings-section > h3 {
+  margin-bottom: 14px;
+}
+.smc-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.smc-section-heading > div {
+  min-width: 0;
+}
+.smc-section-heading h3 {
+  margin: 3px 0 0;
+}
+.smc-section-heading p {
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 15px;
+  color: #728da9;
+}
+.smc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.smc-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.smc-grid .field,
+.smc-number-field {
+  margin-bottom: 13px;
+}
+.smc-grid-three .field > select,
+.smc-grid-three .field > input {
+  min-width: 0;
+}
+.smc-disabled-group {
+  transition: opacity 0.15s;
+}
+.smc-disabled-group.is-disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+.smc-block-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.smc-toggle-number {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #2d3d50;
+  border-radius: 6px;
+  background: #111b25;
+}
+.smc-toggle-number > .toggle {
+  margin-bottom: 10px;
+}
+.smc-toggle-number .field {
+  margin-bottom: 0;
+  font-size: 10px;
+}
+.smc-toggle-number .field > input {
+  height: 34px;
+  margin-top: 1px;
+}
+.smc-toggle-number .field > small {
+  min-height: 30px;
+  font-size: 8.5px;
+  line-height: 14px;
+}
+.smc-high-low-row {
+  display: grid;
+  grid-template-columns: 31px minmax(0, 1fr) 114px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #2b3a4b;
+}
+.smc-high-low-row:last-child {
+  border-bottom: 0;
+}
+.smc-high-low-row .toggle {
+  transform: scale(0.84);
+  transform-origin: left center;
+}
+.smc-high-low-row strong {
+  font-size: 11px;
+  color: #bacbdc;
+  font-weight: 400;
+}
+.smc-high-low-row select {
+  width: 100%;
+  max-width: none;
+}
+.smc-compatibility-note {
+  margin: 16px 0 0;
+}
+.smc-settings-error {
+  margin: 14px 0 0;
+  font-size: 10px;
+  line-height: 16px;
+}
+.smc-order-block text,
+.smc-fvg text,
+.smc-premium-discount text {
+  paint-order: stroke;
+  stroke: #101318;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+@media (max-width: 640px) {
+  .smc-settings-modal .modal-body {
+    padding: 0 16px 18px;
+  }
+  .smc-grid,
+  .smc-block-grid {
+    gap: 8px;
+  }
+  .smc-grid-three {
+    grid-template-columns: 1fr;
+  }
+  .smc-grid-three .field {
+    margin-bottom: 9px;
+  }
+  .smc-section-heading {
+    gap: 10px;
+  }
+  .smc-section-heading h3 {
+    font-size: 10px;
+  }
+  .smc-section-heading p {
+    font-size: 8px;
+    line-height: 13px;
+  }
+  .smc-block-grid {
+    grid-template-columns: 1fr;
+  }
+  .smc-toggle-number .field > small {
+    min-height: 0;
+  }
+  .smc-high-low-row {
+    grid-template-columns: 28px 1fr 95px;
+    gap: 6px;
+  }
+  .smc-high-low-row strong {
+    font-size: 10px;
   }
 }

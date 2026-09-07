@@ -9,7 +9,16 @@ export type ChartType = 'candles' | 'hollow' | 'line' | 'area' | 'bars'
 export type Tool =
   'cursor' | 'trend' | 'horizontal' | 'rectangle' | 'fibonacci' | 'measure' | 'text'
 export type IndicatorKind =
-  'ema' | 'sma' | 'bb' | 'rsi' | 'macd' | 'cm-ult-macd' | 'vwap' | 'volume' | 'custom'
+  | 'ema'
+  | 'sma'
+  | 'bb'
+  | 'rsi'
+  | 'macd'
+  | 'cm-ult-macd'
+  | 'smart-money-concepts'
+  | 'vwap'
+  | 'volume'
+  | 'custom'
 export interface Candle {
   time: number
   open: number
@@ -44,6 +53,99 @@ export interface CmMacdSettings {
   macdColorChange: boolean
   histogramColorChange: boolean
 }
+
+/** Settings for Atlas's independent Smart Money Concepts implementation. */
+export type SMCStructureFilter = 'All' | 'BOS' | 'CHoCH'
+export type SMCLabelSize = 'Tiny' | 'Small' | 'Normal'
+export type SMCOrderBlockFilter = 'Atr' | 'Cumulative Mean Range'
+export type SMCOrderBlockMitigation = 'High/Low' | 'Close'
+export type SMCLineStyle = '⎯⎯⎯' | '----' | '····'
+export interface SmartMoneyConceptsSettings {
+  mode: 'Historical' | 'Present'
+  style: 'Colored' | 'Monochrome'
+  colorCandles: boolean
+  showInternal: boolean
+  internalBullish: SMCStructureFilter
+  internalBearish: SMCStructureFilter
+  internalLabelSize: SMCLabelSize
+  confluenceFilter: boolean
+  showSwing: boolean
+  swingBullish: SMCStructureFilter
+  swingBearish: SMCStructureFilter
+  swingLabelSize: SMCLabelSize
+  showSwingPoints: boolean
+  showStrongWeakHighsLows: boolean
+  swingLength: number
+  showInternalOrderBlocks: boolean
+  internalOrderBlockCount: number
+  showSwingOrderBlocks: boolean
+  swingOrderBlockCount: number
+  orderBlockFilter: SMCOrderBlockFilter
+  orderBlockMitigation: SMCOrderBlockMitigation
+  highlightMitigatedBlocks: boolean
+  showEqualHighLow: boolean
+  equalHighLowBars: number
+  equalHighLowThreshold: number
+  equalHighLowLabelSize: SMCLabelSize
+  showFairValueGaps: boolean
+  fvgAutoThreshold: boolean
+  /** Empty string means the active chart resolution. */
+  fvgTimeframe: '' | Timeframe
+  fvgExtend: number
+  showDailyHighLow: boolean
+  dailyLineStyle: SMCLineStyle
+  showWeeklyHighLow: boolean
+  weeklyLineStyle: SMCLineStyle
+  showMonthlyHighLow: boolean
+  monthlyLineStyle: SMCLineStyle
+  showPremiumDiscount: boolean
+}
+
+/**
+ * Familiar SMC defaults, intentionally expressed as original Atlas settings.
+ * The compact summary reads: Historical, Colored, All, All, Tiny, All, All,
+ * Small, 50, 5, 5, Atr, High/Low, 3, 0.1, Tiny, current chart, 1, solid.
+ */
+export const SMC_DEFAULTS: Readonly<SmartMoneyConceptsSettings> = {
+  mode: 'Historical',
+  style: 'Colored',
+  colorCandles: false,
+  showInternal: true,
+  internalBullish: 'All',
+  internalBearish: 'All',
+  internalLabelSize: 'Tiny',
+  confluenceFilter: false,
+  showSwing: true,
+  swingBullish: 'All',
+  swingBearish: 'All',
+  swingLabelSize: 'Small',
+  showSwingPoints: false,
+  showStrongWeakHighsLows: false,
+  swingLength: 50,
+  showInternalOrderBlocks: true,
+  internalOrderBlockCount: 5,
+  showSwingOrderBlocks: false,
+  swingOrderBlockCount: 5,
+  orderBlockFilter: 'Atr',
+  orderBlockMitigation: 'High/Low',
+  highlightMitigatedBlocks: true,
+  showEqualHighLow: true,
+  equalHighLowBars: 3,
+  equalHighLowThreshold: 0.1,
+  equalHighLowLabelSize: 'Tiny',
+  showFairValueGaps: false,
+  fvgAutoThreshold: true,
+  fvgTimeframe: '',
+  fvgExtend: 1,
+  showDailyHighLow: false,
+  dailyLineStyle: '⎯⎯⎯',
+  showWeeklyHighLow: false,
+  weeklyLineStyle: '⎯⎯⎯',
+  showMonthlyHighLow: false,
+  monthlyLineStyle: '⎯⎯⎯',
+  showPremiumDiscount: false,
+}
+
 export interface Plot {
   title: string
   color: string
@@ -78,6 +180,7 @@ export interface Indicator {
   inputValues?: Record<string, number>
   scriptId?: string
   cmMacd?: CmMacdSettings
+  smc?: SmartMoneyConceptsSettings
 }
 export interface SavedScript {
   id: string
@@ -126,6 +229,15 @@ export const DEFAULT_SETTINGS: ChartSettings = {
   autoScale: true,
 }
 export const DEFAULT_INDICATORS: Indicator[] = [
+  {
+    id: 'smart-money-concepts',
+    kind: 'smart-money-concepts',
+    name: 'Smart Money Concepts',
+    period: 50,
+    color: '#089981',
+    visible: true,
+    smc: { ...SMC_DEFAULTS },
+  },
   { id: 'ema-20', kind: 'ema', name: 'EMA', period: 20, color: '#d6ad68', visible: true },
   { id: 'ema-50', kind: 'ema', name: 'EMA', period: 50, color: '#7796e8', visible: true },
   { id: 'volume', kind: 'volume', name: 'Volume', period: 20, color: '#2bb99b', visible: true },

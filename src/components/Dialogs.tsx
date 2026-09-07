@@ -45,6 +45,7 @@ import { formatPrice, formatChange, changeClass, quoteCurrency, compactNumber } 
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
+import { SmcSettingsDialog } from './SmcSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -260,7 +261,7 @@ export function IndicatorLibrary({
       {tab === 'built-in' ? (
         <>
           <div className="filter-pills">
-            {['All', 'Trend', 'Momentum', 'Volatility', 'Volume'].map((item) => (
+            {['All', 'Trend', 'Momentum', 'Volatility', 'Volume', 'Price Action'].map((item) => (
               <button
                 className={category === item ? 'active' : ''}
                 key={item}
@@ -514,11 +515,9 @@ export function IndicatorSettingsDialog(props: {
   onClose: () => void
   onEditSource: () => void
 }) {
-  return props.indicator.kind === 'cm-ult-macd' ? (
-    <CmMacdSettingsDialog {...props} />
-  ) : (
-    <StandardIndicatorSettingsDialog {...props} />
-  )
+  if (props.indicator.kind === 'cm-ult-macd') return <CmMacdSettingsDialog {...props} />
+  if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
+  return <StandardIndicatorSettingsDialog {...props} />
 }
 
 function StandardIndicatorSettingsDialog({

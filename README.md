@@ -229,6 +229,19 @@ Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas r
 4. A separate strategy/backtesting engine with realistic fees, slippage, and reproducible results. Pine Script compatibility is not implemented.
 5. Broader browser/device accessibility testing, performance profiling against larger datasets, and deployment/security hardening before any trading integration.
 
+## Whale flow box
+
+A floating, draggable readout of **large executed trades on the charted Coinbase product**. It answers "is big money hitting the bid or lifting the offer right now, and how much" — showing a signed rolling total such as `+$1.24M` or `-$20.0M`, the bought/sold split, and the individual large prints with time, size and value.
+
+- **Executed flow, not on-chain flow.** Every figure comes from fills on Coinbase's `matches` channel, which Atlas already consumes for OHLCV. It is real price impact as it happens — but it cannot see wallet deposits, custody transfers, OTC blocks, or other venues. The box states this in its info panel; see [whale flow sources](docs/whale-flow-sources.md) for the layers it does **not** cover.
+- **Direction is the taker's.** Coinbase reports the _maker_ side on a match, so `side: "sell"` is a taker buy (an up-tick). Atlas inverts this once, in `parseTrade`, and every downstream figure uses the aggressor's perspective. Trades with a missing or malformed side still count toward volume but are excluded from directional flow.
+- **The threshold adapts per product.** "Large" is the 99th percentile of recently observed trade notionals on that specific product, floored at $25,000, so BTC-USD and a thin altcoin are each measured against their own book. Until ~200 trades have been sampled the box is explicitly labeled **calibrating** rather than showing a fabricated threshold.
+- **It never shows stale numbers.** The readout is suppressed unless the feed is `live`; a paused, stale, reconnecting or replaying chart clears it instead of leaving a frozen dollar figure on screen. Flow is cleared on symbol change and is not shown in demo mode or during bar replay.
+
+Drag it by the grip, collapse the print list, or hide it entirely from the header — the choice persists. Re-show it from the workspace menu (**Show whale flow box**).
+
+Rolling window defaults to 1 hour. Empirically, exchange-flow signals of this kind predict **volatility** far more reliably than direction, so treat a large reading as a warning that the market is about to move, not as a trade signal. Atlas places no orders and this is not investment advice.
+
 ## Research notes (not implemented)
 
 [Whale flow sources](docs/whale-flow-sources.md) surveys where large-holder inflows and outflows can be observed — raw on-chain transfers, labeled exchange-flow aggregates, the Coinbase Premium Index, ETF flows, derivatives positioning, and the executed tape — with published lead times, documented false positives, per-source pricing, and how each would (or would not) fit the same-origin adapter. **No whale or on-chain feed is wired into Atlas, no vendor account exists, and no API key is stored in this repository.** The note also records that the largest immediate opportunity needs no vendor at all: the Coinbase `matches` stream already parsed in `shared/coinbase.ts` carries per-fill size that is currently discarded after OHLCV aggregation.

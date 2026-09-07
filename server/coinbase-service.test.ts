@@ -223,3 +223,115 @@ it('bridges real SSE framing with batched trade updates and disconnection state'
   expect(disconnected).toContain('"state":"reconnecting"')
   controller.abort()
 })
+
+it('streams executed whale flow with taker-side direction and product isolation', async () => {
+  const { rest } = fixture()
+  let socket: FakeSocket | undefined
+  const service = new CoinbaseService({
+    rest,
+    socketFactory: () => {
+      socket = new FakeSocket()
+      return socket as unknown as WebSocket
+    },
+  })
+  const api = createMarketApi(service)
+  const server = createServer((req, res) => {
+    if (!api.handle(req, res)) res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const controller = new AbortController()
+  closers.push(() => {
+    controller.abort()
+    api.close()
+    server.closeAllConnections()
+    server.close()
+  })
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  await fetch(`${origin}/api/coinbase/candles?product=BTC-USD&interval=1m&limit=50`)
+  const response = await fetch(`${origin}/api/coinbase/stream?product=BTC-USD&interval=1m`, {
+    signal: controller.signal,
+  })
+  const reader = response.body!.getReader(),
+    decoder = new TextDecoder()
+  await reader.read()
+
+  const at = (offset: number) => new Date(Date.now() + offset).toISOString()
+  let id = 1
+  // Calibrate with small trades so the percentile threshold is meaningful.
+  for (let i = 0; i < 260; i++)
+    socket!.emit({
+      type: 'match',
+      product_id: 'BTC-USD',
+      trade_id: id++,
+      price: '100',
+      size: '1',
+      time: at(i),
+      side: 'sell',
+    })
+  // A large taker BUY: Coinbase reports the MAKER side, so side:'sell' is an up-tick.
+  socket!.emit({
+    type: 'match',
+    product_id: 'BTC-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '5',
+    time: at(1000),
+    side: 'sell',
+  })
+  // Flow on another product must not leak into the charted product's readout.
+  socket!.emit({
+    type: 'match',
+    product_id: 'ETH-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '50',
+    time: at(1001),
+    side: 'buy',
+  })
+
+  let payload: Record<string, unknown> | undefined
+  for (let attempt = 0; attempt < 6 && !payload; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('whaleFlow'))
+    if (line) payload = JSON.parse(line.slice(6))
+  }
+  const flow = payload?.whaleFlow as {
+    product: string
+    net: number
+    bought: number
+    sold: number
+    count: number
+    calibrated: boolean
+    prints: { side: string; notional: number }[]
+  }
+  expect(flow.product).toBe('BTC-USD')
+  expect(flow.calibrated).toBe(true)
+  // 5 BTC at $100k lifted the offer: +$500k, and the ETH print is excluded.
+  expect(flow.net).toBe(500_000)
+  expect(flow.bought).toBe(500_000)
+  expect(flow.sold).toBe(0)
+  expect(flow.count).toBe(1)
+  expect(flow.prints[0].side).toBe('buy')
+
+  // A large taker SELL arrives as maker side 'buy' and must reduce net flow.
+  socket!.emit({
+    type: 'match',
+    product_id: 'BTC-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '8',
+    time: at(2000),
+    side: 'buy',
+  })
+  let after: Record<string, unknown> | undefined
+  for (let attempt = 0; attempt < 6 && !after; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('whaleFlow'))
+    const parsed = line ? JSON.parse(line.slice(6)) : undefined
+    if (parsed?.whaleFlow?.count === 2) after = parsed
+  }
+  const updated = after?.whaleFlow as { net: number; sold: number }
+  expect(updated.sold).toBe(800_000)
+  expect(updated.net).toBe(-300_000)
+  controller.abort()
+})

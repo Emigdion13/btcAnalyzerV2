@@ -35,6 +35,7 @@ import {
   Plus,
   Redo2,
   RotateCcw,
+  Waves,
   Ruler,
   Search,
   Settings2,
@@ -59,6 +60,7 @@ import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
+import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
 import type { ToastMessage } from './components/ui'
 import {
@@ -223,6 +225,7 @@ export default function App() {
   const [workspaceName, setWorkspaceName] = useLocalState('workspace-name', 'Crypto workspace')
   const [tabs, setTabs] = useLocalState<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
   const [watchlist, setWatchlist] = useLocalState<string[]>('watchlist', DEFAULT_WATCHLIST)
+  const [whaleBoxVisible, setWhaleBoxVisible] = useLocalState('whale-box-visible', true)
   const [settings, setSettings] = useLocalState<ChartSettings>('chart-settings', DEFAULT_SETTINGS)
   const [indicators, setIndicators] = useLocalState<Indicator[]>('indicators', DEFAULT_INDICATORS)
   const [allDrawings, setAllDrawings] = useLocalState<Record<string, Drawing[]>>('drawings', {})
@@ -1207,12 +1210,23 @@ export default function App() {
                   Export workspace
                 </MenuItem>
                 <MenuItem
+                  icon={Waves}
+                  selected={whaleBoxVisible}
+                  onClick={() => {
+                    setWhaleBoxVisible(!whaleBoxVisible)
+                    close()
+                  }}
+                >
+                  {whaleBoxVisible ? 'Hide whale flow box' : 'Show whale flow box'}
+                </MenuItem>
+                <MenuItem
                   icon={RotateCcw}
                   onClick={() => {
                     setSettings(DEFAULT_SETTINGS)
                     setStudioHeight(270)
                     setStudioOpen(true)
                     setSidePanel('watchlist')
+                    setWhaleBoxVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1533,6 +1547,9 @@ export default function App() {
                   onIndicatorRetry={() => setTimeframeRetry((n) => n + 1)}
                   replay={replayIndex !== null}
                 />
+                {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
+                  <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
+                )}
                 {source === 'coinbase' && !hasData && (
                   <div className="market-feedback" role="status">
                     <span

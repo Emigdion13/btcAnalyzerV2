@@ -1,8 +1,9 @@
 # Whale flow research · where to see big money entering and leaving a coin
 
-**Status: research note only.** Nothing described here is implemented in Atlas. No whale/on-chain
-feed is wired into the app, no vendor account exists, and no API key is stored anywhere in this
-repository. This document exists to answer one question — _where can we check when whales put money
+**Status: mostly research.** One piece is now built: the **whale flow box** implements tier 0
+below (§8.1) — large _executed_ prints from the Coinbase trade stream Atlas already consumes. Every
+other layer here remains unimplemented. **No on-chain or vendor feed is wired into the app, no
+vendor account exists, and no API key is stored anywhere in this repository.** This document exists to answer one question — _where can we check when whales put money
 into or take money out of the coin being analysed, and how early does that show up before price
 moves_ — and to record which options would actually fit the Atlas architecture if we later decide
 to build one.
@@ -31,8 +32,8 @@ Layers 1–2 are "intent". Layer 5 is "impact". The gap between them is the only
 gets, and academic work puts that window at roughly **6–24 hours** for exchange-bound whale
 transfers (§5).
 
-Atlas already receives layer 5 and does nothing with it. That is the cheapest available win and it
-needs no vendor at all (§8.1).
+Atlas now surfaces layer 5 in the whale flow box — the cheapest available win, needing no vendor at
+all (§8.1). Layers 1-4 remain unbuilt.
 
 ---
 
@@ -322,7 +323,7 @@ one SSE frame per second. Any whale feed must follow the same shape — **server
 environment variables, never in the browser bundle, never a browser-configurable upstream URL.**
 Layered by cost:
 
-### 8.1 Tier 0 — no new vendor, no key, no new upstream
+### 8.1 Tier 0 — no new vendor, no key, no new upstream · **IMPLEMENTED**
 
 Atlas's WebSocket already subscribes to the Coinbase `matches` channel and `shared/coinbase.ts`
 already parses every fill (`trade_id`, `price`, `size`, `time`) — then discards everything except
@@ -341,6 +342,12 @@ Available today with no external dependency:
 
 This is the highest value-per-unit-effort option by a wide margin, and it is the only one that
 survives the sandbox network restriction in §9.
+
+**What shipped.** `shared/whale-flow.ts` tracks large prints per product with a percentile-based
+adaptive threshold; `parseTrade` now derives `takerSide` by inverting Coinbase's documented maker
+side; the server attaches a validated `whaleFlow` snapshot to each SSE frame; and
+`src/components/WhaleFlowBox.tsx` renders the floating readout. Absorption at SR zones and a
+persisted CVD series are still open.
 
 ### 8.2 Tier 1 — free, keyless upstreams
 

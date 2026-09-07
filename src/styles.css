@@ -7148,3 +7148,227 @@ input[type='color']::-webkit-color-swatch {
     font-size: 16px;
   }
 }
+
+/* Floating whale-flow readout: large executed trades on the charted product. */
+.whale-box {
+  position: fixed;
+  right: 22px;
+  bottom: 78px;
+  z-index: 30;
+  width: 246px;
+  padding: 0 0 8px;
+  background: rgba(17, 21, 26, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  font-size: 11px;
+  user-select: none;
+}
+.whale-box-in {
+  border-color: rgba(43, 185, 155, 0.42);
+}
+.whale-box-out {
+  border-color: rgba(237, 103, 115, 0.42);
+}
+.whale-box-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 7px 7px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.whale-box-head > h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.whale-box-grip {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  background: none;
+  border: 0;
+  color: var(--dim);
+  cursor: grab;
+}
+.whale-box-grip:active {
+  cursor: grabbing;
+}
+.whale-box-window {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.whale-box-icon {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--dim);
+}
+.whale-box-icon:hover,
+.whale-box-icon.is-active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.whale-box-info,
+.whale-box-empty,
+.whale-box-calibrating {
+  margin: 8px 10px 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.whale-box-info strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.whale-box-calibrating {
+  color: #f5a623;
+}
+.whale-box-net {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 10px 7px;
+}
+.whale-box-net-value {
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+}
+.whale-box-net-value[data-direction='in'] {
+  color: var(--green);
+}
+.whale-box-net-value[data-direction='out'] {
+  color: var(--red);
+}
+.whale-box-net-value[data-direction='flat'] {
+  color: var(--muted);
+}
+.whale-box-net-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+.whale-box-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.whale-box-leg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 7px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 6px;
+}
+.whale-box-leg-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.whale-box-leg-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.whale-box-leg-value.is-buy {
+  color: var(--green);
+}
+.whale-box-leg-value.is-sell {
+  color: var(--red);
+}
+.whale-box-prints {
+  list-style: none;
+  margin: 0;
+  padding: 2px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 176px;
+  overflow-y: auto;
+}
+.whale-box-prints > li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 7px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+}
+.whale-box-prints > li.is-buy {
+  background: rgba(43, 185, 155, 0.09);
+  border-left-color: var(--green);
+}
+.whale-box-prints > li.is-sell {
+  background: rgba(237, 103, 115, 0.09);
+  border-left-color: var(--red);
+}
+.whale-print-time {
+  color: var(--dim);
+  font-size: 9px;
+}
+.whale-print-size {
+  color: var(--muted);
+  text-align: right;
+}
+.whale-print-value {
+  font-weight: 600;
+}
+.whale-box-prints > li.is-buy .whale-print-value {
+  color: var(--green);
+}
+.whale-box-prints > li.is-sell .whale-print-value {
+  color: var(--red);
+}
+.whale-box-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 10px 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 9px;
+  color: var(--dim);
+}
+.whale-box-more {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: 9px;
+}
+.whale-box-more:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .whale-box {
+    right: 6px;
+    bottom: 62px;
+    width: 200px;
+  }
+  .whale-box-net-value {
+    font-size: 19px;
+  }
+  .whale-box-prints {
+    max-height: 120px;
+  }
+}

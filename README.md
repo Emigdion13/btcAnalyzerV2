@@ -94,7 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s volume boxes)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
@@ -127,6 +127,16 @@ Add it from **Indicators → Smart Money Concepts**, or use the preloaded overla
 The overlay draws confirmed-pivot internal and swing **BOS/CHoCH**, optional **HH/HL/LH/LL** pivot labels, active opposite-candle order blocks, ATR-scaled **EQH/EQL**, three-candle fair-value gaps, prior daily/weekly/monthly high-low levels, and premium/equilibrium/discount bands. Fair-value gaps can use the active chart (the default) or a separately loaded native timeframe—never a silently resampled chart series. It can recolor candlesticks from the latest confirmed internal bias. The **Present** mode intentionally retains only the latest markup set; **Historical** retains a capped recent history so the chart remains responsive.
 
 This is deterministic OHLCV analysis, not a prediction service. Pivots are only known after their confirmation bars, calculations vary by venue/history, and every level is informational rather than a trading signal or investment advice.
+
+## SR Breaks and Retests [ChartPrime] (20, 2, 1)
+
+A native behavioral port of ChartPrime’s **“Support and Resistance (High Volume Boxes)”**, whose TradingView short title is `SR Breaks and Retests [ChartPrime]`. The original is published by its author under MPL-2.0; Atlas reimplements the documented calculations and drawing rules in TypeScript rather than shipping the Pine source.
+
+Add it from **Indicators → SR Breaks and Retests** (category **Price Action**), or use the preloaded overlay in a new workspace. The default profile is the published one: **Lookback Period 20**, **Delta Volume Filter Length 2**, **Adjust Box Width 1**, with the original’s fixed ATR(200) box height and 50-box cap exposed as editable advanced settings.
+
+The overlay draws **green support and red resistance boxes** at volume-filtered close pivots, filled by a delta-volume gradient, extending right until a newer level replaces them. A box whose level is breached flips to a dashed red/green box and prints a **Break Sup** or **Break Res** label on the bar before the break; a level that holds is restored and marked with a green or red **◆**. When a broken level keeps holding, the next break prints the original’s retest diamonds — **resistance as support** and **support as resistance** — without a second break label.
+
+Pivots confirm `lookbackPeriod` bars late, so the newest markup appears with that delay and the live box extends as bars print. Boxes need `atrLength` bars of history, and the legend says so while warming up. Three places where the original is undefined (ATR warm-up, the 25-bar gradient window, and oversized volume text) are documented in [the compatibility notes](docs/sr-breaks-retests.md). This is deterministic OHLCV analysis, not a signal service or investment advice.
 
 ## Write a custom indicator
 
@@ -195,6 +205,7 @@ src/
     indicators.ts              Built-in plot calculations and script templates
     cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
     smart-money-concepts.ts     Independent SMC pivots, BOS/CHoCH, OB/FVG and overlay models
+    sr-breaks-retests.ts        ChartPrime volume-box pivots, breaks, holds and retests
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence

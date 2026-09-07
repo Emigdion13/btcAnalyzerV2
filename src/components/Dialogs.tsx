@@ -46,6 +46,7 @@ import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
+import { SrBreaksSettingsDialog } from './SrBreaksSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -517,6 +518,7 @@ export function IndicatorSettingsDialog(props: {
 }) {
   if (props.indicator.kind === 'cm-ult-macd') return <CmMacdSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
+  if (props.indicator.kind === 'sr-breaks-retests') return <SrBreaksSettingsDialog {...props} />
   return <StandardIndicatorSettingsDialog {...props} />
 }
 

@@ -16,6 +16,7 @@ export type IndicatorKind =
   | 'macd'
   | 'cm-ult-macd'
   | 'smart-money-concepts'
+  | 'sr-breaks-retests'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -52,6 +53,29 @@ export interface CmMacdSettings {
   showHistogram: boolean
   macdColorChange: boolean
   histogramColorChange: boolean
+}
+
+/**
+ * Settings for the SR Breaks and Retests overlay, a behavioral port of
+ * ChartPrime's "Support and Resistance (High Volume Boxes)".
+ * See docs/sr-breaks-retests.md for the provenance and behavioral contract.
+ */
+export interface SrBreaksSettings {
+  /** Bars on each side required to confirm a pivot. The original's `Lookback Period`. */
+  lookbackPeriod: number
+  /** Window for the `highest`/`lowest` delta-volume filter. `Delta Volume Filter Length`. */
+  volumeFilterLength: number
+  /** Box height as a multiple of ATR. `Adjust Box Width`. */
+  boxWidth: number
+  /** ATR length used for the box height. Fixed at 200 in the original. */
+  atrLength: number
+  /** Newest boxes kept on the chart. `max_boxes_count` in the original. */
+  maxBoxes: number
+  showBoxes: boolean
+  showVolumeText: boolean
+  showHoldSignals: boolean
+  showRetestSignals: boolean
+  showBreakLabels: boolean
 }
 
 /** Settings for Atlas's independent Smart Money Concepts implementation. */
@@ -146,6 +170,18 @@ export const SMC_DEFAULTS: Readonly<SmartMoneyConceptsSettings> = {
   showPremiumDiscount: false,
 }
 
+export const SR_BREAKS_DEFAULTS: Readonly<SrBreaksSettings> = {
+  lookbackPeriod: 20,
+  volumeFilterLength: 2,
+  boxWidth: 1,
+  atrLength: 200,
+  maxBoxes: 50,
+  showBoxes: true,
+  showVolumeText: true,
+  showHoldSignals: true,
+  showRetestSignals: true,
+  showBreakLabels: true,
+}
 export interface Plot {
   title: string
   color: string
@@ -181,6 +217,7 @@ export interface Indicator {
   scriptId?: string
   cmMacd?: CmMacdSettings
   smc?: SmartMoneyConceptsSettings
+  sr?: SrBreaksSettings
 }
 export interface SavedScript {
   id: string
@@ -237,6 +274,15 @@ export const DEFAULT_INDICATORS: Indicator[] = [
     color: '#089981',
     visible: true,
     smc: { ...SMC_DEFAULTS },
+  },
+  {
+    id: 'sr-breaks-retests',
+    kind: 'sr-breaks-retests',
+    name: 'SR Breaks and Retests',
+    period: 20,
+    color: '#008000',
+    visible: true,
+    sr: { ...SR_BREAKS_DEFAULTS },
   },
   { id: 'ema-20', kind: 'ema', name: 'EMA', period: 20, color: '#d6ad68', visible: true },
   { id: 'ema-50', kind: 'ema', name: 'EMA', period: 50, color: '#7796e8', visible: true },

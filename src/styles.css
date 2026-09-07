@@ -998,6 +998,7 @@ button {
   pointer-events: none;
 }
 .smc-overlay,
+.sr-overlay,
 .drawing-overlay {
   position: absolute;
   left: 0;
@@ -1005,8 +1006,34 @@ button {
   pointer-events: none;
   overflow: hidden;
 }
-.smc-overlay {
+.smc-overlay,
+.sr-overlay {
   z-index: 1;
+}
+.sr-overlay text {
+  paint-order: stroke;
+  stroke: #10131880;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+.sr-settings-modal .modal-body {
+  gap: 4px;
+}
+.sr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.sr-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 3px;
+  border-radius: 1px;
+  vertical-align: middle;
+}
+.sr-compatibility-note {
+  margin-top: 6px;
 }
 .smc-label {
   paint-order: stroke;

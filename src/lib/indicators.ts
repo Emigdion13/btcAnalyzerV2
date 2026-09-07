@@ -69,6 +69,16 @@ export const INDICATOR_CATALOG: {
     color: '#089981',
   },
   {
+    kind: 'sr-breaks-retests',
+    name: 'SR Breaks and Retests',
+    short: 'SR',
+    description:
+      'ChartPrime\u2019s volume-filtered support and resistance boxes with break, hold and retest signals. (20, 2, 1)',
+    category: 'Price Action',
+    period: 20,
+    color: '#008000',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -105,9 +115,10 @@ export function builtInPlots(
     const settings = cmMacdSettings(indicator)
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
   }
-  // Smart Money Concepts is drawn as a native SVG price overlay in ChartView.
-  // It intentionally has no Lightweight Charts line/pane series.
+  // Smart Money Concepts and SR Breaks and Retests are drawn as native SVG
+  // price overlays in ChartView, so they have no Lightweight Charts series.
   if (indicator.kind === 'smart-money-concepts') return []
+  if (indicator.kind === 'sr-breaks-retests') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

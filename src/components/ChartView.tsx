@@ -20,7 +20,17 @@ import type {
   Time,
   UTCTimestamp,
 } from 'lightweight-charts'
-import { ChevronDown, Eye, EyeOff, Minus, Plus, RotateCcw, Settings2, X } from 'lucide-react'
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Minus,
+  Plus,
+  RotateCcw,
+  Settings2,
+  X,
+} from 'lucide-react'
 import type {
   Anchor,
   Asset,
@@ -210,6 +220,70 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const rsiIndicator = indicators.find((i) => i.visible && i.kind === 'rsi')
   const rsiPeriod = rsiIndicator?.period ?? 14
   const [rsiMinimized, setRsiMinimized] = useState(false)
+  const [rsiPos, setRsiPos] = useState<{ x: number; y: number } | null>(null)
+  const [isDraggingRsi, setIsDraggingRsi] = useState(false)
+  const rsiCardRef = useRef<HTMLDivElement>(null)
+  const rsiDragState = useRef<{
+    startX: number
+    startY: number
+    initialX: number
+    initialY: number
+  } | null>(null)
+
+  const handleRsiPointerDown = (event: React.PointerEvent) => {
+    if ((event.target as HTMLElement).closest('button, input, a')) return
+    event.stopPropagation()
+    const card = rsiCardRef.current
+    const stage = card?.parentElement
+    if (!card || !stage) return
+
+    const cardRect = card.getBoundingClientRect()
+    const stageRect = stage.getBoundingClientRect()
+    const currentX = cardRect.left - stageRect.left
+    const currentY = cardRect.top - stageRect.top
+
+    rsiDragState.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      initialX: currentX,
+      initialY: currentY,
+    }
+    setIsDraggingRsi(true)
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!rsiDragState.current || !rsiCardRef.current) return
+      const currentStage = rsiCardRef.current.parentElement
+      if (!currentStage) return
+      const curStageRect = currentStage.getBoundingClientRect()
+      const curCardRect = rsiCardRef.current.getBoundingClientRect()
+
+      const deltaX = e.clientX - rsiDragState.current.startX
+      const deltaY = e.clientY - rsiDragState.current.startY
+
+      let newX = rsiDragState.current.initialX + deltaX
+      let newY = rsiDragState.current.initialY + deltaY
+
+      const maxX = Math.max(0, curStageRect.width - curCardRect.width - 4)
+      const maxY = Math.max(0, curStageRect.height - curCardRect.height - 4)
+      newX = Math.min(Math.max(4, newX), maxX)
+      newY = Math.min(Math.max(4, newY), maxY)
+
+      setRsiPos({ x: newX, y: newY })
+    }
+
+    const onPointerUp = () => {
+      rsiDragState.current = null
+      setIsDraggingRsi(false)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+  }
+
   const rsiValues = useMemo(() => {
     if (candles.length < 2) return []
     return ta.rsi(
@@ -1874,12 +1948,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       </div>
       {rsiIndicator && activeRsi !== null && (
         <div
-          className={`rsi-hud-card ${rsiZoneClass} ${rsiMinimized ? 'is-minimized' : ''}`}
+          ref={rsiCardRef}
+          className={`rsi-hud-card ${rsiZoneClass} ${rsiMinimized ? 'is-minimized' : ''} ${isDraggingRsi ? 'is-dragging' : ''}`}
           role="region"
           aria-label="RSI Meter"
+          onPointerDown={handleRsiPointerDown}
+          style={
+            rsiPos
+              ? { left: `${rsiPos.x}px`, top: `${rsiPos.y}px`, right: 'auto' }
+              : { top: '34px', right: '10px' }
+          }
         >
           <div className="rsi-hud-header">
             <div className="rsi-hud-title-row">
+              <GripVertical size={11} className="rsi-hud-grip" aria-hidden="true" />
               <span className="rsi-hud-dot" />
               <span className="rsi-hud-title">RSI {rsiPeriod}</span>
               {hovered ? (

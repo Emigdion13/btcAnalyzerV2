@@ -6848,8 +6848,19 @@ input[type='color']::-webkit-color-swatch {
   padding: 8px 10px;
   font-family: 'DM Sans', sans-serif;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
   user-select: none;
+  cursor: grab;
+  touch-action: none;
+}
+.rsi-hud-card.is-dragging {
+  cursor: grabbing;
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.65),
+    0 0 20px rgba(173, 145, 229, 0.25);
+  transition: none;
 }
 .rsi-hud-card.is-minimized {
   width: auto;
@@ -6894,6 +6905,20 @@ input[type='color']::-webkit-color-swatch {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+.rsi-hud-grip {
+  color: #556274;
+  cursor: grab;
+  margin-right: 1px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.rsi-hud-card:hover .rsi-hud-grip {
+  opacity: 1;
+}
+.rsi-hud-card.is-dragging .rsi-hud-grip {
+  cursor: grabbing;
+  color: #ad91e5;
 }
 .rsi-hud-dot {
   width: 6px;

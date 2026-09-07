@@ -2,6 +2,7 @@ import { ASSETS, TIMEFRAMES } from './market'
 import { isProductId } from '../../shared/coinbase'
 import { isCmMacdSettings } from './cm-ult-macd'
 import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
+import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -102,6 +103,7 @@ function indicator(value: unknown): Indicator {
       'macd',
       'cm-ult-macd',
       'smart-money-concepts',
+      'sr-breaks-retests',
       'vwap',
       'volume',
       'custom',
@@ -178,6 +180,16 @@ function indicator(value: unknown): Indicator {
       showPremiumDiscount: settings.showPremiumDiscount,
     }
     result.period = result.smc.swingLength
+  }
+  if (kind === 'sr-breaks-retests' && i.sr !== undefined) {
+    const settings = i.sr
+    if (!isSrBreaksRetestsSettings(settings)) invalid('SR Breaks and Retests settings')
+    result.sr = {
+      lookbackPeriod: settings.lookbackPeriod,
+      volumeFilterLength: settings.volumeFilterLength,
+      boxWidth: settings.boxWidth,
+    }
+    result.period = result.sr.lookbackPeriod
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

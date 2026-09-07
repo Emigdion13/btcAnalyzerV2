@@ -94,7 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
@@ -127,6 +127,16 @@ Add it from **Indicators → Smart Money Concepts**, or use the preloaded overla
 The overlay draws confirmed-pivot internal and swing **BOS/CHoCH**, optional **HH/HL/LH/LL** pivot labels, active opposite-candle order blocks, ATR-scaled **EQH/EQL**, three-candle fair-value gaps, prior daily/weekly/monthly high-low levels, and premium/equilibrium/discount bands. Fair-value gaps can use the active chart (the default) or a separately loaded native timeframe—never a silently resampled chart series. It can recolor candlesticks from the latest confirmed internal bias. The **Present** mode intentionally retains only the latest markup set; **Historical** retains a capped recent history so the chart remains responsive.
 
 This is deterministic OHLCV analysis, not a prediction service. Pivots are only known after their confirmation bars, calculations vary by venue/history, and every level is informational rather than a trading signal or investment advice.
+
+## SR Breaks and Retests
+
+Atlas includes a **faithful native port of ChartPrime’s “Support and Resistance (High Volume Boxes)”**, the TradingView indicator whose short title renders as **SR Breaks and Retests [ChartPrime] (20, 2, 1)**. ChartPrime publishes the Pine Script v5 source under the Mozilla Public License 2.0, and the Atlas engine reproduces that published calculation statement by statement—delta volume, close pivots, volume-gated zones, ATR(200) depth, break/hold crosses, role-reversal memory, and every marker offset and color.
+
+Add it from **Indicators → SR Breaks and Retests**. The three published inputs—**Lookback Period 20**, **Delta Volume Filter Length 2**, **Adjust Box Width 1**—are editable and persist like every other indicator. Zones render as SVG boxes with volume-graded fills and “Vol:” labels; breaks print **Break Sup / Break Res** labels; holds and successful retests print ◆ diamonds, all at the original’s exact anchors.
+
+Because Atlas loads a finite candle window (900 bars by default) while TradingView computes over much deeper history, one documented difference exists: the original hides the very first “Break” label of a session (`not na_flag` is `na` in Pine), which is invisible on TradingView’s deep history but would read as a missing label here. Atlas shows that first label so short windows match what the original displays on screen. Everything else— including quirks like a replacement zone printing a retest diamond instead of a second break label—matches the original behavior.
+
+See [the compatibility notes, calculation contract and provenance](docs/sr-breaks-retests.md).
 
 ## Write a custom indicator
 
@@ -195,6 +205,7 @@ src/
     indicators.ts              Built-in plot calculations and script templates
     cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
     smart-money-concepts.ts     Independent SMC pivots, BOS/CHoCH, OB/FVG and overlay models
+    sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence

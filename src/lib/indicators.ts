@@ -69,6 +69,16 @@ export const INDICATOR_CATALOG: {
     color: '#089981',
   },
   {
+    kind: 'sr-breaks-retests',
+    name: 'SR Breaks and Retests',
+    short: 'SR B&R',
+    description:
+      'Volume-graded support and resistance zones from close pivots, with break labels, hold diamonds, and role-reversal retests — a faithful port of ChartPrime’s published (20, 2, 1) indicator.',
+    category: 'Price Action',
+    period: 20,
+    color: '#4caf50',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -108,6 +118,9 @@ export function builtInPlots(
   // Smart Money Concepts is drawn as a native SVG price overlay in ChartView.
   // It intentionally has no Lightweight Charts line/pane series.
   if (indicator.kind === 'smart-money-concepts') return []
+  // SR Breaks and Retests is likewise a native SVG price overlay (zones,
+  // diamonds, labels) with no Lightweight Charts series.
+  if (indicator.kind === 'sr-breaks-retests') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

@@ -152,6 +152,57 @@ describe('workspace backups', () => {
     })
     expect(clean.indicators[0].smc).toEqual(indicator.smc)
   })
+  it('round-trips each SR Breaks and Retests input and rejects malformed values', () => {
+    const saved = backup()
+    saved.indicators.push({
+      id: 'sr',
+      kind: 'sr-breaks-retests',
+      name: 'SR Breaks and Retests',
+      period: 12,
+      color: '#4caf50',
+      visible: false,
+      sr: { lookbackPeriod: 12, volumeFilterLength: 4, boxWidth: 0.5 },
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    for (const invalid of [
+      { lookbackPeriod: 0, volumeFilterLength: 4, boxWidth: 0.5 },
+      { lookbackPeriod: 2.5, volumeFilterLength: 4, boxWidth: 0.5 },
+      { lookbackPeriod: 12, volumeFilterLength: 0, boxWidth: 0.5 },
+      { lookbackPeriod: 12, volumeFilterLength: 4, boxWidth: -0.1 },
+      { lookbackPeriod: 12, volumeFilterLength: 4, boxWidth: 1001 },
+    ])
+      expect(() =>
+        parseWorkspaceBackup({
+          ...backup(),
+          indicators: [
+            {
+              id: 'sr',
+              kind: 'sr-breaks-retests',
+              name: 'SR Breaks and Retests',
+              period: 20,
+              color: '#4caf50',
+              visible: true,
+              sr: invalid,
+            },
+          ],
+        }),
+      ).toThrow(/SR Breaks and Retests/)
+    const clean = parseWorkspaceBackup({
+      ...backup(),
+      indicators: [
+        {
+          ...saved.indicators.at(-1)!,
+          sr: { ...saved.indicators.at(-1)!.sr!, extra: 'ignored' },
+        },
+      ],
+    })
+    expect(clean.indicators[0].sr).toEqual({
+      lookbackPeriod: 12,
+      volumeFilterLength: 4,
+      boxWidth: 0.5,
+    })
+    expect(clean.indicators[0].period).toBe(12)
+  })
   it('writes the complete workspace and rolls back a failed import', () => {
     const data = new Map<string, string>([
       ['atlas.v1.workspace-name', '"Original"'],

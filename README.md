@@ -97,6 +97,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
+- **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
 - **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
@@ -242,7 +243,34 @@ A floating, draggable readout of a **whale sweep in progress on the charted Coin
 
 Drag it by the grip, collapse the print list, or hide it entirely from the header — the choice persists. Re-show it from the workspace menu (**Show whale flow box**).
 
-**It reports what is executing, not what is about to execute.** The `matches` channel publishes fills that have already happened, so nothing here is a forecast of an order arriving in the next few seconds — the lead time is the length of the sweep itself, which for a large order being worked across the book is typically a few seconds of warning between its first fills and its last. Genuine pre-trade visibility would require resting order-book size (`level2`) or an on-chain deposit feed; both are catalogued in [whale flow sources](docs/whale-flow-sources.md) and neither is wired up. Empirically, exchange-flow signals of this kind predict **volatility** far more reliably than direction, so treat a large reading as a warning that the market is about to move, not as a trade signal. Atlas places no orders and this is not investment advice.
+**It reports what is executing, not what is about to execute.** The `matches` channel publishes fills that have already happened, so nothing here is a forecast of an order arriving in the next few seconds — the lead time is the length of the sweep itself, which for a large order being worked across the book is typically a few seconds of warning between its first fills and its last. Genuine pre-trade visibility now comes from the resting order-book size (`level2`), built as the [order-book depth & zone strength](#order-book-depth--zone-strength) feature; an on-chain deposit feed remains catalogued in [whale flow sources](docs/whale-flow-sources.md) and is not wired up. Empirically, exchange-flow signals of this kind predict **volatility** far more reliably than direction, so treat a large reading as a warning that the market is about to move, not as a trade signal. Atlas places no orders and this is not investment advice.
+
+## Order-book depth & zone strength
+
+Indicators describe *where* price reacted before; this feature measures whether anyone is
+willing to defend that level **right now**, using the resting `level2` order book on the same
+shared Coinbase WebSocket — no new vendor or API key.
+
+- **S/R walls from the book.** The full book is clustered each second into `level2` price
+  levels; clusters that stand out from the book's own texture are drawn as dashed
+  support/resistance lines, labeled with their resting USD and the liquidity in front of them.
+- **Strength per zone.** Every SMC order block / FVG and SR box gets a `STRONG/MED/WEAK` chip
+  showing how much USD is currently resting inside its price range (bids for support-side zones,
+  asks for resistance-side), weighted by how long that size has rested unchanged. Zones with no
+  resting liquidity show no chip — the book is not defending them at this moment.
+- **Readout panel.** A floating "Book" panel (workspace menu → *Hide/Show book depth &
+  strength*) lists the current walls, bid/ask totals, and a near-mid imbalance meter. Like the
+  whale flow box it is a live-connection element: it only appears while a real Coinbase feed is
+  active, never during replay, and clears entirely when the book is unavailable so no stale
+  depth is implied.
+- **Demo mode.** Offline demo mode shows the chart walls and per-zone strength chips over an
+  explicitly **synthetic** book (built from the demo candles' swing extremes), so the analysis
+  layer stays explorable without a connection; the floating panel itself is Coinbase-live only.
+  Coinbase mode never mixes in synthetic data.
+
+Resting size is an invitation, not a lock: levels can be pulled or walked within seconds, the
+book sees only Coinbase, and hidden intent is invisible. See
+[the implementation notes and exact strength rules](docs/order-book-strength.md).
 
 ## Research notes (not implemented)
 

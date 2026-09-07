@@ -355,9 +355,10 @@ readout, which clears itself once the sweep ends.
 finished sweep leaves no number on screen. The cost is that this feed can only report execution
 already in progress: `matches` carries fills, never intent, so it cannot warn that a whale order
 is _about_ to arrive. The realised lead time is the duration of the sweep itself. Pre-trade
-visibility would need the `level2` book (resting size, same connection, no new vendor — the
-natural next increment) or the on-chain deposit tiers below. Absorption at SR zones and a
-persisted CVD series are also still open.
+visibility from the `level2` book (resting size, same connection, no new vendor) is now built as
+the **order-book depth & zone strength** feature — see
+[`order-book-strength.md`](order-book-strength.md) — while the on-chain deposit tiers below, and
+absorption-at-SR/CVD extensions of the book feature, remain open.
 
 ### 8.2 Tier 1 — free, keyless upstreams
 

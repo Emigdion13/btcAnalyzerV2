@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   isCandle,
+  isOrderBookView,
   isProductId,
   isQuote,
   isWhaleFlow,
@@ -13,6 +14,7 @@ import type {
   HistorySnapshot,
   Interval,
   MarketQuote,
+  OrderBookView,
   StreamPayload,
   WhaleFlow,
 } from '../../shared/coinbase'
@@ -76,6 +78,7 @@ export function useCoinbaseMarket({
   const [products, setProducts] = useState<CoinbaseProduct[]>([])
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({})
   const [whaleFlow, setWhaleFlow] = useState<WhaleFlow | null>(null)
+  const [book, setBook] = useState<OrderBookView | null>(null)
   const [retryId, setRetryId] = useState(0)
   const [visible, setVisible] = useState(!document.hidden)
   const cache = useRef(new Map<string, HistorySnapshot>())
@@ -91,6 +94,8 @@ export function useCoinbaseMarket({
   }, [])
   // Executed flow belongs to one product; never carry it across a symbol change.
   useEffect(() => setWhaleFlow(null), [product])
+  // Resting depth likewise belongs to the charted product, never to the previous one.
+  useEffect(() => setBook(null), [product])
   useEffect(() => {
     if (!enabled || !visible) return
     const controller = new AbortController()
@@ -149,6 +154,9 @@ export function useCoinbaseMarket({
             isWhaleFlow(data.whaleFlow) && data.whaleFlow.product === product
               ? data.whaleFlow
               : null,
+          )
+          setBook(
+            isOrderBookView(data.book) && data.book.product === product ? data.book : null,
           )
           update((previous) => {
             if (!previous.snapshot) return previous
@@ -301,6 +309,8 @@ export function useCoinbaseMarket({
     // Suppress the readout unless the feed is genuinely live: a paused, stale or reconnecting
     // stream would otherwise leave a frozen dollar figure on screen looking current.
     whaleFlow: state === 'live' ? whaleFlow : null,
+    // Same rule for resting depth: never draw a frozen book over a disconnected chart.
+    book: state === 'live' ? book : null,
     retry,
   }
 }

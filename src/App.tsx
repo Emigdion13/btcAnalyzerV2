@@ -36,6 +36,7 @@ import {
   Redo2,
   RotateCcw,
   Waves,
+  Layers,
   Ruler,
   Search,
   Settings2,
@@ -60,9 +61,11 @@ import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
+import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
 import type { ToastMessage } from './components/ui'
+import { demoBook } from './lib/demo-book'
 import {
   ASSETS,
   TIMEFRAMES,
@@ -226,6 +229,7 @@ export default function App() {
   const [tabs, setTabs] = useLocalState<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
   const [watchlist, setWatchlist] = useLocalState<string[]>('watchlist', DEFAULT_WATCHLIST)
   const [whaleBoxVisible, setWhaleBoxVisible] = useLocalState('whale-box-visible', true)
+  const [bookBoxVisible, setBookBoxVisible] = useLocalState('book-strength-box-visible', true)
   const [settings, setSettings] = useLocalState<ChartSettings>('chart-settings', DEFAULT_SETTINGS)
   const [indicators, setIndicators] = useLocalState<Indicator[]>('indicators', DEFAULT_INDICATORS)
   const [allDrawings, setAllDrawings] = useLocalState<Record<string, Drawing[]>>('drawings', {})
@@ -337,6 +341,16 @@ export default function App() {
       { ...last, close, high: Math.max(last.high, close), low: Math.min(last.low, close) },
     ]
   }, [source, demoHistory, syntheticQuotes, symbol])
+  // Live resting book comes from the Coinbase SSE stream; demo mode renders a clearly-labeled
+  // synthetic book so the depth/strength feature stays explorable offline. Never both at once.
+  const demoBookView = useMemo(
+    () =>
+      source === 'demo' && simulatedCandles.length
+        ? demoBook(symbol, simulatedCandles, Date.now() / 1000)
+        : null,
+    [source, symbol, simulatedCandles],
+  )
+  const bookView = replayIndex === null ? (live.book ?? demoBookView) : null
   const availableCandles =
     source === 'coinbase' ? (live.snapshot?.candles ?? EMPTY_CANDLES) : simulatedCandles
   const baseCandles = replaySnapshot ?? availableCandles
@@ -1220,6 +1234,18 @@ export default function App() {
                   {whaleBoxVisible ? 'Hide whale flow box' : 'Show whale flow box'}
                 </MenuItem>
                 <MenuItem
+                  icon={Layers}
+                  selected={bookBoxVisible}
+                  onClick={() => {
+                    setBookBoxVisible(!bookBoxVisible)
+                    close()
+                  }}
+                >
+                  {bookBoxVisible
+                    ? 'Hide book depth & strength'
+                    : 'Show book depth & strength'}
+                </MenuItem>
+                <MenuItem
                   icon={RotateCcw}
                   onClick={() => {
                     setSettings(DEFAULT_SETTINGS)
@@ -1227,6 +1253,7 @@ export default function App() {
                     setStudioOpen(true)
                     setSidePanel('watchlist')
                     setWhaleBoxVisible(true)
+                    setBookBoxVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1546,9 +1573,13 @@ export default function App() {
                   onIndicatorRemove={removeIndicator}
                   onIndicatorRetry={() => setTimeframeRetry((n) => n + 1)}
                   replay={replayIndex !== null}
+                  book={bookView}
                 />
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
+                )}
+                {source === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
+                  <BookStrengthBox book={bookView} onClose={() => setBookBoxVisible(false)} />
                 )}
                 {source === 'coinbase' && !hasData && (
                   <div className="market-feedback" role="status">

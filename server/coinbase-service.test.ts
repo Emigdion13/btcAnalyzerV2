@@ -162,6 +162,94 @@ class FakeSocket extends EventTarget {
   }
 }
 
+it('subscribes level2 for the charted product and streams book walls + depth profile', async () => {
+  const { rest } = fixture()
+  let socket: FakeSocket | undefined
+  const service = new CoinbaseService({
+    rest,
+    socketFactory: () => {
+      socket = new FakeSocket()
+      return socket as unknown as WebSocket
+    },
+  })
+  const api = createMarketApi(service)
+  const server = createServer((req, res) => {
+    if (!api.handle(req, res)) res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const controller = new AbortController()
+  closers.push(() => {
+    controller.abort()
+    api.close()
+    server.closeAllConnections()
+    server.close()
+  })
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  await fetch(`${origin}/api/coinbase/candles?product=BTC-USD&interval=1m&limit=50`)
+  const response = await fetch(
+    `${origin}/api/coinbase/stream?product=BTC-USD&interval=1m&products=ETH-USD`,
+    { signal: controller.signal },
+  )
+  const reader = response.body!.getReader(),
+    decoder = new TextDecoder()
+  await reader.read()
+  // level2 is subscribed for the charted product only, via its own channel message.
+  expect(socket!.sent.join('')).toContain('level2')
+  const level2Subscribe = socket!.sent
+    .map((line) => JSON.parse(line))
+    .find(
+      (message) =>
+        message.type === 'subscribe' &&
+        Array.isArray(message.channels) &&
+        message.channels.includes('level2'),
+    )
+  expect(level2Subscribe.product_ids).toEqual(['BTC-USD'])
+  // Full-book snapshot: an ordinary background ladder plus a clearly larger wall below mid.
+  const bids: string[][] = []
+  const asks: string[][] = []
+  for (let i = 0; i < 30; i++) {
+    bids.push([String(99_970 - i), '1']) // ~$100k per background level
+    asks.push([String(100_030 + i), '1'])
+  }
+  for (let i = 0; i < 3; i++) bids.push([String(99_700 + i * 0.01), '10']) // ~$1M per level
+  for (let i = 0; i < 2; i++) asks.push([String(100_250 + i * 0.01), '8'])
+  socket!.emit({ type: 'snapshot', product_id: 'BTC-USD', bids, asks })
+  // A watchlist-only pair is not level2-subscribed; its snapshot must be ignored.
+  socket!.emit({ type: 'snapshot', product_id: 'ETH-USD', bids: [], asks: [] })
+  let payload: Record<string, unknown> | undefined
+  for (let attempt = 0; attempt < 6 && !payload; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('"book"'))
+    if (line) payload = JSON.parse(line.slice(6))
+  }
+  const book = payload?.book as {
+    product: string
+    mid: number
+    spread: number
+    supports: { price: number; notional: number }[]
+    bins: unknown[]
+    persistenceSeconds: number
+  } | undefined
+  expect(book).toBeDefined()
+  expect(book!.product).toBe('BTC-USD')
+  expect(book!.mid).toBeCloseTo(100_000)
+  expect(book!.spread).toBeCloseTo(60)
+  expect(book!.bins.length).toBeGreaterThan(0)
+  // The three 10 BTC levels at ~99,701 are the strongest cluster below mid (~$3M).
+  expect(book!.supports.length).toBeGreaterThanOrEqual(1)
+  expect(book!.supports[0].notional).toBeGreaterThan(2_900_000)
+  expect(book!.supports[0].price).toBeGreaterThan(99_700)
+  expect(book!.supports[0].price).toBeLessThan(99_705)
+  expect(book!.persistenceSeconds).toBeLessThanOrEqual(60)
+  // A level2 update folds into the next view.
+  socket!.emit({
+    type: 'l2update',
+    product_id: 'BTC-USD',
+    changes: [['buy', '99702', '0'], ['buy', '99701', '0'], ['buy', '99700', '0']],
+  })
+  controller.abort()
+}, 20_000)
+
 it('bridges real SSE framing with batched trade updates and disconnection state', async () => {
   const { rest } = fixture()
   let socket: FakeSocket | undefined

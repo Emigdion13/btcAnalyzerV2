@@ -102,6 +102,7 @@ import {
   DEFAULT_SETTINGS,
   SMC_DEFAULTS,
   SR_BREAKS_RETESTS_DEFAULTS,
+  COINBASE_STRIKE_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
 import type { WorkspaceBackup } from './lib/workspace-backup'
@@ -742,6 +743,7 @@ export default function App() {
         ...(kind === 'cm-ult-macd' ? { cmMacd: { ...CM_MACD_DEFAULTS } } : {}),
         ...(kind === 'smart-money-concepts' ? { smc: { ...SMC_DEFAULTS } } : {}),
         ...(kind === 'sr-breaks-retests' ? { sr: { ...SR_BREAKS_RETESTS_DEFAULTS } } : {}),
+        ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)

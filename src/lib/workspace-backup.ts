@@ -3,6 +3,7 @@ import { isProductId } from '../../shared/coinbase'
 import { isCmMacdSettings } from './cm-ult-macd'
 import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
 import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
+import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -104,6 +105,7 @@ function indicator(value: unknown): Indicator {
       'cm-ult-macd',
       'smart-money-concepts',
       'sr-breaks-retests',
+      'coinbase-strike',
       'vwap',
       'volume',
       'custom',
@@ -190,6 +192,21 @@ function indicator(value: unknown): Indicator {
       boxWidth: settings.boxWidth,
     }
     result.period = result.sr.lookbackPeriod
+  }
+  if (kind === 'coinbase-strike' && i.strike !== undefined) {
+    const settings = i.strike
+    if (!isCoinbaseStrikeSettings(settings)) invalid('Coinbase Strike settings')
+    result.strike = {
+      intervalMinutes: settings.intervalMinutes,
+      buffer: settings.buffer,
+      showTargets: settings.showTargets,
+      showStatusBadge: settings.showStatusBadge,
+      customStrike: settings.customStrike,
+      strikeColor: settings.strikeColor,
+      upColor: settings.upColor,
+      downColor: settings.downColor,
+    }
+    result.period = result.strike.intervalMinutes
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

@@ -47,6 +47,7 @@ import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
+import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -520,6 +521,7 @@ export function IndicatorSettingsDialog(props: {
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'sr-breaks-retests')
     return <SrBreaksRetestsSettingsDialog {...props} />
+  if (props.indicator.kind === 'coinbase-strike') return <CoinbaseStrikeSettingsDialog {...props} />
   return <StandardIndicatorSettingsDialog {...props} />
 }
 

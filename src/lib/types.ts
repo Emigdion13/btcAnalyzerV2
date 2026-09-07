@@ -17,6 +17,7 @@ export type IndicatorKind =
   | 'cm-ult-macd'
   | 'smart-money-concepts'
   | 'sr-breaks-retests'
+  | 'coinbase-strike'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -168,6 +169,36 @@ export const SR_BREAKS_RETESTS_DEFAULTS: Readonly<SrBreaksRetestsSettings> = {
   boxWidth: 1,
 }
 
+export interface CoinbaseStrikeSettings {
+  /** Contract interval in minutes (5, 15, 30, 60, 240, 1440, etc.). */
+  intervalMinutes: number
+  /** Buffer / Target spread in USD. */
+  buffer: number
+  /** Whether to show upper/lower target buffer lines. */
+  showTargets: boolean
+  /** Whether to display the live UP/DOWN status badge on chart. */
+  showStatusBadge: boolean
+  /** Optional custom strike override (0 = auto interval open price). */
+  customStrike: number
+  /** Strike line color (default: #f5a623). */
+  strikeColor: string
+  /** Bullish / UP winning color (default: #2bb99b). */
+  upColor: string
+  /** Bearish / DOWN winning color (default: #ed6773). */
+  downColor: string
+}
+
+export const COINBASE_STRIKE_DEFAULTS: Readonly<CoinbaseStrikeSettings> = {
+  intervalMinutes: 15,
+  buffer: 50,
+  showTargets: false,
+  showStatusBadge: true,
+  customStrike: 0,
+  strikeColor: '#f5a623',
+  upColor: '#2bb99b',
+  downColor: '#ed6773',
+}
+
 export interface Plot {
   title: string
   color: string
@@ -204,6 +235,7 @@ export interface Indicator {
   cmMacd?: CmMacdSettings
   smc?: SmartMoneyConceptsSettings
   sr?: SrBreaksRetestsSettings
+  strike?: CoinbaseStrikeSettings
 }
 export interface SavedScript {
   id: string

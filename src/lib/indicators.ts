@@ -1,5 +1,6 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
+import { coinbaseStrikePlots } from './coinbase-strike'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
@@ -12,6 +13,16 @@ export const INDICATOR_CATALOG: {
   period: number
   color: string
 }[] = [
+  {
+    kind: 'coinbase-strike',
+    name: 'Coinbase BTC Up/Down Strike',
+    short: 'BTC Strike',
+    description:
+      'Mark the Coinbase 15m/1h prediction strike price with live UP/DOWN status, delta, and target buffer lines.',
+    category: 'Price Action',
+    period: 15,
+    color: '#f5a623',
+  },
   {
     kind: 'sma',
     name: 'Simple Moving Average',
@@ -115,6 +126,9 @@ export function builtInPlots(
     const settings = cmMacdSettings(indicator)
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
   }
+  if (indicator.kind === 'coinbase-strike') {
+    return coinbaseStrikePlots(candles, indicator)
+  }
   // Smart Money Concepts is drawn as a native SVG price overlay in ChartView.
   // It intentionally has no Lightweight Charts line/pane series.
   if (indicator.kind === 'smart-money-concepts') return []
@@ -179,6 +193,36 @@ export function builtInPlots(
 }
 
 export const SCRIPT_TEMPLATES = [
+  {
+    name: 'Coinbase BTC Up/Down Strike',
+    source: `// Coinbase BTC "Up or Down" Strike Line Indicator
+const intervalMinutes = input.number("Contract Period (Min)", 15, 1, 1440);
+const buffer = input.number("Target Buffer ($)", 50, 0, 5000);
+const intervalSec = intervalMinutes * 60;
+
+let currentStrike = null;
+let currentInterval = -1;
+const strikeLine = [];
+const upperBand = [];
+const lowerBand = [];
+
+for (let i = 0; i < time.length; i++) {
+  const intervalStart = Math.floor(time[i] / intervalSec) * intervalSec;
+  if (intervalStart !== currentInterval) {
+    currentInterval = intervalStart;
+    currentStrike = open[i];
+  }
+  strikeLine.push(currentStrike);
+  upperBand.push(buffer > 0 && currentStrike !== null ? currentStrike + buffer : null);
+  lowerBand.push(buffer > 0 && currentStrike !== null ? currentStrike - buffer : null);
+}
+
+plot(strikeLine, { title: "Strike (" + intervalMinutes + "m)", color: "#f5a623", pane: "price", lineWidth: 2 });
+if (buffer > 0) {
+  plot(upperBand, { title: "Strike + Buffer", color: "#2bb99b", pane: "price", lineWidth: 1 });
+  plot(lowerBand, { title: "Strike - Buffer", color: "#ed6773", pane: "price", lineWidth: 1 });
+}`,
+  },
   {
     name: 'My first indicator',
     source: `// Your next edge starts here.\nconst period = input.number("Period", 20);\nconst source = close;\n\n// Smooth the noise. See the trend.\nconst average = ta.ema(source, period);\nplot(average, { title: "My EMA", color: "#b9ee82" });`,

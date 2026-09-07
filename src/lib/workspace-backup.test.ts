@@ -203,6 +203,53 @@ describe('workspace backups', () => {
     })
     expect(clean.indicators[0].period).toBe(12)
   })
+  it('round-trips Coinbase Strike inputs and rejects malformed values', () => {
+    const saved = backup()
+    saved.indicators.push({
+      id: 'strike',
+      kind: 'coinbase-strike',
+      name: 'Coinbase BTC Up/Down Strike',
+      period: 15,
+      color: '#f5a623',
+      visible: true,
+      strike: {
+        intervalMinutes: 15,
+        buffer: 50,
+        showTargets: true,
+        showStatusBadge: true,
+        customStrike: 0,
+        strikeColor: '#f5a623',
+        upColor: '#2bb99b',
+        downColor: '#ed6773',
+      },
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    expect(() =>
+      parseWorkspaceBackup({
+        ...backup(),
+        indicators: [
+          {
+            id: 'strike',
+            kind: 'coinbase-strike',
+            name: 'Strike',
+            period: 15,
+            color: '#f5a623',
+            visible: true,
+            strike: {
+              intervalMinutes: 0,
+              buffer: 50,
+              showTargets: true,
+              showStatusBadge: true,
+              customStrike: 0,
+              strikeColor: '#f5a623',
+              upColor: '#2bb99b',
+              downColor: '#ed6773',
+            },
+          },
+        ],
+      }),
+    ).toThrow(/Coinbase Strike/)
+  })
   it('writes the complete workspace and rolls back a failed import', () => {
     const data = new Map<string, string>([
       ['atlas.v1.workspace-name', '"Original"'],

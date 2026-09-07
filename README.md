@@ -231,7 +231,9 @@ Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas r
 
 ## Whale flow box
 
-A floating, draggable readout of **large executed trades on the charted Coinbase product**. It answers "is big money hitting the bid or lifting the offer right now, and how much" — showing a signed rolling total such as `+$1.24M` or `-$20.0M`, the bought/sold split, and the individual large prints with time, size and value.
+A floating, draggable readout of a **whale sweep in progress on the charted Coinbase product**. It answers "is big money hitting the bid or lifting the offer _right now_, and how much" — showing a signed figure such as `+$1.24M` or `-$20.0M`, the bought/sold split, and the individual large prints with time, size and value.
+
+**It is deliberately ephemeral.** The box is not a running total: it shows a figure only while a sweep is happening, and clears once the sweep is over. A five-second window is aggregated so the leading edge of a whale walking the book is flagged while it is still filling, and the reading moves through three states — `Building` (a directional sweep has started but has not yet cleared the size threshold), `Happening now` (it has), and `Done` (it stopped; the peak figure lingers ~4s and then disappears). At rest the box collapses to a dim "watching" pill with no number at all.
 
 - **Executed flow, not on-chain flow.** Every figure comes from fills on Coinbase's `matches` channel, which Atlas already consumes for OHLCV. It is real price impact as it happens — but it cannot see wallet deposits, custody transfers, OTC blocks, or other venues. The box states this in its info panel; see [whale flow sources](docs/whale-flow-sources.md) for the layers it does **not** cover.
 - **Direction is the taker's.** Coinbase reports the _maker_ side on a match, so `side: "sell"` is a taker buy (an up-tick). Atlas inverts this once, in `parseTrade`, and every downstream figure uses the aggressor's perspective. Trades with a missing or malformed side still count toward volume but are excluded from directional flow.
@@ -240,7 +242,7 @@ A floating, draggable readout of **large executed trades on the charted Coinbase
 
 Drag it by the grip, collapse the print list, or hide it entirely from the header — the choice persists. Re-show it from the workspace menu (**Show whale flow box**).
 
-Rolling window defaults to 1 hour. Empirically, exchange-flow signals of this kind predict **volatility** far more reliably than direction, so treat a large reading as a warning that the market is about to move, not as a trade signal. Atlas places no orders and this is not investment advice.
+**It reports what is executing, not what is about to execute.** The `matches` channel publishes fills that have already happened, so nothing here is a forecast of an order arriving in the next few seconds — the lead time is the length of the sweep itself, which for a large order being worked across the book is typically a few seconds of warning between its first fills and its last. Genuine pre-trade visibility would require resting order-book size (`level2`) or an on-chain deposit feed; both are catalogued in [whale flow sources](docs/whale-flow-sources.md) and neither is wired up. Empirically, exchange-flow signals of this kind predict **volatility** far more reliably than direction, so treat a large reading as a warning that the market is about to move, not as a trade signal. Atlas places no orders and this is not investment advice.
 
 ## Research notes (not implemented)
 

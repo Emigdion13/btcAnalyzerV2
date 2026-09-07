@@ -343,11 +343,21 @@ Available today with no external dependency:
 This is the highest value-per-unit-effort option by a wide margin, and it is the only one that
 survives the sandbox network restriction in §9.
 
-**What shipped.** `shared/whale-flow.ts` tracks large prints per product with a percentile-based
-adaptive threshold; `parseTrade` now derives `takerSide` by inverting Coinbase's documented maker
-side; the server attaches a validated `whaleFlow` snapshot to each SSE frame; and
-`src/components/WhaleFlowBox.tsx` renders the floating readout. Absorption at SR zones and a
-persisted CVD series are still open.
+**What shipped.** `shared/whale-flow.ts` detects whale _sweeps_ per product: it aggregates a
+five-second window of fills against a percentile-based adaptive threshold, so a whale walking the
+book registers while it is still filling rather than only on its single largest print.
+`parseTrade` derives `takerSide` by inverting Coinbase's documented maker side; the server
+attaches a validated `whaleFlow` snapshot to each SSE frame **only while a sweep is live**, and
+omits the field entirely otherwise; `src/components/WhaleFlowBox.tsx` renders the floating
+readout, which clears itself once the sweep ends.
+
+**Deliberate limitation.** The readout is ephemeral by design — no rolling total is retained, so a
+finished sweep leaves no number on screen. The cost is that this feed can only report execution
+already in progress: `matches` carries fills, never intent, so it cannot warn that a whale order
+is _about_ to arrive. The realised lead time is the duration of the sweep itself. Pre-trade
+visibility would need the `level2` book (resting size, same connection, no new vendor — the
+natural next increment) or the on-chain deposit tiers below. Absorption at SR zones and a
+persisted CVD series are also still open.
 
 ### 8.2 Tier 1 — free, keyless upstreams
 

@@ -1,52 +1,76 @@
 /**
- * Executed large-print ("whale") flow tracking.
+ * Live whale-burst detection on the executed tape.
  *
- * ## What this measures
+ * ## What this reports
  *
- * Every trade Coinbase reports on the `matches` channel is an EXECUTED fill on the venue's order
- * book. This module keeps a rolling window of the unusually large ones and reports the signed USD
- * notional: positive when takers were lifting offers (money in), negative when takers were hitting
- * bids (money out).
+ * Not a running total. This watches a short window (5 seconds by default) of executed fills and
+ * reports whether a large directional sweep is **building**, **happening now**, or **just
+ * finished**. Once the sweep is over the reading returns to `idle` and the number is dropped, so a
+ * stale figure never sits on screen pretending to be current.
  *
- * ## What this is NOT
+ * A whale filling size rarely produces one print — it produces a burst of fills over a couple of
+ * seconds as it walks the book. Aggregating the window (rather than thresholding individual
+ * trades) is what lets the leading edge of that sweep be flagged while it is still in progress.
  *
- * This is not on-chain data. It cannot see wallets, exchange deposits, custody transfers, OTC
- * blocks, or any activity on other venues. A "whale" here means one large order filled on this
- * Coinbase product — nothing more. See `docs/whale-flow-sources.md` for the layers this does not
- * cover and why on-chain intent signals need a paid labeled feed.
+ * ## What this cannot do
  *
- * ## Threshold calibration
+ * It cannot see a trade before it executes. Nothing in the `matches` channel exposes resting
+ * orders or intent, so "building" means *a sweep has started and is still going*, not *a whale
+ * will arrive shortly*. True pre-trade warning needs the level2 order book (large resting size) or
+ * an on-chain deposit feed — see `docs/whale-flow-sources.md`.
  *
- * A fixed USD threshold cannot work across a catalog where BTC-USD and a thin altcoin trade in the
- * same UI. The threshold is therefore a high percentile of recently observed trade notionals, so it
- * adapts per product and per liquidity regime. Until enough trades have been sampled the tracker
- * reports `calibrated: false` and the UI labels it accordingly rather than showing a fabricated
- * number.
+ * It is also venue-local and executed-only: no wallets, deposits, custody moves, OTC blocks, or
+ * other exchanges.
  */
 
+/** Length of the live burst window, in seconds. */
+export const BURST_WINDOW_SECONDS = 5
+/** How long a finished burst stays on screen, fading, before it is dropped entirely. */
+export const LINGER_SECONDS = 4
+/** Share of the burst threshold that counts as "building". */
+export const BUILDING_RATIO = 0.35
 /** Trades sampled before the percentile threshold is trustworthy. */
 export const CALIBRATION_MINIMUM = 200
 /** Reservoir of recent trade notionals used to derive the threshold. */
 export const SAMPLE_CAPACITY = 1500
-/** Percentile of recent trade notionals that qualifies as a whale print. */
+/** Percentile of recent trade notionals that sizes a burst. */
 export const DEFAULT_PERCENTILE = 0.99
 /** Absolute floor so a dead-quiet market cannot mark dust as a whale. */
 export const MINIMUM_THRESHOLD = 25_000
-/** Prints retained for transport/UI. */
-export const MAX_PRINTS = 50
+/** Prints carried for display. */
+export const MAX_PRINTS = 12
+
+/**
+ * `idle`     nothing worth showing — the UI must render no figure
+ * `building` a directional sweep is under way but has not yet cleared the threshold
+ * `active`   the sweep has cleared the threshold; this is happening right now
+ * `fading`   the sweep stopped; the final figure lingers briefly, then clears
+ */
+export type WhalePhase = 'idle' | 'building' | 'active' | 'fading'
 
 export interface WhaleFlowOptions {
   windowSeconds?: number
+  lingerSeconds?: number
   percentile?: number
   minimumThreshold?: number
   maxPrints?: number
+  buildingRatio?: number
 }
 
-interface TrackedPrint {
+interface WindowTrade {
   id: number
+  /** Exchange timestamp, for display. */
   time: number
+  /**
+   * Local arrival time, used for windowing.
+   *
+   * At a five-second window, clock skew between the venue and this process would otherwise evict
+   * trades instantly or never. Display uses exchange time; eviction uses arrival time.
+   */
+  arrived: number
   price: number
   size: number
+  /** Signed USD notional: positive when the taker bought. */
   notional: number
   side: 'buy' | 'sell'
 }
@@ -59,36 +83,51 @@ interface TrackedTrade {
   takerSide?: 'buy' | 'sell' | null
 }
 
-/**
- * Rolling whale-print tracker for a single product.
- *
- * Time is supplied by the caller (trade timestamps and an explicit `now`) so the class is
- * deterministic and testable without faking clocks.
- */
+interface BurstMemory {
+  net: number
+  bought: number
+  sold: number
+  count: number
+  prints: WindowTrade[]
+  /**
+   * When the sweep is projected to finish: the last contributing fill's arrival plus the window
+   * length, i.e. the moment the window would drain if nothing else arrives.
+   *
+   * Derived from trade data rather than from when `snapshot` happened to be called, so the linger
+   * behaves identically whether the caller polls at 1 Hz or not at all for an hour.
+   */
+  endsAt: number
+}
+
 export class WhaleFlowTracker {
   readonly product: string
   readonly windowSeconds: number
+  private readonly lingerSeconds: number
   private readonly percentile: number
   private readonly minimumThreshold: number
   private readonly maxPrints: number
-  /** Recent trade notionals, oldest first, capped at SAMPLE_CAPACITY. */
+  private readonly buildingRatio: number
   private samples: number[] = []
-  /** Whale prints inside the window, oldest first. */
-  private prints: TrackedPrint[] = []
+  /** Every sided trade inside the live window, oldest first. */
+  private window: WindowTrade[] = []
   private seen = new Set<number>()
   private cachedThreshold = 0
   private thresholdDirty = true
   private observed = 0
+  /** Snapshot of the last burst that reached `active`, kept only for the linger period. */
+  private lastBurst: BurstMemory | null = null
+  private burstOpen = false
 
   constructor(product: string, options: WhaleFlowOptions = {}) {
     this.product = product
-    this.windowSeconds = Math.max(60, Math.floor(options.windowSeconds ?? 3600))
+    this.windowSeconds = Math.max(1, options.windowSeconds ?? BURST_WINDOW_SECONDS)
+    this.lingerSeconds = Math.max(0, options.lingerSeconds ?? LINGER_SECONDS)
     this.percentile = Math.min(0.999, Math.max(0.5, options.percentile ?? DEFAULT_PERCENTILE))
     this.minimumThreshold = Math.max(0, options.minimumThreshold ?? MINIMUM_THRESHOLD)
     this.maxPrints = Math.max(1, Math.floor(options.maxPrints ?? MAX_PRINTS))
+    this.buildingRatio = Math.min(0.95, Math.max(0.05, options.buildingRatio ?? BUILDING_RATIO))
   }
 
-  /** Total trades accepted into the calibration sample. */
   get sampled(): number {
     return this.observed
   }
@@ -97,12 +136,7 @@ export class WhaleFlowTracker {
     return this.observed >= CALIBRATION_MINIMUM
   }
 
-  /**
-   * Current USD notional a trade must clear to register as a whale print.
-   *
-   * Before calibration this still returns a usable number (the floor) so the tracker never divides
-   * by an undefined threshold, but `calibrated` stays false so the UI can say so.
-   */
+  /** USD notional a burst must reach inside the window to count as whale activity. */
   get threshold(): number {
     if (this.thresholdDirty) {
       this.cachedThreshold = this.computeThreshold()
@@ -119,88 +153,145 @@ export class WhaleFlowTracker {
   }
 
   /**
-   * Feed one trade.
+   * Feed one trade. `now` is the local clock in seconds.
    *
-   * Returns the print if the trade qualified as a whale print, otherwise null. Duplicate trade IDs
-   * (Coinbase replays these across reconnects) are ignored, matching how CandleTracker dedupes.
+   * Every valid trade calibrates the threshold. Only trades with a known aggressor enter the
+   * directional window.
    */
-  apply(trade: TrackedTrade, now: number): TrackedPrint | null {
-    if (!Number.isFinite(trade.price) || !Number.isFinite(trade.size)) return null
-    if (trade.price <= 0 || trade.size <= 0) return null
-    if (!Number.isInteger(trade.id) || this.seen.has(trade.id)) return null
+  apply(trade: TrackedTrade, now: number): boolean {
+    if (!Number.isFinite(trade.price) || !Number.isFinite(trade.size)) return false
+    if (trade.price <= 0 || trade.size <= 0) return false
+    if (!Number.isInteger(trade.id) || this.seen.has(trade.id)) return false
     this.seen.add(trade.id)
-    // Bound the dedupe set; trade IDs increase monotonically so old ones cannot recur in practice.
-    if (this.seen.size > SAMPLE_CAPACITY * 2) {
-      const keep = [...this.seen].slice(-SAMPLE_CAPACITY)
-      this.seen = new Set(keep)
-    }
+    if (this.seen.size > SAMPLE_CAPACITY * 2)
+      this.seen = new Set([...this.seen].slice(-SAMPLE_CAPACITY))
 
     const notional = trade.price * trade.size
-    if (!Number.isFinite(notional)) return null
+    if (!Number.isFinite(notional)) return false
 
-    // Every trade calibrates the threshold, including ones with an unknown side.
     this.samples.push(notional)
     if (this.samples.length > SAMPLE_CAPACITY) this.samples.shift()
     this.observed++
     this.thresholdDirty = true
 
-    // Directional flow requires a known aggressor.
-    if (trade.takerSide !== 'buy' && trade.takerSide !== 'sell') return null
-    if (notional < this.threshold) return null
+    if (trade.takerSide !== 'buy' && trade.takerSide !== 'sell') return false
 
-    const print: TrackedPrint = {
+    this.window.push({
       id: trade.id,
-      time: trade.time,
+      time: Number.isFinite(trade.time) ? trade.time : now,
+      arrived: now,
       price: trade.price,
       size: trade.size,
       notional: trade.takerSide === 'buy' ? notional : -notional,
       side: trade.takerSide,
-    }
-    this.prints.push(print)
+    })
     this.evict(now)
-    return print
+    return true
   }
 
-  /** Drop prints that have aged out of the window. */
   private evict(now: number) {
     const cutoff = now - this.windowSeconds
-    if (this.prints.length && this.prints[0].time < cutoff)
-      this.prints = this.prints.filter((p) => p.time >= cutoff)
-    // Retaining more than the transport cap wastes memory without adding information.
-    const overflow = this.prints.length - this.maxPrints * 4
-    if (overflow > 0) this.prints.splice(0, overflow)
+    if (this.window.length && this.window[0].arrived < cutoff)
+      this.window = this.window.filter((t) => t.arrived >= cutoff)
   }
 
-  /** Immutable snapshot of the current window. */
+  /**
+   * Current state of the window.
+   *
+   * Returns `null` when there is nothing to show, so callers can omit the payload entirely rather
+   * than transmitting a zeroed reading the UI would have to special-case.
+   */
   snapshot(now: number) {
     this.evict(now)
     let bought = 0,
       sold = 0
-    for (const print of this.prints) {
-      if (print.notional > 0) bought += print.notional
-      else sold -= print.notional
+    for (const trade of this.window) {
+      if (trade.notional > 0) bought += trade.notional
+      else sold -= trade.notional
     }
+    const net = bought - sold
+    const magnitude = Math.abs(net)
+    const threshold = this.threshold
+    const intensity = threshold > 0 ? magnitude / threshold : 0
+
+    let phase: WhalePhase
+    if (intensity >= 1) phase = 'active'
+    else if (intensity >= this.buildingRatio && this.window.length >= 2) phase = 'building'
+    else phase = 'idle'
+
+    if (phase === 'active') {
+      // Remember the burst at its strongest so the linger shows what actually happened.
+      // `endedAt` tracks the last moment the sweep was observed live.
+      const endsAt = this.window[this.window.length - 1].arrived + this.windowSeconds
+      const strongest =
+        !this.lastBurst || !this.burstOpen || magnitude > Math.abs(this.lastBurst.net)
+      if (strongest)
+        this.lastBurst = {
+          net,
+          bought,
+          sold,
+          count: this.window.length,
+          prints: this.topPrints(),
+          endsAt,
+        }
+      else if (this.lastBurst) this.lastBurst.endsAt = endsAt
+      this.burstOpen = true
+    } else {
+      this.burstOpen = false
+    }
+
+    if (phase !== 'active' && this.lastBurst) {
+      const age = now - this.lastBurst.endsAt
+      if (age <= this.lingerSeconds) {
+        // A fresh sweep starting during the linger takes precedence over the old figure.
+        if (phase !== 'building') phase = 'fading'
+      } else {
+        this.lastBurst = null
+      }
+    }
+
+    if (phase === 'idle') return null
+
+    const source =
+      phase === 'fading' && this.lastBurst
+        ? this.lastBurst
+        : { net, bought, sold, count: this.window.length, prints: this.topPrints() }
+
     return {
       product: this.product,
-      net: bought - sold,
-      bought,
-      sold,
-      count: this.prints.length,
-      threshold: this.threshold,
+      phase,
+      net: source.net,
+      bought: source.bought,
+      sold: source.sold,
+      count: source.count,
+      threshold,
       windowSeconds: this.windowSeconds,
-      // Newest first for display.
-      prints: this.prints.slice(-this.maxPrints).reverse(),
+      // Clamped so the UI can drive a meter without guarding against overflow.
+      intensity: Math.min(4, Math.max(0, phase === 'fading' ? 1 : intensity)),
+      prints: source.prints.map((t) => ({
+        id: t.id,
+        time: t.time,
+        price: t.price,
+        size: t.size,
+        notional: t.notional,
+        side: t.side,
+      })),
       calibrated: this.calibrated,
       sampled: this.observed,
     }
+  }
+
+  /** Largest trades in the window by absolute notional, newest first among equals. */
+  private topPrints(): WindowTrade[] {
+    return [...this.window]
+      .sort((a, b) => Math.abs(b.notional) - Math.abs(a.notional) || b.arrived - a.arrived)
+      .slice(0, this.maxPrints)
+      .sort((a, b) => b.arrived - a.arrived)
   }
 }
 
 /**
  * Format a signed USD notional the way a trader scans it: "+$1.2M", "-$20.0M", "+$100K".
- *
- * Uses two significant decimals below 10 units of a magnitude and one above, so the width stays
- * stable in a fixed-position readout.
  */
 export function formatNotional(value: number): string {
   if (!Number.isFinite(value)) return '—'

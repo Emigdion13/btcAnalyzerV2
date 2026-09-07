@@ -224,7 +224,7 @@ it('bridges real SSE framing with batched trade updates and disconnection state'
   controller.abort()
 })
 
-it('streams executed whale flow with taker-side direction and product isolation', async () => {
+it('streams a whale burst and then drops it from the payload once it is over', async () => {
   const { rest } = fixture()
   let socket: FakeSocket | undefined
   const service = new CoinbaseService({
@@ -233,6 +233,9 @@ it('streams executed whale flow with taker-side direction and product isolation'
       socket = new FakeSocket()
       return socket as unknown as WebSocket
     },
+    // Short window/linger so the test can observe the burst expire without a long wait. Must
+    // stay above the 1 Hz pulse or the burst would expire before any payload could carry it.
+    whaleFlow: { windowSeconds: 2, lingerSeconds: 0 },
   })
   const api = createMarketApi(service)
   const server = createServer((req, res) => {
@@ -257,7 +260,9 @@ it('streams executed whale flow with taker-side direction and product isolation'
 
   const at = (offset: number) => new Date(Date.now() + offset).toISOString()
   let id = 1
-  // Calibrate with small trades so the percentile threshold is meaningful.
+  // Calibrate with small trades so the percentile threshold is meaningful. No `side`, so they
+  // size the threshold without counting as directional flow -- otherwise 260 fills arriving in
+  // the same instant would themselves register as a sweep.
   for (let i = 0; i < 260; i++)
     socket!.emit({
       type: 'match',
@@ -266,7 +271,6 @@ it('streams executed whale flow with taker-side direction and product isolation'
       price: '100',
       size: '1',
       time: at(i),
-      side: 'sell',
     })
   // A large taker BUY: Coinbase reports the MAKER side, so side:'sell' is an up-tick.
   socket!.emit({
@@ -297,6 +301,7 @@ it('streams executed whale flow with taker-side direction and product isolation'
   }
   const flow = payload?.whaleFlow as {
     product: string
+    phase: string
     net: number
     bought: number
     sold: number
@@ -306,6 +311,7 @@ it('streams executed whale flow with taker-side direction and product isolation'
   }
   expect(flow.product).toBe('BTC-USD')
   expect(flow.calibrated).toBe(true)
+  expect(flow.phase).toBe('active')
   // 5 BTC at $100k lifted the offer: +$500k, and the ETH print is excluded.
   expect(flow.net).toBe(500_000)
   expect(flow.bought).toBe(500_000)
@@ -313,7 +319,20 @@ it('streams executed whale flow with taker-side direction and product isolation'
   expect(flow.count).toBe(1)
   expect(flow.prints[0].side).toBe('buy')
 
-  // A large taker SELL arrives as maker side 'buy' and must reduce net flow.
+  // The burst is over. The field must vanish from the payload entirely rather than
+  // reporting a stale total, so the client has nothing to leave on screen.
+  let cleared = false
+  for (let attempt = 0; attempt < 8 && !cleared; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    for (const line of chunk.split('\n')) {
+      if (!line.startsWith('data: ')) continue
+      const parsed = JSON.parse(line.slice(6))
+      if (parsed.whaleFlow === undefined) cleared = true
+    }
+  }
+  expect(cleared).toBe(true)
+
+  // A large taker SELL arrives as maker side 'buy' and drives a fresh outflow burst.
   socket!.emit({
     type: 'match',
     product_id: 'BTC-USD',
@@ -328,10 +347,13 @@ it('streams executed whale flow with taker-side direction and product isolation'
     const chunk = decoder.decode((await reader.read()).value)
     const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('whaleFlow'))
     const parsed = line ? JSON.parse(line.slice(6)) : undefined
-    if (parsed?.whaleFlow?.count === 2) after = parsed
+    if (parsed?.whaleFlow) after = parsed
   }
-  const updated = after?.whaleFlow as { net: number; sold: number }
+  const updated = after?.whaleFlow as { net: number; sold: number; count: number }
+  // Only the new sell is in the window; the earlier buy did not persist into it.
+  expect(updated.count).toBe(1)
   expect(updated.sold).toBe(800_000)
-  expect(updated.net).toBe(-300_000)
+  expect(updated.net).toBe(-800_000)
   controller.abort()
-})
+  // Several 1 Hz pulses must elapse for the burst to appear, expire, and reappear.
+}, 20_000)

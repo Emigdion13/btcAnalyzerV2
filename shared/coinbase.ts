@@ -61,21 +61,35 @@ export interface WhalePrint {
   notional: number
   side: 'buy' | 'sell'
 }
-/** Rolling executed-flow summary for one product. */
+/**
+ * Live state of a whale sweep.
+ *
+ * `building` a directional sweep is under way but has not cleared the threshold
+ * `active`   the sweep cleared the threshold; it is happening right now
+ * `fading`   the sweep stopped; the final figure lingers briefly, then disappears
+ *
+ * There is no idle value: when nothing is happening the payload is omitted entirely so no figure
+ * is left on screen.
+ */
+export type WhalePhase = 'building' | 'active' | 'fading'
+/** Snapshot of an in-progress or just-finished whale sweep. */
 export interface WhaleFlow {
   product: string
-  /** Signed USD notional of large prints inside the window. */
+  phase: WhalePhase
+  /** Signed USD notional swept inside the live window. */
   net: number
-  /** Unsigned USD notional bought / sold by large prints inside the window. */
+  /** Unsigned USD notional bought / sold inside the live window. */
   bought: number
   sold: number
-  /** Number of large prints inside the window. */
+  /** Trades in the sweep. */
   count: number
-  /** USD notional threshold a single trade must clear to count as a whale print. */
+  /** USD notional a sweep must reach inside the window to count as whale activity. */
   threshold: number
-  /** Window length in seconds. */
+  /** Live window length in seconds. */
   windowSeconds: number
-  /** Most recent prints, newest first, capped for transport. */
+  /** Sweep size as a multiple of the threshold, clamped to 4. */
+  intensity: number
+  /** Largest prints in the sweep, newest first. */
   prints: WhalePrint[]
   /**
    * False when the threshold is still a bootstrap default because too few trades have been
@@ -90,7 +104,8 @@ export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
   const f = value as WhaleFlow
   return (
     isProductId(f.product) &&
-    [f.net, f.bought, f.sold, f.threshold, f.windowSeconds].every(
+    ['building', 'active', 'fading'].includes(f.phase) &&
+    [f.net, f.bought, f.sold, f.threshold, f.windowSeconds, f.intensity].every(
       (v) => typeof v === 'number' && Number.isFinite(v),
     ) &&
     Number.isInteger(f.count) &&
@@ -100,6 +115,7 @@ export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
     f.bought >= 0 &&
     f.sold >= 0 &&
     f.threshold > 0 &&
+    f.intensity >= 0 &&
     typeof f.calibrated === 'boolean' &&
     Array.isArray(f.prints) &&
     f.prints.length <= 50 &&

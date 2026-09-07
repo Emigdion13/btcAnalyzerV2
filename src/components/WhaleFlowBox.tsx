@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { GripVertical, Info, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Activity, GripVertical, Info, X } from 'lucide-react'
 import type { WhaleFlow } from '../../shared/coinbase'
 import { formatNotional } from '../../shared/whale-flow'
-
-const WINDOW_LABEL = (seconds: number) =>
-  seconds % 3600 === 0 ? `${seconds / 3600}h` : `${Math.round(seconds / 60)}m`
 
 const clockTime = (seconds: number) =>
   new Date(seconds * 1000).toLocaleTimeString(undefined, {
@@ -14,21 +11,26 @@ const clockTime = (seconds: number) =>
     hour12: false,
   })
 
+const PHASE_LABEL: Record<WhaleFlow['phase'], string> = {
+  building: 'Building',
+  active: 'Happening now',
+  fading: 'Done',
+}
+
 /**
- * Floating readout of large EXECUTED trades on the charted Coinbase product.
+ * Transient readout of a whale sweep on the charted Coinbase product.
  *
- * Deliberately not called an on-chain whale tracker: it reports orders filled on this venue's
- * book, which is price impact as it happens, not wallet movement or intent. The disclosure in the
- * footer says so, because conflating the two is the single most common error in whale analysis.
+ * Ephemeral by design: a figure appears while a large directional sweep is under way, lingers a
+ * few seconds after it stops, then disappears. Nothing stale is left on screen. When no sweep is
+ * running the box collapses to a dim "watching" pill so the feature is still discoverable without
+ * displaying a number.
  */
 export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClose: () => void }) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
-  const [expanded, setExpanded] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
   const dragState = useRef<{ dx: number; dy: number } | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
-  // Keep the box on screen when the viewport shrinks.
   useEffect(() => {
     if (!position) return
     const clamp = () => {
@@ -49,7 +51,6 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
   }, [position])
 
   useEffect(() => {
-    if (!dragState.current) return
     const move = (event: PointerEvent) => {
       const drag = dragState.current
       const box = boxRef.current
@@ -75,30 +76,31 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }
-  })
+  }, [])
 
   const startDrag = (event: React.PointerEvent) => {
     const box = boxRef.current
     if (!box) return
     const rect = box.getBoundingClientRect()
     dragState.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top }
-    // Switch from the CSS-anchored default to explicit coordinates on first drag.
     setPosition({ x: rect.left, y: rect.top })
   }
 
   const net = flow?.net ?? 0
   const direction = net > 0 ? 'in' : net < 0 ? 'out' : 'flat'
-  const prints = useMemo(() => flow?.prints.slice(0, expanded ? 12 : 4) ?? [], [flow, expanded])
+  const phase = flow?.phase ?? 'idle'
+  const anchored = position
+    ? { left: position.x, top: position.y, right: 'auto' as const, bottom: 'auto' as const }
+    : undefined
 
   return (
     <div
       ref={boxRef}
-      className={`whale-box whale-box-${direction}`}
-      style={
-        position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined
-      }
-      role="complementary"
-      aria-label="Large executed trade flow"
+      className={`whale-box whale-box-${direction} whale-phase-${phase}${flow ? '' : ' is-watching'}`}
+      style={anchored}
+      role="status"
+      aria-live="polite"
+      aria-label="Live whale sweep"
     >
       <header className="whale-box-head">
         <button
@@ -111,7 +113,14 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
           <GripVertical size={13} aria-hidden />
         </button>
         <h2>Whale flow</h2>
-        {flow ? <span className="whale-box-window">{WINDOW_LABEL(flow.windowSeconds)}</span> : null}
+        {flow ? (
+          <span className={`whale-box-phase whale-box-phase-${phase}`}>
+            {phase === 'active' ? <span className="whale-pip" aria-hidden /> : null}
+            {PHASE_LABEL[flow.phase]}
+          </span>
+        ) : (
+          <span className="whale-box-phase whale-box-phase-idle">Watching</span>
+        )}
         <button
           type="button"
           className={`whale-box-icon${showInfo ? ' is-active' : ''}`}
@@ -135,16 +144,18 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
 
       {showInfo ? (
         <p className="whale-box-info">
-          Large orders <strong>filled on this Coinbase book</strong>, sized against recent trades on
-          the same product. This is executed price impact, not on-chain wallet movement — it cannot
-          see deposits, custody transfers, OTC blocks, or other venues.
+          A burst of large orders <strong>filled on this Coinbase book</strong> within{' '}
+          {flow?.windowSeconds ?? 5}s. It appears while the sweep runs and clears once it stops — it
+          is not a running total. This is executed price impact, so it{' '}
+          <strong>cannot predict a trade before it happens</strong>, and cannot see wallet deposits,
+          custody transfers, OTC blocks, or other venues.
         </p>
       ) : null}
 
       {!flow ? (
-        <p className="whale-box-empty">
-          Waiting for a live Coinbase trade stream. No flow is shown while the feed is paused,
-          stale, or disconnected.
+        <p className="whale-box-watching">
+          <Activity size={12} aria-hidden />
+          No large sweep right now.
         </p>
       ) : (
         <>
@@ -153,34 +164,36 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
               {formatNotional(net)}
             </span>
             <span className="whale-box-net-label">
-              {direction === 'in' ? 'net into' : direction === 'out' ? 'net out of' : 'balanced ·'}{' '}
-              {flow.product.replace('-USD', '')}
+              {direction === 'in'
+                ? 'sweeping into'
+                : direction === 'out'
+                  ? 'sweeping out of'
+                  : 'on'}{' '}
+              {flow.product.replace('-USD', '')} · {flow.count} fill{flow.count === 1 ? '' : 's'}
             </span>
           </div>
 
-          <div className="whale-box-split">
-            <div className="whale-box-leg">
-              <span className="whale-box-leg-label">Bought</span>
-              <span className="whale-box-leg-value is-buy">{formatNotional(flow.bought)}</span>
-            </div>
-            <div className="whale-box-leg">
-              <span className="whale-box-leg-label">Sold</span>
-              <span className="whale-box-leg-value is-sell">
-                {flow.sold ? formatNotional(-flow.sold) : '$0'}
-              </span>
-            </div>
+          <div
+            className="whale-box-meter"
+            role="presentation"
+            title={`${flow.intensity.toFixed(1)}× the ${formatNotional(flow.threshold).replace('+', '')} sweep threshold`}
+          >
+            <span
+              className="whale-box-meter-fill"
+              style={{ width: `${Math.min(100, (flow.intensity / 2) * 100)}%` }}
+            />
           </div>
 
           {!flow.calibrated ? (
             <p className="whale-box-calibrating">
-              Calibrating threshold · {flow.sampled} trades sampled. Figures are provisional until
-              this product has enough trade history to size a large print.
+              Calibrating · {flow.sampled} trades sampled. Size is provisional until this product
+              has enough history.
             </p>
           ) : null}
 
-          {prints.length ? (
+          {flow.prints.length ? (
             <ul className="whale-box-prints">
-              {prints.map((print) => (
+              {flow.prints.slice(0, 4).map((print) => (
                 <li key={print.id} className={print.side === 'buy' ? 'is-buy' : 'is-sell'}>
                   <span className="whale-print-time">{clockTime(print.time)}</span>
                   <span className="whale-print-size">
@@ -190,28 +203,7 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="whale-box-empty">
-              No trade above {formatNotional(flow.threshold).replace('+', '')} in the last{' '}
-              {WINDOW_LABEL(flow.windowSeconds)}.
-            </p>
-          )}
-
-          <footer className="whale-box-foot">
-            <span>
-              {flow.count} print{flow.count === 1 ? '' : 's'} ≥{' '}
-              {formatNotional(flow.threshold).replace('+', '')}
-            </span>
-            {flow.prints.length > 4 ? (
-              <button
-                type="button"
-                className="whale-box-more"
-                onClick={() => setExpanded((v) => !v)}
-              >
-                {expanded ? 'Show less' : 'Show more'}
-              </button>
-            ) : null}
-          </footer>
+          ) : null}
         </>
       )}
     </div>

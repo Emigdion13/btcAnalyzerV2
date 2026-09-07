@@ -3,6 +3,7 @@ import {
   isCandle,
   isProductId,
   isQuote,
+  isWhaleFlow,
   mergeCandles,
   validateHistory,
 } from '../../shared/coinbase'
@@ -13,6 +14,7 @@ import type {
   Interval,
   MarketQuote,
   StreamPayload,
+  WhaleFlow,
 } from '../../shared/coinbase'
 import { coinbaseAsset, COINBASE_DEFAULTS } from './market'
 
@@ -73,6 +75,7 @@ export function useCoinbaseMarket({
   const [view, setView] = useState<View>(() => freshView(key))
   const [products, setProducts] = useState<CoinbaseProduct[]>([])
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({})
+  const [whaleFlow, setWhaleFlow] = useState<WhaleFlow | null>(null)
   const [retryId, setRetryId] = useState(0)
   const [visible, setVisible] = useState(!document.hidden)
   const cache = useRef(new Map<string, HistorySnapshot>())
@@ -86,6 +89,8 @@ export function useCoinbaseMarket({
     document.addEventListener('visibilitychange', change)
     return () => document.removeEventListener('visibilitychange', change)
   }, [])
+  // Executed flow belongs to one product; never carry it across a symbol change.
+  useEffect(() => setWhaleFlow(null), [product])
   useEffect(() => {
     if (!enabled || !visible) return
     const controller = new AbortController()
@@ -138,6 +143,13 @@ export function useCoinbaseMarket({
             throw new Error('Invalid live market message.')
           lastEvent = Date.now()
           updateQuotes(quotesFrom(data.quotes))
+          // Independently validated; a malformed flow clears the readout rather than
+          // rendering unverified numbers next to real ones.
+          setWhaleFlow(
+            isWhaleFlow(data.whaleFlow) && data.whaleFlow.product === product
+              ? data.whaleFlow
+              : null,
+          )
           update((previous) => {
             if (!previous.snapshot) return previous
             const changed =
@@ -279,12 +291,16 @@ export function useCoinbaseMarket({
       }),
     [products],
   )
+  const state = !visible && active.snapshot ? ('paused' as const) : active.state
   return {
     ...active,
     assets,
     quotes,
     verified: products.length > 0,
-    state: !visible && active.snapshot ? ('paused' as const) : active.state,
+    state,
+    // Suppress the readout unless the feed is genuinely live: a paused, stale or reconnecting
+    // stream would otherwise leave a frozen dollar figure on screen looking current.
+    whaleFlow: state === 'live' ? whaleFlow : null,
     retry,
   }
 }

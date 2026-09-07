@@ -16,6 +16,7 @@ import type {
   MarketQuote,
   StreamPayload,
 } from '../shared/coinbase.ts'
+import { WhaleFlowTracker, type WhaleFlowOptions } from '../shared/whale-flow.ts'
 import { CoinbaseRestClient, MarketError } from './rest-client.ts'
 
 type ChartEntry = {
@@ -47,6 +48,8 @@ export class CoinbaseService {
   private message = 'Connecting to Coinbase…'
   private lastMessage = 0
   private lastTradeIds = new Map<string, number>()
+  /** Executed large-print flow, one tracker per subscribed product. */
+  private whaleFlows = new Map<string, WhaleFlowTracker>()
   private reconnectAttempt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined
   private idleTimer: ReturnType<typeof setTimeout> | undefined
@@ -55,11 +58,18 @@ export class CoinbaseService {
   private closed = false
   private serial = 0
   private socketFactory: (url: string) => WebSocket
+  /** Overrides for burst timing; exercised by tests that cannot wait out the real window. */
+  private whaleFlowOptions: WhaleFlowOptions
   constructor(
-    options: { rest?: CoinbaseRestClient; socketFactory?: (url: string) => WebSocket } = {},
+    options: {
+      rest?: CoinbaseRestClient
+      socketFactory?: (url: string) => WebSocket
+      whaleFlow?: WhaleFlowOptions
+    } = {},
   ) {
     this.rest = options.rest ?? new CoinbaseRestClient()
     this.socketFactory = options.socketFactory ?? ((url) => new WebSocket(url))
+    this.whaleFlowOptions = options.whaleFlow ?? {}
   }
   async getProducts() {
     const result = await this.rest.get('/products', 10 * 60 * 1000)
@@ -231,6 +241,9 @@ export class CoinbaseService {
       asOf: entry.asOf,
       replace,
       provisional: true,
+      // Omitted entirely when no sweep is in progress, so the client clears rather than
+      // holding a finished number on screen.
+      whaleFlow: this.whaleFlows.get(sub.product)?.snapshot(Date.now() / 1000) ?? undefined,
     }
     sub.send(payload)
     sub.revision = entry.revision
@@ -348,6 +361,9 @@ export class CoinbaseService {
         )
     }
     this.subscribed = desired
+    // Release flow trackers for products nobody is watching any more.
+    for (const product of this.whaleFlows.keys())
+      if (!desired.has(product)) this.whaleFlows.delete(product)
   }
   private onMessage(message: Record<string, unknown>) {
     if (message.type === 'error') {
@@ -377,6 +393,12 @@ export class CoinbaseService {
     const trade = parseTrade(message)
     if (trade) {
       this.lastTradeIds.set(product, Math.max(this.lastTradeIds.get(product) ?? 0, trade.id))
+      let flow = this.whaleFlows.get(product)
+      if (!flow) {
+        flow = new WhaleFlowTracker(product, this.whaleFlowOptions)
+        this.whaleFlows.set(product, flow)
+      }
+      flow.apply(trade, Date.now() / 1000)
       for (const entry of this.histories.values())
         if (entry.product === product && entry.tracker.apply(trade)) {
           entry.revision = ++this.serial
@@ -398,6 +420,7 @@ export class CoinbaseService {
     clearTimeout(this.reconnectTimer)
     clearInterval(this.pulseTimer)
     this.subscribers.clear()
+    this.whaleFlows.clear()
     const socket = this.socket
     this.socket = null
     socket?.close()

@@ -223,3 +223,137 @@ it('bridges real SSE framing with batched trade updates and disconnection state'
   expect(disconnected).toContain('"state":"reconnecting"')
   controller.abort()
 })
+
+it('streams a whale burst and then drops it from the payload once it is over', async () => {
+  const { rest } = fixture()
+  let socket: FakeSocket | undefined
+  const service = new CoinbaseService({
+    rest,
+    socketFactory: () => {
+      socket = new FakeSocket()
+      return socket as unknown as WebSocket
+    },
+    // Short window/linger so the test can observe the burst expire without a long wait. Must
+    // stay above the 1 Hz pulse or the burst would expire before any payload could carry it.
+    whaleFlow: { windowSeconds: 2, lingerSeconds: 0 },
+  })
+  const api = createMarketApi(service)
+  const server = createServer((req, res) => {
+    if (!api.handle(req, res)) res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const controller = new AbortController()
+  closers.push(() => {
+    controller.abort()
+    api.close()
+    server.closeAllConnections()
+    server.close()
+  })
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  await fetch(`${origin}/api/coinbase/candles?product=BTC-USD&interval=1m&limit=50`)
+  const response = await fetch(`${origin}/api/coinbase/stream?product=BTC-USD&interval=1m`, {
+    signal: controller.signal,
+  })
+  const reader = response.body!.getReader(),
+    decoder = new TextDecoder()
+  await reader.read()
+
+  const at = (offset: number) => new Date(Date.now() + offset).toISOString()
+  let id = 1
+  // Calibrate with small trades so the percentile threshold is meaningful. No `side`, so they
+  // size the threshold without counting as directional flow -- otherwise 260 fills arriving in
+  // the same instant would themselves register as a sweep.
+  for (let i = 0; i < 260; i++)
+    socket!.emit({
+      type: 'match',
+      product_id: 'BTC-USD',
+      trade_id: id++,
+      price: '100',
+      size: '1',
+      time: at(i),
+    })
+  // A large taker BUY: Coinbase reports the MAKER side, so side:'sell' is an up-tick.
+  socket!.emit({
+    type: 'match',
+    product_id: 'BTC-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '5',
+    time: at(1000),
+    side: 'sell',
+  })
+  // Flow on another product must not leak into the charted product's readout.
+  socket!.emit({
+    type: 'match',
+    product_id: 'ETH-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '50',
+    time: at(1001),
+    side: 'buy',
+  })
+
+  let payload: Record<string, unknown> | undefined
+  for (let attempt = 0; attempt < 6 && !payload; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('whaleFlow'))
+    if (line) payload = JSON.parse(line.slice(6))
+  }
+  const flow = payload?.whaleFlow as {
+    product: string
+    phase: string
+    net: number
+    bought: number
+    sold: number
+    count: number
+    calibrated: boolean
+    prints: { side: string; notional: number }[]
+  }
+  expect(flow.product).toBe('BTC-USD')
+  expect(flow.calibrated).toBe(true)
+  expect(flow.phase).toBe('active')
+  // 5 BTC at $100k lifted the offer: +$500k, and the ETH print is excluded.
+  expect(flow.net).toBe(500_000)
+  expect(flow.bought).toBe(500_000)
+  expect(flow.sold).toBe(0)
+  expect(flow.count).toBe(1)
+  expect(flow.prints[0].side).toBe('buy')
+
+  // The burst is over. The field must vanish from the payload entirely rather than
+  // reporting a stale total, so the client has nothing to leave on screen.
+  let cleared = false
+  for (let attempt = 0; attempt < 8 && !cleared; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    for (const line of chunk.split('\n')) {
+      if (!line.startsWith('data: ')) continue
+      const parsed = JSON.parse(line.slice(6))
+      if (parsed.whaleFlow === undefined) cleared = true
+    }
+  }
+  expect(cleared).toBe(true)
+
+  // A large taker SELL arrives as maker side 'buy' and drives a fresh outflow burst.
+  socket!.emit({
+    type: 'match',
+    product_id: 'BTC-USD',
+    trade_id: id++,
+    price: '100000',
+    size: '8',
+    time: at(2000),
+    side: 'buy',
+  })
+  let after: Record<string, unknown> | undefined
+  for (let attempt = 0; attempt < 6 && !after; attempt++) {
+    const chunk = decoder.decode((await reader.read()).value)
+    const line = chunk.split('\n').find((l) => l.startsWith('data: ') && l.includes('whaleFlow'))
+    const parsed = line ? JSON.parse(line.slice(6)) : undefined
+    if (parsed?.whaleFlow) after = parsed
+  }
+  const updated = after?.whaleFlow as { net: number; sold: number; count: number }
+  // Only the new sell is in the window; the earlier buy did not persist into it.
+  expect(updated.count).toBe(1)
+  expect(updated.sold).toBe(800_000)
+  expect(updated.net).toBe(-800_000)
+  controller.abort()
+  // Several 1 Hz pulses must elapse for the burst to appear, expire, and reappear.
+}, 20_000)

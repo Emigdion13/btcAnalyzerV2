@@ -46,6 +46,93 @@ export interface HistorySnapshot {
   revision: number
   provisional: boolean
 }
+/**
+ * A single unusually large executed trade on the venue's book.
+ *
+ * This is EXECUTED exchange flow, not an on-chain wallet transfer. It says a large order was
+ * filled on Coinbase right now; it says nothing about wallets, custody, or off-exchange activity.
+ */
+export interface WhalePrint {
+  id: number
+  time: number
+  price: number
+  size: number
+  /** Signed notional in USD: positive = taker bought, negative = taker sold. */
+  notional: number
+  side: 'buy' | 'sell'
+}
+/**
+ * Live state of a whale sweep.
+ *
+ * `building` a directional sweep is under way but has not cleared the threshold
+ * `active`   the sweep cleared the threshold; it is happening right now
+ * `fading`   the sweep stopped; the final figure lingers briefly, then disappears
+ *
+ * There is no idle value: when nothing is happening the payload is omitted entirely so no figure
+ * is left on screen.
+ */
+export type WhalePhase = 'building' | 'active' | 'fading'
+/** Snapshot of an in-progress or just-finished whale sweep. */
+export interface WhaleFlow {
+  product: string
+  phase: WhalePhase
+  /** Signed USD notional swept inside the live window. */
+  net: number
+  /** Unsigned USD notional bought / sold inside the live window. */
+  bought: number
+  sold: number
+  /** Trades in the sweep. */
+  count: number
+  /** USD notional a sweep must reach inside the window to count as whale activity. */
+  threshold: number
+  /** Live window length in seconds. */
+  windowSeconds: number
+  /** Sweep size as a multiple of the threshold, clamped to 4. */
+  intensity: number
+  /** Largest prints in the sweep, newest first. */
+  prints: WhalePrint[]
+  /**
+   * False when the threshold is still a bootstrap default because too few trades have been
+   * observed to compute a percentile. The UI must label this as calibrating.
+   */
+  calibrated: boolean
+  /** Trades observed in the calibration sample. */
+  sampled: number
+}
+export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
+  if (!value || typeof value !== 'object') return false
+  const f = value as WhaleFlow
+  return (
+    isProductId(f.product) &&
+    ['building', 'active', 'fading'].includes(f.phase) &&
+    [f.net, f.bought, f.sold, f.threshold, f.windowSeconds, f.intensity].every(
+      (v) => typeof v === 'number' && Number.isFinite(v),
+    ) &&
+    Number.isInteger(f.count) &&
+    f.count >= 0 &&
+    Number.isInteger(f.sampled) &&
+    f.sampled >= 0 &&
+    f.bought >= 0 &&
+    f.sold >= 0 &&
+    f.threshold > 0 &&
+    f.intensity >= 0 &&
+    typeof f.calibrated === 'boolean' &&
+    Array.isArray(f.prints) &&
+    f.prints.length <= 50 &&
+    f.prints.every(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        Number.isInteger(p.id) &&
+        [p.time, p.price, p.size, p.notional].every(
+          (v) => typeof v === 'number' && Number.isFinite(v),
+        ) &&
+        p.price > 0 &&
+        p.size > 0 &&
+        (p.side === 'buy' || p.side === 'sell'),
+    )
+  )
+}
 export interface StreamPayload {
   state: 'connecting' | 'live' | 'reconnecting' | 'stale'
   message: string
@@ -57,6 +144,8 @@ export interface StreamPayload {
   asOf: number
   replace?: boolean
   provisional: boolean
+  /** Executed large-print flow for the charted product. Absent when unavailable. */
+  whaleFlow?: WhaleFlow
 }
 export const isProductId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Z0-9]{1,24}-USD$/.test(value)
@@ -240,12 +329,26 @@ export interface MarketTrade {
   time: number
   price: number
   size: number
+  /**
+   * Direction of the aggressor (taker), NOT the raw Coinbase `side` field.
+   *
+   * Coinbase documents `side` on a `match` as the **maker** order side: "If the side is sell this
+   * indicates the maker was a sell order and the match is considered an up-tick." So a taker buy
+   * arrives as `side: "sell"`. This field is already inverted to the taker's perspective, so
+   * `'buy'` always means money went IN and `'sell'` always means money went OUT.
+   *
+   * `null`/absent when the upstream omitted or malformed `side`; such trades still count toward
+   * OHLCV volume but are excluded from directional flow.
+   */
+  takerSide?: 'buy' | 'sell' | null
 }
 export function parseTrade(value: Record<string, unknown>): MarketTrade | null {
   const id = finite(value.trade_id),
     price = finite(value.price),
     size = finite(value.size)
   const time = typeof value.time === 'string' ? Date.parse(value.time) / 1000 : NaN
+  // Invert the documented maker side into the taker/aggressor side.
+  const takerSide = value.side === 'sell' ? 'buy' : value.side === 'buy' ? 'sell' : null
   return value.type === 'match' &&
     isProductId(value.product_id) &&
     id !== null &&
@@ -256,7 +359,7 @@ export function parseTrade(value: Record<string, unknown>): MarketTrade | null {
     size !== null &&
     size > 0 &&
     Number.isFinite(time)
-    ? { product: value.product_id, id, time, price, size }
+    ? { product: value.product_id, id, time, price, size, takerSide }
     : null
 }
 /** Tracks provisional live bars, with ID deduplication and chronological open/close. */

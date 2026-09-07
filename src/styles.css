@@ -7148,3 +7148,272 @@ input[type='color']::-webkit-color-swatch {
     font-size: 16px;
   }
 }
+
+/* Floating whale-flow readout: transient large-sweep detection on the charted product. */
+.whale-box {
+  position: fixed;
+  right: 22px;
+  bottom: 78px;
+  z-index: 30;
+  width: 246px;
+  padding: 0 0 9px;
+  background: rgba(17, 21, 26, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  font-size: 11px;
+  user-select: none;
+  transition:
+    border-color 180ms ease,
+    opacity 420ms ease,
+    box-shadow 220ms ease;
+}
+/* Idle: collapse to a dim pill so no stale figure is implied. */
+.whale-box.is-watching {
+  width: 190px;
+  padding-bottom: 4px;
+  opacity: 0.62;
+}
+.whale-box.is-watching:hover {
+  opacity: 1;
+}
+.whale-box-in {
+  border-color: rgba(43, 185, 155, 0.42);
+}
+.whale-box-out {
+  border-color: rgba(237, 103, 115, 0.42);
+}
+.whale-phase-active.whale-box-in {
+  border-color: rgba(43, 185, 155, 0.85);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.46),
+    0 0 0 1px rgba(43, 185, 155, 0.28);
+}
+.whale-phase-active.whale-box-out {
+  border-color: rgba(237, 103, 115, 0.85);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.46),
+    0 0 0 1px rgba(237, 103, 115, 0.28);
+}
+/* Finished sweep: visibly receding, then removed by the data layer. */
+.whale-phase-fading {
+  opacity: 0.5;
+}
+.whale-box-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 7px 7px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.whale-box.is-watching .whale-box-head {
+  border-bottom-color: transparent;
+}
+.whale-box-head > h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.whale-box-grip {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  background: none;
+  border: 0;
+  color: var(--dim);
+  cursor: grab;
+}
+.whale-box-grip:active {
+  cursor: grabbing;
+}
+.whale-box-phase {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.whale-box-phase-active {
+  background: rgba(245, 166, 35, 0.16);
+  color: #f5a623;
+}
+.whale-box-phase-building {
+  background: rgba(185, 238, 130, 0.13);
+  color: var(--accent);
+}
+.whale-pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: whale-pip-pulse 1s ease-in-out infinite;
+}
+@keyframes whale-pip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.whale-box-icon {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--dim);
+}
+.whale-box-icon:hover,
+.whale-box-icon.is-active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.whale-box-info,
+.whale-box-calibrating {
+  margin: 8px 10px 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.whale-box-info strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.whale-box-calibrating {
+  color: #f5a623;
+}
+.whale-box-watching {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 7px 10px 4px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.whale-box-net {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 10px 7px;
+}
+.whale-box-net-value {
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+}
+.whale-box-net-value[data-direction='in'] {
+  color: var(--green);
+}
+.whale-box-net-value[data-direction='out'] {
+  color: var(--red);
+}
+.whale-box-net-value[data-direction='flat'] {
+  color: var(--muted);
+}
+.whale-box-net-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+.whale-box-meter {
+  height: 3px;
+  margin: 0 10px 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.whale-box-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transition: width 220ms ease;
+}
+.whale-box-in .whale-box-meter-fill {
+  background: var(--green);
+}
+.whale-box-out .whale-box-meter-fill {
+  background: var(--red);
+}
+.whale-box-prints {
+  list-style: none;
+  margin: 0;
+  padding: 7px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.whale-box-prints > li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 7px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+}
+.whale-box-prints > li.is-buy {
+  background: rgba(43, 185, 155, 0.09);
+  border-left-color: var(--green);
+}
+.whale-box-prints > li.is-sell {
+  background: rgba(237, 103, 115, 0.09);
+  border-left-color: var(--red);
+}
+.whale-print-time {
+  color: var(--dim);
+  font-size: 9px;
+}
+.whale-print-size {
+  color: var(--muted);
+  text-align: right;
+}
+.whale-print-value {
+  font-weight: 600;
+}
+.whale-box-prints > li.is-buy .whale-print-value {
+  color: var(--green);
+}
+.whale-box-prints > li.is-sell .whale-print-value {
+  color: var(--red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whale-box,
+  .whale-box-meter-fill {
+    transition: none;
+  }
+  .whale-pip {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .whale-box {
+    right: 6px;
+    bottom: 62px;
+    width: 200px;
+  }
+  .whale-box.is-watching {
+    width: 168px;
+  }
+  .whale-box-net-value {
+    font-size: 19px;
+  }
+}

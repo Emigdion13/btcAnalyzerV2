@@ -1258,13 +1258,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             ? palette.internalBear
             : palette.swingBear
       const size = smcLabelSize(isInternal ? smc.internalLabelSize : smc.swingLabelSize)
-      // LuxAlgo-style: label pill anchored at the break bar, line runs pivot → break.
+      // LuxAlgo-style: line runs pivot → break; the label is transparent colored
+      // text at the break bar so it never hides the price action behind it.
       const label = event.type
-      const pillW = label.length * (size * 0.72) + 10
-      const pillH = size + 7
-      const pillX = end.x - pillW / 2
-      const pillY =
-        event.side === 'bullish' ? end.y - pillH - 3 : end.y + 3
       return (
         <g key={`${event.kind}:${event.side}:${event.pivotIndex}:${event.breakIndex}`}>
           <line
@@ -1277,19 +1273,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeDasharray={isInternal ? '4 3' : undefined}
             opacity=".95"
           />
-          <rect
-            x={pillX}
-            y={pillY}
-            width={pillW}
-            height={pillH}
-            rx={2}
-            fill={color}
-          />
           <text
             x={end.x}
-            y={pillY + pillH - 4}
+            y={event.side === 'bullish' ? end.y - 6 : end.y + size + 5}
             textAnchor="middle"
-            fill="#ffffff"
+            fill={color}
             fontSize={size}
             fontWeight="600"
             fontFamily="DM Sans, sans-serif"
@@ -1371,10 +1359,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const color = level.side === 'high' ? palette.swingBear : palette.swingBull
       const size = smcLabelSize(smc.equalHighLowLabelSize)
       const text = level.side === 'high' ? 'EQH' : 'EQL'
-      const pillW = text.length * (size * 0.72) + 10
-      const pillH = size + 7
-      const pillX = end.x - pillW / 2
-      const pillY = level.side === 'high' ? end.y - pillH - 3 : end.y + 3
       return (
         <g key={`${level.side}:${level.firstIndex}:${level.secondIndex}`}>
           <line
@@ -1386,12 +1370,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeDasharray="2 3"
             strokeWidth="1"
           />
-          <rect x={pillX} y={pillY} width={pillW} height={pillH} rx={2} fill={color} />
           <text
             x={end.x}
-            y={pillY + pillH - 4}
+            y={level.side === 'high' ? end.y - 6 : end.y + size + 5}
             textAnchor="middle"
-            fill="#ffffff"
+            fill={color}
             fontSize={size}
             fontWeight="600"
             fontFamily="DM Sans, sans-serif"

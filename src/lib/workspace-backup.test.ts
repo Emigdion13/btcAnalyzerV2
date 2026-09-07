@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './workspace-backup'
 import type { WorkspaceBackup } from './workspace-backup'
 import { DEFAULT_INDICATORS, DEFAULT_SETTINGS } from './types'
+import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 
 function backup(): WorkspaceBackup {
   return {
@@ -63,6 +64,47 @@ describe('workspace backups', () => {
       },
     ]
     expect(() => parseWorkspaceBackup({ ...backup(), alerts })).toThrow(/date/)
+  })
+  it('round-trips every CM input including false switches and independent lengths', () => {
+    const saved = backup()
+    const indicator = saved.indicators.find((i) => i.kind === 'cm-ult-macd')!
+    indicator.period = 8
+    indicator.visible = false
+    indicator.cmMacd = {
+      useCurrentRes: false,
+      resCustom: '4h',
+      fastLength: 8,
+      slowLength: 33,
+      signalLength: 5,
+      showLines: false,
+      showDots: false,
+      showHistogram: false,
+      macdColorChange: false,
+      histogramColorChange: false,
+    }
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+  })
+  it('rejects malformed CM inputs and strips unrecognized properties on import', () => {
+    const original = backup()
+    const originalIndicator = original.indicators.find((i) => i.kind === 'cm-ult-macd')!
+    for (const cmMacd of [
+      [],
+      {},
+      { ...CM_MACD_DEFAULTS, useCurrentRes: 'false' },
+      { ...CM_MACD_DEFAULTS, fastLength: 0 },
+      { ...CM_MACD_DEFAULTS, slowLength: 2.4 },
+      { ...CM_MACD_DEFAULTS, signalLength: 2001 },
+      { ...CM_MACD_DEFAULTS, resCustom: '60' },
+    ]) {
+      expect(() =>
+        parseWorkspaceBackup({ ...original, indicators: [{ ...originalIndicator, cmMacd }] }),
+      ).toThrow(/CM_Ult_MacD_MTF/)
+    }
+    const clean = parseWorkspaceBackup({
+      ...original,
+      indicators: [{ ...originalIndicator, cmMacd: { ...CM_MACD_DEFAULTS, extra: 'ignored' } }],
+    })
+    expect(clean.indicators[0].cmMacd).toEqual(CM_MACD_DEFAULTS)
   })
   it('writes the complete workspace and rolls back a failed import', () => {
     const data = new Map<string, string>([

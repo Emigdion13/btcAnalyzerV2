@@ -94,7 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, MACD/signal lines, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
@@ -102,6 +102,21 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
 - **Exports:** chart PNGs (including drawings), OHLCV CSVs, and validated JSON workspace backup/import. Share links contain only the symbol, interval, and chart style—not private scripts or drawings.
 - **Responsive layout:** collapsible side panels and editor, desktop/tablet/mobile layouts, and keyboard shortcuts.
+
+## CM_Ult_MacD_MTF (60, 12, 26, 9)
+
+The original ChrisMoody indicator is included in new workspaces and available under **Indicators → CM_Ult_MacD_MTF** for existing ones. It is a separate built-in, not a renamed conventional MACD:
+
+- Close-based EMA 12 minus EMA 26, with a **9-period SMA signal**, matching the original EMA initialization.
+- Original aqua/blue/red/maroon histogram, yellow flat-value fallback, lime/red MACD, yellow signal, absolute crossover dots and solid white zero line.
+- All original input switches and independent fast/slow/signal lengths, with persistent settings and workspace-backup support.
+- Dedicated alternate-timeframe Coinbase history/stream subscriptions; no chart-timeframe or demo-data substitution on failure.
+
+**“60” is the alternate timeframe input, not necessarily the active resolution.** The original “Use Current Chart Resolution?” option is checked by default. Uncheck it and leave **60 · 1 hour** selected to use hourly calculations on another chart timeframe.
+
+**The original repaints:** legacy Pine historical lookahead is intentionally retained, and open-candle values/dots can change. Replay freezes native histories and avoids using a future final close for an incomplete source candle. Finite history, different exchanges and live data timing affect numerical parity. This implementation has formula/renderer/browser fixture tests, not a certified side-by-side TradingView data match. Supported source resolutions are the app’s eight intervals; arbitrary Pine resolutions are not implemented.
+
+See [the compatibility specification, limitations and original-source references](docs/cm-ult-macd.md).
 
 ## Write a custom indicator
 
@@ -168,6 +183,8 @@ src/
     market-settings.ts         Non-destructive migration to source-scoped pairs
     indicator-runtime.ts       Self-contained technical-analysis helpers
     indicators.ts              Built-in plot calculations and script templates
+    cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
+    indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence
     storage.ts                 Versioned local persistence and downloads
@@ -180,7 +197,7 @@ tests/workspace.spec.ts         Existing offline-workspace integration tests
 tests/coinbase.spec.ts          Coinbase UI/transport fixtures and failure tests
 ```
 
-Tests cover OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
+Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
 
 ## Next production milestones
 

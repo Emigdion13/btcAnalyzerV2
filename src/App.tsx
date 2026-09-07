@@ -58,6 +58,7 @@ import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { IndicatorStudio } from './components/IndicatorStudio'
+import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
 import type { ToastMessage } from './components/ui'
 import {
@@ -78,6 +79,8 @@ import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
+import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
+import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -244,6 +247,22 @@ export default function App() {
   const [tick, setTick] = useState(0)
   const [replayIndex, setReplayIndex] = useState<number | null>(null)
   const [replaySnapshot, setReplaySnapshot] = useState<Candle[] | null>(null)
+  const [timeframeFeeds, setTimeframeFeeds] = useState<Record<string, IndicatorTimeframeData>>({})
+  const [replayTimeframes, setReplayTimeframes] = useState<IndicatorTimeframes>({})
+  const [timeframeRetry, setTimeframeRetry] = useState(0)
+  const receiveTimeframe = useCallback(
+    (product: string, interval: Timeframe, data: IndicatorTimeframeData) => {
+      setTimeframeFeeds((previous) => ({
+        ...Object.fromEntries(
+          Object.entries(previous)
+            .filter(([key]) => key !== `${product}:${interval}`)
+            .slice(-23),
+        ),
+        [`${product}:${interval}`]: data,
+      }))
+    },
+    [],
+  )
   const [replayPlaying, setReplayPlaying] = useState(false)
   const [replaySpeed, setReplaySpeed] = useState(1)
   const [activeRange, setActiveRange] = useState('')
@@ -315,6 +334,39 @@ export default function App() {
   const candles = useMemo(
     () => (replayIndex === null ? baseCandles : baseCandles.slice(0, replayIndex)),
     [baseCandles, replayIndex],
+  )
+  const indicatorTimeframes = useMemo(
+    () => requestedIndicatorTimeframes(indicators, timeframe),
+    [indicators, timeframe],
+  )
+  const demoTimeframes = useMemo<IndicatorTimeframes>(
+    () =>
+      source !== 'demo'
+        ? {}
+        : Object.fromEntries(
+            indicatorTimeframes.map((interval) => [
+              interval,
+              {
+                candles: generateCandles(asset, interval),
+                state: 'paused',
+                message: 'Synthetic demo history; not exchange data.',
+                asOf: 0,
+              },
+            ]),
+          ),
+    [source, asset, indicatorTimeframes],
+  )
+  const nativeTimeframes = useMemo<IndicatorTimeframes>(
+    () =>
+      source === 'demo'
+        ? demoTimeframes
+        : Object.fromEntries(
+            indicatorTimeframes.flatMap((interval) => {
+              const entry = timeframeFeeds[`${symbol}:${interval}`]
+              return entry ? [[interval, entry]] : []
+            }),
+          ),
+    [source, symbol, indicatorTimeframes, timeframeFeeds, demoTimeframes],
   )
   const currentPrice = quotePrices[symbol] ?? candles[candles.length - 1]?.close
   const hasData = candles.length > 1
@@ -675,6 +727,7 @@ export default function App() {
         period: item.period,
         color: item.color,
         visible: true,
+        ...(kind === 'cm-ult-macd' ? { cmMacd: { ...CM_MACD_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)
@@ -838,6 +891,7 @@ export default function App() {
         return
       }
       setReplaySnapshot(availableCandles)
+      setReplayTimeframes(nativeTimeframes)
       setReplayIndex(Math.max(2, availableCandles.length - 120))
       setReplayPlaying(false)
       notify('Bar Replay · a frozen snapshot of the loaded history.', 'info')
@@ -934,6 +988,7 @@ export default function App() {
       setDrawingHistory({})
       setComputed({})
       setReplayIndex(null)
+      setReplaySnapshot(null)
       setReplayPlaying(false)
       setTool('cursor')
       setSidePanel('watchlist')
@@ -1421,6 +1476,17 @@ export default function App() {
             </aside>
             <div className="chart-and-panels">
               <div className="chart-container">
+                {source === 'coinbase' &&
+                  replayIndex === null &&
+                  indicatorTimeframes.map((interval) => (
+                    <IndicatorTimeframeFeed
+                      key={`${symbol}:${interval}:${timeframeRetry}`}
+                      product={symbol}
+                      interval={interval}
+                      playing={feedActive}
+                      onData={receiveTimeframe}
+                    />
+                  ))}
                 <ChartView
                   ref={chartRef}
                   source={source}
@@ -1431,6 +1497,7 @@ export default function App() {
                   chartType={chartType}
                   indicators={indicators}
                   customResults={customResults}
+                  indicatorTimeframes={replayIndex === null ? nativeTimeframes : replayTimeframes}
                   settings={settings}
                   drawings={drawings}
                   drawingTool={tool}
@@ -1447,6 +1514,7 @@ export default function App() {
                   onIndicatorEdit={editIndicator}
                   onIndicatorToggle={toggleIndicator}
                   onIndicatorRemove={removeIndicator}
+                  onIndicatorRetry={() => setTimeframeRetry((n) => n + 1)}
                   replay={replayIndex !== null}
                 />
                 {source === 'coinbase' && !hasData && (

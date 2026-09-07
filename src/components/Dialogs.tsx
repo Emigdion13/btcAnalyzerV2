@@ -44,6 +44,7 @@ import { DEFAULT_SETTINGS } from '../lib/types'
 import { formatPrice, formatChange, changeClass, quoteCurrency, compactNumber } from '../lib/market'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
+import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -214,7 +215,7 @@ export function IndicatorLibrary({
   const [query, setQuery] = useState('')
   const catalog = INDICATOR_CATALOG.filter(
     (i) =>
-      `${i.name} ${i.short}`.toLowerCase().includes(query.toLowerCase()) &&
+      `${i.name} ${i.short} ${i.description}`.toLowerCase().includes(query.toLowerCase()) &&
       (category === 'All' || i.category === category),
   )
   const matchingScripts = scripts.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))
@@ -506,7 +507,21 @@ export function ChartSettingsDialog({
   )
 }
 
-export function IndicatorSettingsDialog({
+export function IndicatorSettingsDialog(props: {
+  indicator: Indicator
+  result?: ScriptResult
+  onSave: (indicator: Indicator) => void
+  onClose: () => void
+  onEditSource: () => void
+}) {
+  return props.indicator.kind === 'cm-ult-macd' ? (
+    <CmMacdSettingsDialog {...props} />
+  ) : (
+    <StandardIndicatorSettingsDialog {...props} />
+  )
+}
+
+function StandardIndicatorSettingsDialog({
   indicator,
   result,
   onSave,

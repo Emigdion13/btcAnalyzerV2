@@ -47,6 +47,10 @@ import type {
   Timeframe,
   Tool,
 } from '../lib/types'
+import type { OrderBookView } from '../../shared/coinbase'
+import { scoreZone } from '../../shared/order-book'
+import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
+import { formatNotional } from '../../shared/whale-flow'
 import { builtInPlots } from '../lib/indicators'
 import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
 import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
@@ -104,6 +108,8 @@ interface Props {
   onIndicatorRemove: (id: string) => void
   onIndicatorRetry: () => void
   replay: boolean
+  /** Resting-liquidity depth view of the charted product; zone chips and walls need it. */
+  book?: OrderBookView | null
 }
 interface IndicatorSeries {
   series: ISeriesApi<SeriesType>[]
@@ -132,6 +138,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     drawingsLocked,
     magnet,
     alerts,
+    book,
   } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
@@ -1206,6 +1213,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  const bookStrength = (top: number, bottom: number, side: BookSide): ZoneBookScore | null =>
+    book && !props.replay ? scoreZone(book, top, bottom, side) : null
+  const BUCKET_FILL: Record<BookStrengthBucket, string> = {
+    strong: '#2ebd85',
+    medium: '#e8a93d',
+    weak: '#7a8592',
+    unloaded: '#4b5462',
+  }
+  const chipText = (score: ZoneBookScore | null) =>
+    score && score.bucket !== 'unloaded'
+      ? `${score.bucket === 'strong' ? 'STRONG' : score.bucket === 'medium' ? 'MED' : 'WEAK'} ${formatNotional(score.notional)}`
+      : null
   const smcPoint = (index: number, price: number) => {
     const candle = candles[index]
     return candle ? position({ time: candle.time, price }) : null
@@ -1302,6 +1321,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const y = Math.min(leftTop.y, leftBottom.y)
       const width = Math.max(2, Math.abs(right.x - leftTop.x))
       const height = Math.max(1, Math.abs(leftBottom.y - leftTop.y))
+      const strength = bookStrength(block.top, block.bottom, block.side === 'bullish' ? 'bid' : 'ask')
+      const chip = chipText(strength)
       return (
         <g key={block.id} className="smc-order-block">
           <rect
@@ -1326,6 +1347,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             {block.kind === 'internal' ? 'iOB' : 'OB'} {block.side === 'bullish' ? '+' : '−'}
             {mitigated ? ' · mitigated' : ''}
           </text>
+          {chip && strength && (
+            <text
+              x={x + 4}
+              y={Math.min(y + 21, geometry.height - 3)}
+              fill={BUCKET_FILL[strength.bucket]}
+              fontSize="7"
+              fontWeight="700"
+              fontFamily="JetBrains Mono, monospace"
+              data-testid="book-zone-chip"
+            >
+              {chip}
+            </text>
+          )}
         </g>
       )
     }
@@ -1385,6 +1419,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const y = Math.min(leftTop.y, leftBottom.y)
       const width = Math.max(2, Math.abs(right.x - leftTop.x))
       const height = Math.max(1, Math.abs(leftBottom.y - leftTop.y))
+      const strength = bookStrength(gap.top, gap.bottom, gap.side === 'bullish' ? 'bid' : 'ask')
+      const chip = chipText(strength)
       return (
         <g key={`fvg:${gap.side}:${gap.startIndex}`} className="smc-fvg">
           <rect
@@ -1408,6 +1444,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           >
             FVG
           </text>
+          {chip && strength && (
+            <text
+              x={x + 3}
+              y={Math.min(y + 20, geometry.height - 3)}
+              fill={BUCKET_FILL[strength.bucket]}
+              fontSize="7"
+              fontWeight="700"
+              fontFamily="JetBrains Mono, monospace"
+              data-testid="book-zone-chip"
+            >
+              {chip}
+            </text>
+          )}
         </g>
       )
     }
@@ -1604,6 +1653,60 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  // Live resting-book S/R: walls detected from the level2 order book are drawn as dashed
+  // support/resistance lines across the pane, labeled with their USD size and the liquidity in
+  // front of them. This is the "S/R the book itself is constructing", refreshed every second.
+  const renderBookOverlay = () => {
+    if (!book || props.replay || geometry.height <= 0 || !mainRef.current) return null
+    const yOf = (price: number) => {
+      const y = mainRef.current?.priceToCoordinate(price)
+      return typeof y === 'number' && Number.isFinite(y) && y >= -1 && y <= geometry.height + 1
+        ? y
+        : null
+    }
+    const drawWall = (wall: OrderBookView['supports'][number], side: 'support' | 'resistance') => {
+      const y = yOf(wall.price)
+      if (y === null) return null
+      const color = side === 'support' ? '#2ebd85' : '#f6465d'
+      const label = `${side === 'support' ? 'S' : 'R'} ${formatNotional(wall.notional)}`
+      const hint =
+        wall.depth > 0 ? ` · in front ${formatNotional(wall.depth)}` : ''
+      return (
+        <g key={`book-wall:${wall.side}:${wall.price}`} className="book-wall" data-testid="book-wall">
+          <line
+            x1={0}
+            y1={y}
+            x2={geometry.width}
+            y2={y}
+            stroke={color}
+            strokeWidth="1"
+            strokeOpacity=".5"
+            strokeDasharray="7 5"
+          />
+          <text
+            x={5}
+            y={Math.max(9, y - 5)}
+            fill={color}
+            fontSize="8"
+            fontWeight="700"
+            fontFamily="JetBrains Mono, monospace"
+            paintOrder="stroke"
+            stroke="#101318"
+            strokeWidth="3"
+          >
+            {label}
+            {hint}
+          </text>
+        </g>
+      )
+    }
+    const elements = [
+      ...book.resistances.map((wall) => drawWall(wall, 'resistance')),
+      ...book.supports.map((wall) => drawWall(wall, 'support')),
+    ]
+    return elements.some((element) => element !== null) ? elements : null
+  }
+
   // SR Breaks and Retests is drawn as a native SVG overlay, mirroring Pine's
   // boxes, plotchar diamonds, and break labels.
   const srPoint = (index: number, price: number) => {
@@ -1645,6 +1748,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           : broken
             ? SR_BREAKS_RETESTS_COLORS.support
             : SR_BREAKS_RETESTS_COLORS.resistance
+      const strength = bookStrength(topPrice, bottomPrice, zone.side === 'support' ? 'bid' : 'ask')
+      const chip = chipText(strength)
       return (
         <g key={zone.id} className="sr-zone" data-testid="sr-zone">
           <rect
@@ -1669,6 +1774,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               className="sr-zone-text"
             >
               {zone.volumeText}
+            </text>
+          )}
+          {chip && strength && height >= 22 && (
+            <text
+              x={x + 4}
+              y={y + 9}
+              fill={BUCKET_FILL[strength.bucket]}
+              fontSize="7"
+              fontWeight="700"
+              fontFamily="JetBrains Mono, monospace"
+              data-testid="book-zone-chip"
+            >
+              {chip}
             </text>
           )}
         </g>
@@ -2141,6 +2259,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           </div>
         )
       })}
+      <svg
+        className="book-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="book-overlay"
+        data-revision={revision}
+      >
+        {renderBookOverlay()}
+      </svg>
       <svg
         ref={smcSvgRef}
         className="smc-overlay"

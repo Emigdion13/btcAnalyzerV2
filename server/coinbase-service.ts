@@ -16,6 +16,7 @@ import type {
   MarketQuote,
   StreamPayload,
 } from '../shared/coinbase.ts'
+import { OrderBook } from '../shared/order-book.ts'
 import { WhaleFlowTracker, type WhaleFlowOptions } from '../shared/whale-flow.ts'
 import { CoinbaseRestClient, MarketError } from './rest-client.ts'
 
@@ -50,6 +51,9 @@ export class CoinbaseService {
   private lastTradeIds = new Map<string, number>()
   /** Executed large-print flow, one tracker per subscribed product. */
   private whaleFlows = new Map<string, WhaleFlowTracker>()
+  /** Resting level2 books, one per charted product (never watchlist-only pairs). */
+  private orderBooks = new Map<string, OrderBook>()
+  private subscribedBook = new Set<string>()
   private reconnectAttempt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined
   private idleTimer: ReturnType<typeof setTimeout> | undefined
@@ -244,6 +248,9 @@ export class CoinbaseService {
       // Omitted entirely when no sweep is in progress, so the client clears rather than
       // holding a finished number on screen.
       whaleFlow: this.whaleFlows.get(sub.product)?.snapshot(Date.now() / 1000) ?? undefined,
+      // Omitted until the product's level2 snapshot has arrived and been analyzed, so a client
+      // clears its depth readout instead of freezing a stale book.
+      book: this.orderBooks.get(sub.product)?.view(Date.now() / 1000) ?? undefined,
     }
     sub.send(payload)
     sub.revision = entry.revision
@@ -364,6 +371,21 @@ export class CoinbaseService {
     // Release flow trackers for products nobody is watching any more.
     for (const product of this.whaleFlows.keys())
       if (!desired.has(product)) this.whaleFlows.delete(product)
+    // level2 depth is heavy, so it is only kept for the product(s) with an open chart — never
+    // for watchlist/alerts-only pairs. Charts are the ones whose OB/FVG/SR zones get scored.
+    const charted = new Set([...this.subscribers].map((s) => s.product))
+    const addBook = [...charted].filter((id) => !this.subscribedBook.has(id)),
+      removeBook = [...this.subscribedBook].filter((id) => !charted.has(id))
+    for (const [type, product_ids] of [
+      ['subscribe', addBook],
+      ['unsubscribe', removeBook],
+    ] as const) {
+      if (product_ids.length)
+        this.socket.send(JSON.stringify({ type, product_ids, channels: ['level2'] }))
+    }
+    this.subscribedBook = charted
+    for (const product of this.orderBooks.keys())
+      if (!charted.has(product)) this.orderBooks.delete(product)
   }
   private onMessage(message: Record<string, unknown>) {
     if (message.type === 'error') {
@@ -405,6 +427,17 @@ export class CoinbaseService {
           entry.asOf = Date.now()
         }
     }
+    if (message.type === 'snapshot' || message.type === 'l2update') {
+      if ([...this.subscribers].some((s) => s.product === product)) {
+        let book = this.orderBooks.get(product)
+        if (!book) {
+          book = new OrderBook(product)
+          this.orderBooks.set(product, book)
+        }
+        book.applyMessage(message, Date.now() / 1000)
+      }
+      return
+    }
     if (message.type === 'heartbeat' && typeof message.last_trade_id === 'number') {
       const last = this.lastTradeIds.get(product)
       if (last !== undefined && message.last_trade_id > last) {
@@ -421,6 +454,8 @@ export class CoinbaseService {
     clearInterval(this.pulseTimer)
     this.subscribers.clear()
     this.whaleFlows.clear()
+    this.orderBooks.clear()
+    this.subscribedBook.clear()
     const socket = this.socket
     this.socket = null
     socket?.close()

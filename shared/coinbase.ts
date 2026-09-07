@@ -99,6 +99,142 @@ export interface WhaleFlow {
   /** Trades observed in the calibration sample. */
   sampled: number
 }
+/**
+ * A price level of resting liquidity aggregated from the venue's level2 order book.
+ *
+ * `price` is the level price; `size` is in the base asset (e.g. BTC); `notional` is its USD
+ * value. A `Wall` is a cluster of adjacent levels whose combined notional stands out from the
+ * rest of the book — the "big resting money" a level can be defended by. `depth` is the USD
+ * resting between the wall and the mid price (what must be eaten before the wall itself is
+ * reached), and `persistence` is the notional-weighted share of the cluster that has rested
+ * unchanged for at least {@link PERSISTENCE_SECONDS}: liquidity that keeps resting while price
+ * sits near it is the closest the book gets to a measured "defense".
+ */
+export interface OrderBookWall {
+  side: 'bid' | 'ask'
+  /** Notional-weighted representative price of the cluster, in quote currency. */
+  price: number
+  /** Total USD resting inside the cluster. */
+  notional: number
+  /** USD resting between the mid price and the cluster (excluding the cluster itself). */
+  depth: number
+  /** USD resting at the single largest level of the cluster. */
+  peak: number
+  /** Notional-weighted rest persistence of the cluster, 0..1. */
+  persistence: number
+}
+/**
+ * One row of the transmitted depth profile: the USD resting on each side inside a thin price
+ * slice centered on `price`, plus how long that slice has rested unchanged (`hold`, 0..1).
+ * Bins tile the whole transmitted book span, so a client can price arbitrary S/R / OB / FVG
+ * ranges by summing the slices they overlap.
+ */
+export interface OrderBookBin {
+  price: number
+  bid: number
+  ask: number
+  hold: number
+}
+/**
+ * Live resting-liquidity view of the charted product, derived from the level2 order book.
+ *
+ * Built server-side at the 1 Hz SSE cadence and **omitted entirely when no book is available**
+ * (no snapshot yet, or the product is not book-subscribed), so a client can treat absence as
+ * "clear the readout" rather than displaying a stale depth figure. The book is resting orders,
+ * not a forecast: size here can be pulled or walked within seconds.
+ */
+export interface OrderBookView {
+  product: string
+  /** Unix seconds when the view was computed. */
+  asOf: number
+  /** Mid price: the average of the best bid and best ask. */
+  mid: number
+  /** Best ask minus best bid, in quote currency. */
+  spread: number
+  /** Quote-currency width of each profile bin. */
+  step: number
+  /** Lowest and highest transmitted bin prices (the book span). */
+  bottom: number
+  top: number
+  /**
+   * Near-mid book imbalance in [-1, 1]: positive means more USD is bidding near the price than
+   * offered, negative the reverse. Computed over the innermost few bins either side of mid.
+   */
+  imbalance: number
+  /** Total USD resting on each side inside the transmitted span. */
+  bidsTotal: number
+  asksTotal: number
+  /** Depth profile across the book span, ascending price. */
+  bins: OrderBookBin[]
+  /** Strongest resting clusters below mid (bids), largest first. */
+  supports: OrderBookWall[]
+  /** Strongest resting clusters above mid (asks), largest first. */
+  resistances: OrderBookWall[]
+  /**
+   * Seconds of persistence history behind the `hold` values, capped at the persistence window.
+   * Below the window the holds are still warming and should be read with caution.
+   */
+  persistenceSeconds: number
+}
+const wallValid = (value: unknown): value is OrderBookWall => {
+  if (!value || typeof value !== 'object') return false
+  const w = value as OrderBookWall
+  return (
+    (w.side === 'bid' || w.side === 'ask') &&
+    [w.price, w.notional, w.depth, w.peak, w.persistence].every(
+      (v) => typeof v === 'number' && Number.isFinite(v),
+    ) &&
+    w.price > 0 &&
+    w.notional >= 0 &&
+    w.depth >= 0 &&
+    w.peak >= 0 &&
+    w.persistence >= 0 &&
+    w.persistence <= 1
+  )
+}
+export const isOrderBookView = (value: unknown): value is OrderBookView => {
+  if (!value || typeof value !== 'object') return false
+  const b = value as OrderBookView
+  return (
+    isProductId(b.product) &&
+    [b.mid, b.spread, b.step, b.bottom, b.top, b.imbalance, b.bidsTotal, b.asksTotal].every(
+      (v) => typeof v === 'number' && Number.isFinite(v),
+    ) &&
+    [b.bidsTotal, b.asksTotal].every((v) => v >= 0) &&
+    b.asOf > 0 &&
+    b.mid > 0 &&
+    b.spread >= 0 &&
+    b.step > 0 &&
+    b.top > b.bottom &&
+    b.top <= 1e15 &&
+    b.bottom > 0 &&
+    b.imbalance >= -1 &&
+    b.imbalance <= 1 &&
+    Number.isFinite(b.persistenceSeconds) &&
+    b.persistenceSeconds >= 0 &&
+    b.persistenceSeconds <= 60 &&
+    Array.isArray(b.bins) &&
+    b.bins.length <= 300 &&
+    b.bins.every(
+      (bin) =>
+        bin &&
+        typeof bin === 'object' &&
+        typeof bin.price === 'number' &&
+        Number.isFinite(bin.price) &&
+        bin.price > 0 &&
+        [bin.bid, bin.ask, bin.hold].every(
+          (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+        ) &&
+        bin.hold <= 1,
+    ) &&
+    Array.isArray(b.supports) &&
+    b.supports.length <= 6 &&
+    b.supports.every((w) => wallValid(w) && w.price < b.mid) &&
+    Array.isArray(b.resistances) &&
+    b.resistances.length <= 6 &&
+    b.resistances.every((w) => wallValid(w) && w.price > b.mid)
+  )
+}
 export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
   if (!value || typeof value !== 'object') return false
   const f = value as WhaleFlow
@@ -146,6 +282,11 @@ export interface StreamPayload {
   provisional: boolean
   /** Executed large-print flow for the charted product. Absent when unavailable. */
   whaleFlow?: WhaleFlow
+  /**
+   * Resting-liquidity depth view for the charted product. Absent when the book is not available
+   * (no snapshot yet / not subscribed), so the client clears rather than freezing a stale depth.
+   */
+  book?: OrderBookView
 }
 export const isProductId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Z0-9]{1,24}-USD$/.test(value)

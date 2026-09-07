@@ -1,6 +1,7 @@
 import { ASSETS, TIMEFRAMES } from './market'
 import { isProductId } from '../../shared/coinbase'
 import { isCmMacdSettings } from './cm-ult-macd'
+import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -93,7 +94,18 @@ function indicator(value: unknown): Indicator {
   const i = record(value, 'indicator')
   const kind = choice(
     i.kind,
-    ['ema', 'sma', 'bb', 'rsi', 'macd', 'cm-ult-macd', 'vwap', 'volume', 'custom'] as const,
+    [
+      'ema',
+      'sma',
+      'bb',
+      'rsi',
+      'macd',
+      'cm-ult-macd',
+      'smart-money-concepts',
+      'vwap',
+      'volume',
+      'custom',
+    ] as const,
     'indicator kind',
   )
   const period = number(i.period, 'indicator period', 1, 2000)
@@ -122,6 +134,50 @@ function indicator(value: unknown): Indicator {
       histogramColorChange: settings.histogramColorChange,
     }
     result.period = result.cmMacd.fastLength
+  }
+  if (kind === 'smart-money-concepts' && i.smc !== undefined) {
+    const settings = i.smc
+    if (!isSmartMoneyConceptsSettings(settings)) invalid('Smart Money Concepts settings')
+    result.smc = {
+      mode: settings.mode,
+      style: settings.style,
+      colorCandles: settings.colorCandles,
+      showInternal: settings.showInternal,
+      internalBullish: settings.internalBullish,
+      internalBearish: settings.internalBearish,
+      internalLabelSize: settings.internalLabelSize,
+      confluenceFilter: settings.confluenceFilter,
+      showSwing: settings.showSwing,
+      swingBullish: settings.swingBullish,
+      swingBearish: settings.swingBearish,
+      swingLabelSize: settings.swingLabelSize,
+      showSwingPoints: settings.showSwingPoints,
+      showStrongWeakHighsLows: settings.showStrongWeakHighsLows,
+      swingLength: settings.swingLength,
+      showInternalOrderBlocks: settings.showInternalOrderBlocks,
+      internalOrderBlockCount: settings.internalOrderBlockCount,
+      showSwingOrderBlocks: settings.showSwingOrderBlocks,
+      swingOrderBlockCount: settings.swingOrderBlockCount,
+      orderBlockFilter: settings.orderBlockFilter,
+      orderBlockMitigation: settings.orderBlockMitigation,
+      highlightMitigatedBlocks: settings.highlightMitigatedBlocks,
+      showEqualHighLow: settings.showEqualHighLow,
+      equalHighLowBars: settings.equalHighLowBars,
+      equalHighLowThreshold: settings.equalHighLowThreshold,
+      equalHighLowLabelSize: settings.equalHighLowLabelSize,
+      showFairValueGaps: settings.showFairValueGaps,
+      fvgAutoThreshold: settings.fvgAutoThreshold,
+      fvgTimeframe: settings.fvgTimeframe,
+      fvgExtend: settings.fvgExtend,
+      showDailyHighLow: settings.showDailyHighLow,
+      dailyLineStyle: settings.dailyLineStyle,
+      showWeeklyHighLow: settings.showWeeklyHighLow,
+      weeklyLineStyle: settings.weeklyLineStyle,
+      showMonthlyHighLow: settings.showMonthlyHighLow,
+      monthlyLineStyle: settings.monthlyLineStyle,
+      showPremiumDiscount: settings.showPremiumDiscount,
+    }
+    result.period = result.smc.swingLength
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

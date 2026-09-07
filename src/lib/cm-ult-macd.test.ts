@@ -14,7 +14,13 @@ import {
   requestedIndicatorTimeframes,
 } from './cm-ult-macd'
 import type { CmMacdValues, IndicatorContext, IndicatorTimeframes } from './cm-ult-macd'
-import type { Candle, CmMacdSettings, Indicator, Timeframe } from './types'
+import {
+  SMC_DEFAULTS,
+  type Candle,
+  type CmMacdSettings,
+  type Indicator,
+  type Timeframe,
+} from './types'
 import { ta } from './indicator-runtime'
 import { builtInPlots } from './indicators'
 import reference from './fixtures/cm-ult-macd-reference.json'
@@ -315,11 +321,20 @@ describe('multi-timeframe security() projection', () => {
   })
   it('deduplicates feed requests and excludes hidden/current-resolution indicators', () => {
     const cm = { ...indicator, cmMacd: settings }
-    expect(requestedIndicatorTimeframes([cm, { ...cm, id: 'two' }, indicator], '15m')).toEqual([
-      '1h',
-    ])
+    const smc: Indicator = {
+      id: 'smc',
+      kind: 'smart-money-concepts',
+      name: 'Smart Money Concepts',
+      period: 50,
+      color: '#089981',
+      visible: true,
+      smc: { ...SMC_DEFAULTS, showFairValueGaps: true, fvgTimeframe: '4h' },
+    }
+    expect(requestedIndicatorTimeframes([cm, { ...cm, id: 'two' }, indicator, smc], '15m')).toEqual(
+      ['1h', '4h'],
+    )
     expect(requestedIndicatorTimeframes([{ ...cm, visible: false }], '15m')).toEqual([])
-    expect(requestedIndicatorTimeframes([cm], '1h')).toEqual([])
+    expect(requestedIndicatorTimeframes([cm, smc], '1h')).toEqual(['4h'])
     expect(cmMacdSettings({ ...indicator, cmMacd: { ...defaults, slowLength: 0 } })).toEqual(
       defaults,
     )

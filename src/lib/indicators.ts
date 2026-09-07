@@ -59,6 +59,16 @@ export const INDICATOR_CATALOG: {
     color: '#00ff00',
   },
   {
+    kind: 'smart-money-concepts',
+    name: 'Smart Money Concepts',
+    short: 'SMC',
+    description:
+      'Independent price-action overlay with internal and swing BOS/CHoCH, order blocks, equal highs/lows, fair value gaps, and value zones.',
+    category: 'Price Action',
+    period: 50,
+    color: '#089981',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -95,6 +105,9 @@ export function builtInPlots(
     const settings = cmMacdSettings(indicator)
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
   }
+  // Smart Money Concepts is drawn as a native SVG price overlay in ChartView.
+  // It intentionally has no Lightweight Charts line/pane series.
+  if (indicator.kind === 'smart-money-concepts') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

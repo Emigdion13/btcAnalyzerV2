@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './workspace-backup'
 import type { WorkspaceBackup } from './workspace-backup'
-import { DEFAULT_INDICATORS, DEFAULT_SETTINGS } from './types'
+import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, SMC_DEFAULTS } from './types'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 
 function backup(): WorkspaceBackup {
@@ -105,6 +105,52 @@ describe('workspace backups', () => {
       indicators: [{ ...originalIndicator, cmMacd: { ...CM_MACD_DEFAULTS, extra: 'ignored' } }],
     })
     expect(clean.indicators[0].cmMacd).toEqual(CM_MACD_DEFAULTS)
+  })
+  it('round-trips each Smart Money Concepts input and rejects malformed values', () => {
+    const saved = backup()
+    const indicator = saved.indicators.find((i) => i.kind === 'smart-money-concepts')!
+    indicator.period = 22
+    indicator.visible = false
+    indicator.smc = {
+      ...SMC_DEFAULTS,
+      mode: 'Present',
+      style: 'Monochrome',
+      colorCandles: true,
+      confluenceFilter: true,
+      showSwingPoints: true,
+      showStrongWeakHighsLows: true,
+      swingLength: 22,
+      showSwingOrderBlocks: true,
+      orderBlockFilter: 'Cumulative Mean Range',
+      orderBlockMitigation: 'Close',
+      highlightMitigatedBlocks: false,
+      equalHighLowBars: 4,
+      equalHighLowThreshold: 0.2,
+      equalHighLowLabelSize: 'Normal',
+      showFairValueGaps: true,
+      fvgAutoThreshold: false,
+      fvgTimeframe: '4h',
+      fvgExtend: 12,
+      showDailyHighLow: true,
+      dailyLineStyle: '----',
+      showWeeklyHighLow: true,
+      weeklyLineStyle: '····',
+      showMonthlyHighLow: true,
+      showPremiumDiscount: true,
+    }
+    indicator.period = indicator.smc.swingLength
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    expect(() =>
+      parseWorkspaceBackup({
+        ...backup(),
+        indicators: [{ ...indicator, smc: { ...indicator.smc, fvgExtend: 0 } }],
+      }),
+    ).toThrow(/Smart Money Concepts/)
+    const clean = parseWorkspaceBackup({
+      ...backup(),
+      indicators: [{ ...indicator, smc: { ...indicator.smc, extra: 'ignored' } }],
+    })
+    expect(clean.indicators[0].smc).toEqual(indicator.smc)
   })
   it('writes the complete workspace and rolls back a failed import', () => {
     const data = new Map<string, string>([

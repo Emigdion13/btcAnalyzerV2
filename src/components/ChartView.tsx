@@ -40,6 +40,14 @@ import type {
 import { builtInPlots } from '../lib/indicators'
 import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
 import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
+import {
+  calculateSmartMoneyConcepts,
+  displayedSmcResult,
+  smcLabelSize,
+  smcPalette,
+  smcSettings,
+  structureAllowed,
+} from '../lib/smart-money-concepts'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
 import { uid } from '../lib/storage'
@@ -107,6 +115,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     alerts,
   } = props
   const hostRef = useRef<HTMLDivElement>(null)
+  const smcSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const mainRef = useRef<ISeriesApi<SeriesType> | null>(null)
@@ -137,6 +146,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   }, [cmSessionKey, hasIndicatorCandles])
   const realtimeFrom =
     cmSession.key === cmSessionKey ? cmSession.start : (candles.at(-1)?.time ?? Infinity)
+  const smcOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'smart-money-concepts')
+        .map((indicator) => {
+          const smc = smcSettings(indicator)
+          return {
+            indicator,
+            settings: smc,
+            palette: smcPalette(smc),
+            result: displayedSmcResult(
+              calculateSmartMoneyConcepts(candles, smc, {
+                timeframe,
+                timeframes: indicatorTimeframes,
+                replay,
+              }),
+              smc,
+            ),
+          }
+        }),
+    [candles, indicatorTimeframes, indicators, replay, timeframe],
+  )
+  const candleTrendOverlay = smcOverlays.find((overlay) => overlay.settings.colorCandles)
   const generated = useMemo(
     () =>
       indicators
@@ -228,8 +260,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         49,
       )
       ctx.drawImage(image, 0, 64, width, image.height / ratio)
-      if (svgRef.current && propsRef.current.drawingsVisible) {
-        const svg = new XMLSerializer().serializeToString(svgRef.current)
+      const paintSvg = async (element: SVGSVGElement | null) => {
+        if (!element) return
+        const svg = new XMLSerializer().serializeToString(element)
         const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
         const overlay = new Image()
         await new Promise<void>((resolve) => {
@@ -242,6 +275,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         })
         URL.revokeObjectURL(url)
       }
+      await paintSvg(smcSvgRef.current)
+      if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
     },
   }))
@@ -320,7 +355,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             ? previous
             : next,
         )
-        if (propsRef.current.drawings.length || pendingRef.current) setRevision((r) => r + 1)
+        if (
+          propsRef.current.drawings.length ||
+          pendingRef.current ||
+          propsRef.current.indicators.some(
+            (indicator) => indicator.visible && indicator.kind === 'smart-money-concepts',
+          )
+        )
+          setRevision((r) => r + 1)
       })
     }
     refreshRef.current = refresh
@@ -504,11 +546,27 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       dataInfo.current = { length: 0, first: 0, last: 0, candles: [] }
       return
     }
-    const data = candles.map((c) =>
-      chartType === 'line' || chartType === 'area'
-        ? { time: c.time as UTCTimestamp, value: c.close }
-        : { time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close },
-    )
+    const data = candles.map((candle, index) => {
+      if (chartType === 'line' || chartType === 'area')
+        return { time: candle.time as UTCTimestamp, value: candle.close }
+      const trend = candleTrendOverlay?.result.trend[index] ?? 0
+      const smcColor =
+        candleTrendOverlay && trend
+          ? trend > 0
+            ? candleTrendOverlay.palette.internalBull
+            : candleTrendOverlay.palette.internalBear
+          : undefined
+      return {
+        time: candle.time as UTCTimestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        ...(smcColor && chartType === 'candles'
+          ? { color: smcColor, borderColor: smcColor, wickColor: smcColor }
+          : {}),
+      }
+    })
     const previous = dataInfo.current
     if (
       previous.first === candles[0].time &&
@@ -535,7 +593,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candles,
     }
     refreshRef.current()
-  }, [candles, chartType, asset.symbol, asset.priceIncrement])
+  }, [candles, chartType, asset.symbol, asset.priceIncrement, candleTrendOverlay])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -794,6 +852,22 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ? `Warming up · ${data.length}/${s.signalLength} source candles`
       : ''
   }
+  const smcNotice = (indicator: Indicator) => {
+    const settings = smcSettings(indicator)
+    const resolution = settings.fvgTimeframe
+    if (!settings.showFairValueGaps || !resolution || resolution === timeframe) return ''
+    const feed = indicatorTimeframes[resolution]
+    const data = feed?.candles
+    if (feed && ['offline', 'stale', 'reconnecting', 'loading'].includes(feed.state))
+      return `${resolution} FVG feed ${feed.state} · ${feed.message}`
+    if (!data?.length)
+      return replay
+        ? `No ${resolution} FVG history in this replay snapshot. Exit replay to load it.`
+        : `Loading ${resolution} FVG source candles…`
+    if (data[0].time > candles[0]?.time)
+      return `${resolution} FVG history limited to ${data.length} source candles; earlier bars unavailable.`
+    return ''
+  }
   const drawingList = [...drawings]
   if (pending && preview && drawingTool !== 'cursor')
     drawingList.push({
@@ -988,6 +1062,384 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  const smcPoint = (index: number, price: number) => {
+    const candle = candles[index]
+    return candle ? position({ time: candle.time, price }) : null
+  }
+  const smcTimePoint = (time: number, price: number) => position({ time, price })
+  const smcLineDash = (style: '⎯⎯⎯' | '----' | '····') =>
+    style === '----' ? '7 4' : style === '····' ? '1 4' : undefined
+  const renderSmcOverlay = (overlay: (typeof smcOverlays)[number]) => {
+    const { indicator, settings: smc, palette, result } = overlay
+    const renderStructure = (event: (typeof result.internalEvents)[number]) => {
+      const isInternal = event.kind === 'internal'
+      const enabled = isInternal ? smc.showInternal : smc.showSwing
+      const filter =
+        event.side === 'bullish'
+          ? isInternal
+            ? smc.internalBullish
+            : smc.swingBullish
+          : isInternal
+            ? smc.internalBearish
+            : smc.swingBearish
+      if (!enabled || !structureAllowed(event.type, filter)) return null
+      const start = smcPoint(event.pivotIndex, event.price)
+      const end = smcPoint(event.breakIndex, event.price)
+      if (!start || !end) return null
+      const color =
+        event.side === 'bullish'
+          ? isInternal
+            ? palette.internalBull
+            : palette.swingBull
+          : isInternal
+            ? palette.internalBear
+            : palette.swingBear
+      const size = smcLabelSize(isInternal ? smc.internalLabelSize : smc.swingLabelSize)
+      const labelY = event.side === 'bullish' ? start.y - 6 : start.y + size + 4
+      return (
+        <g key={`${event.kind}:${event.side}:${event.pivotIndex}:${event.breakIndex}`}>
+          <line
+            x1={start.x}
+            y1={start.y}
+            x2={end.x}
+            y2={end.y}
+            stroke={color}
+            strokeWidth={isInternal ? '1' : '1.25'}
+            strokeDasharray={isInternal ? '4 3' : undefined}
+            opacity=".9"
+          />
+          <text
+            x={(start.x + end.x) / 2}
+            y={labelY}
+            textAnchor="middle"
+            fill={color}
+            fontSize={size}
+            fontWeight={isInternal ? '500' : '600'}
+            fontFamily="DM Sans, sans-serif"
+            className="smc-label"
+          >
+            {event.type}
+          </text>
+        </g>
+      )
+    }
+    const renderOrderBlock = (block: (typeof result.internalOrderBlocks)[number]) => {
+      const visible =
+        block.kind === 'internal' ? smc.showInternalOrderBlocks : smc.showSwingOrderBlocks
+      if (!visible) return null
+      const rightIndex = Math.min(block.mitigatedAt ?? candles.length - 1, candles.length - 1)
+      const leftTop = smcPoint(block.startIndex, block.top)
+      const leftBottom = smcPoint(block.startIndex, block.bottom)
+      const right = smcPoint(rightIndex, block.bottom)
+      if (!leftTop || !leftBottom || !right) return null
+      const mitigated = block.mitigatedAt !== undefined
+      const color =
+        mitigated && smc.highlightMitigatedBlocks
+          ? palette.muted
+          : block.side === 'bullish'
+            ? palette.bullOrderBlock
+            : palette.bearOrderBlock
+      const x = Math.min(leftTop.x, right.x)
+      const y = Math.min(leftTop.y, leftBottom.y)
+      const width = Math.max(2, Math.abs(right.x - leftTop.x))
+      const height = Math.max(1, Math.abs(leftBottom.y - leftTop.y))
+      return (
+        <g key={block.id} className="smc-order-block">
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            fill={color}
+            fillOpacity={mitigated ? '.09' : '.18'}
+            stroke={color}
+            strokeWidth="1"
+            strokeOpacity={mitigated ? '.45' : '.9'}
+          />
+          <text
+            x={x + 4}
+            y={Math.min(y + 11, geometry.height - 3)}
+            fill={color}
+            fontSize="8"
+            fontWeight="600"
+            fontFamily="DM Sans, sans-serif"
+          >
+            {block.kind === 'internal' ? 'iOB' : 'OB'} {block.side === 'bullish' ? '+' : '−'}
+            {mitigated ? ' · mitigated' : ''}
+          </text>
+        </g>
+      )
+    }
+    const renderEqualLevel = (level: (typeof result.equalLevels)[number]) => {
+      if (!smc.showEqualHighLow) return null
+      const start = smcPoint(level.firstIndex, level.price)
+      const end = smcPoint(level.secondIndex, level.price)
+      if (!start || !end) return null
+      const color = level.side === 'high' ? palette.swingBear : palette.swingBull
+      const size = smcLabelSize(smc.equalHighLowLabelSize)
+      const y = level.side === 'high' ? start.y - 5 : start.y + size + 4
+      return (
+        <g key={`${level.side}:${level.firstIndex}:${level.secondIndex}`}>
+          <line
+            x1={start.x}
+            y1={start.y}
+            x2={end.x}
+            y2={end.y}
+            stroke={color}
+            strokeDasharray="2 3"
+            strokeWidth="1"
+          />
+          <text
+            x={(start.x + end.x) / 2}
+            y={y}
+            textAnchor="middle"
+            fill={color}
+            fontSize={size}
+            fontWeight="600"
+            fontFamily="DM Sans, sans-serif"
+            className="smc-label"
+          >
+            {level.side === 'high' ? 'EQH' : 'EQL'}
+          </text>
+        </g>
+      )
+    }
+    const renderFairValueGap = (gap: (typeof result.fairValueGaps)[number]) => {
+      if (!smc.showFairValueGaps) return null
+      const leftTop = smcTimePoint(gap.startTime, gap.top)
+      const leftBottom = smcTimePoint(gap.startTime, gap.bottom)
+      // Keep extensions inside available chart history; the price pane does not
+      // synthesize future bars solely to show a projected FVG rectangle.
+      const rightTime = Math.max(
+        gap.startTime,
+        Math.min(gap.endTime, candles.at(-1)?.time ?? gap.endTime),
+      )
+      const right = smcTimePoint(rightTime, gap.bottom)
+      if (!leftTop || !leftBottom || !right) return null
+      const color = gap.side === 'bullish' ? palette.bullFvg : palette.bearFvg
+      const x = Math.min(leftTop.x, right.x)
+      const y = Math.min(leftTop.y, leftBottom.y)
+      const width = Math.max(2, Math.abs(right.x - leftTop.x))
+      const height = Math.max(1, Math.abs(leftBottom.y - leftTop.y))
+      return (
+        <g key={`fvg:${gap.side}:${gap.startIndex}`} className="smc-fvg">
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            fill={color}
+            fillOpacity={gap.mitigatedAt === undefined ? '.13' : '.05'}
+            stroke={color}
+            strokeOpacity=".58"
+            strokeWidth="1"
+          />
+          <text
+            x={x + 3}
+            y={Math.min(y + 10, geometry.height - 3)}
+            fill={color}
+            fontSize="7"
+            fontWeight="600"
+            fontFamily="DM Sans, sans-serif"
+          >
+            FVG
+          </text>
+        </g>
+      )
+    }
+    const renderPreviousHighLow = (level: (typeof result.previousHighLows)[number]) => {
+      const highStart = smcPoint(level.startIndex, level.high)
+      const highEnd = smcPoint(level.endIndex, level.high)
+      const lowStart = smcPoint(level.startIndex, level.low)
+      const lowEnd = smcPoint(level.endIndex, level.low)
+      if (!highStart || !highEnd || !lowStart || !lowEnd) return null
+      const color = palette.equilibrium
+      const dash = smcLineDash(level.style)
+      return (
+        <g key={`${level.timeframe}:${level.startIndex}`} opacity=".82">
+          <line
+            x1={highStart.x}
+            y1={highStart.y}
+            x2={highEnd.x}
+            y2={highEnd.y}
+            stroke={color}
+            strokeWidth="1"
+            strokeDasharray={dash}
+          />
+          <line
+            x1={lowStart.x}
+            y1={lowStart.y}
+            x2={lowEnd.x}
+            y2={lowEnd.y}
+            stroke={color}
+            strokeWidth="1"
+            strokeDasharray={dash}
+          />
+          <text
+            x={highEnd.x - 2}
+            y={highEnd.y - 4}
+            textAnchor="end"
+            fill={color}
+            fontSize="7"
+            fontFamily="DM Sans, sans-serif"
+          >
+            P{level.timeframe}H
+          </text>
+          <text
+            x={lowEnd.x - 2}
+            y={lowEnd.y + 9}
+            textAnchor="end"
+            fill={color}
+            fontSize="7"
+            fontFamily="DM Sans, sans-serif"
+          >
+            P{level.timeframe}L
+          </text>
+        </g>
+      )
+    }
+    const renderSwingPoint = (pivot: (typeof result.swingPivots)[number]) => {
+      if (!smc.showSwing || !smc.showSwingPoints) return null
+      const point = smcPoint(pivot.index, pivot.price)
+      if (!point) return null
+      const bullish = pivot.kind === 'low'
+      const color = bullish ? palette.swingBull : palette.swingBear
+      const size = smcLabelSize(smc.swingLabelSize)
+      return (
+        <text
+          key={`swing:${pivot.kind}:${pivot.index}`}
+          x={point.x}
+          y={bullish ? point.y + size + 5 : point.y - 6}
+          textAnchor="middle"
+          fill={color}
+          fontSize={size}
+          fontWeight="600"
+          fontFamily="DM Sans, sans-serif"
+          className="smc-label"
+        >
+          {pivot.label}
+        </text>
+      )
+    }
+    const renderStrongWeak = () => {
+      if (!smc.showStrongWeakHighsLows) return null
+      const high = [...result.swingPivots].reverse().find((pivot) => pivot.kind === 'high')
+      const low = [...result.swingPivots].reverse().find((pivot) => pivot.kind === 'low')
+      const lastIndex = candles.length - 1
+      const bullish = result.swingTrend >= 0
+      const draw = (pivot: typeof high, label: string, color: string, below: boolean) => {
+        if (!pivot) return null
+        const start = smcPoint(pivot.index, pivot.price)
+        const end = smcPoint(lastIndex, pivot.price)
+        if (!start || !end) return null
+        return (
+          <g key={`strong-weak:${pivot.kind}:${pivot.index}`}>
+            <line
+              x1={start.x}
+              y1={start.y}
+              x2={end.x}
+              y2={end.y}
+              stroke={color}
+              strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+            <text
+              x={end.x - 3}
+              y={below ? end.y + 10 : end.y - 4}
+              textAnchor="end"
+              fill={color}
+              fontSize="8"
+              fontWeight="600"
+              fontFamily="DM Sans, sans-serif"
+            >
+              {label}
+            </text>
+          </g>
+        )
+      }
+      return (
+        <>
+          {draw(high, bullish ? 'Weak High' : 'Strong High', palette.swingBear, false)}
+          {draw(low, bullish ? 'Strong Low' : 'Weak Low', palette.swingBull, true)}
+        </>
+      )
+    }
+    const renderPremiumDiscount = () => {
+      if (!smc.showPremiumDiscount || !result.range) return null
+      const { high, low, startIndex } = result.range
+      const start = smcPoint(startIndex, high)
+      const end = smcPoint(candles.length - 1, low)
+      const highPoint = smcPoint(startIndex, high)
+      const lowPoint = smcPoint(startIndex, low)
+      if (!start || !end || !highPoint || !lowPoint) return null
+      const range = high - low
+      const zones = [
+        { label: 'PREMIUM', top: high, bottom: low + range * 0.525, color: palette.premium },
+        {
+          label: 'EQUILIBRIUM',
+          top: low + range * 0.525,
+          bottom: low + range * 0.475,
+          color: palette.equilibrium,
+        },
+        { label: 'DISCOUNT', top: low + range * 0.475, bottom: low, color: palette.discount },
+      ]
+      const x = Math.min(start.x, end.x)
+      const width = Math.max(2, Math.abs(end.x - start.x))
+      return (
+        <g className="smc-premium-discount">
+          {zones.map((zone) => {
+            const top = smcPoint(startIndex, zone.top)
+            const bottom = smcPoint(startIndex, zone.bottom)
+            if (!top || !bottom) return null
+            const y = Math.min(top.y, bottom.y)
+            const height = Math.max(1, Math.abs(bottom.y - top.y))
+            return (
+              <g key={zone.label}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={width}
+                  height={height}
+                  fill={zone.color}
+                  fillOpacity={zone.label === 'EQUILIBRIUM' ? '.13' : '.06'}
+                  stroke={zone.color}
+                  strokeOpacity=".35"
+                  strokeWidth="1"
+                />
+                <text
+                  x={x + width / 2}
+                  y={y + Math.min(height / 2 + 3, 10)}
+                  textAnchor="middle"
+                  fill={zone.color}
+                  fillOpacity=".82"
+                  fontSize="7"
+                  fontWeight="600"
+                  fontFamily="DM Sans, sans-serif"
+                >
+                  {zone.label}
+                </text>
+              </g>
+            )
+          })}
+        </g>
+      )
+    }
+    return (
+      <g key={indicator.id} data-smc-mode={smc.mode}>
+        {renderPremiumDiscount()}
+        {result.previousHighLows.map(renderPreviousHighLow)}
+        {result.fairValueGaps.map(renderFairValueGap)}
+        {result.internalOrderBlocks.map(renderOrderBlock)}
+        {result.swingOrderBlocks.map(renderOrderBlock)}
+        {result.equalLevels.map(renderEqualLevel)}
+        {result.internalEvents.map(renderStructure)}
+        {result.swingEvents.map(renderStructure)}
+        {result.swingPivots.map(renderSwingPoint)}
+        {renderStrongWeak()}
+      </g>
+    )
+  }
+
   return (
     <div
       className={`chart-stage ${drawingTool !== 'cursor' && !drawingsLocked ? 'is-drawing' : ''}`}
@@ -1096,7 +1548,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                     <span className="legend-value" style={{ color: indicator.color }}>
                       {indicator.kind === 'volume'
                         ? compactNumber(display?.volume)
-                        : plotValue(group?.plots[0])}
+                        : indicator.kind === 'smart-money-concepts'
+                          ? `${smcSettings(indicator).mode} · ${smcSettings(indicator).swingLength}`
+                          : plotValue(group?.plots[0])}
                     </span>
                     <div className="legend-actions">
                       <IconButton
@@ -1189,9 +1643,34 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   )}
               </span>
             )}
+            {indicator.kind === 'smart-money-concepts' && smcNotice(indicator) && (
+              <span className="cm-indicator-notice" role="status">
+                {smcNotice(indicator)}
+                {!replay && smcSettings(indicator).fvgTimeframe !== timeframe && (
+                  <IconButton
+                    icon={RotateCcw}
+                    label="Retry Smart Money Concepts FVG timeframe data"
+                    onClick={props.onIndicatorRetry}
+                  />
+                )}
+              </span>
+            )}
           </div>
         )
       })}
+      <svg
+        ref={smcSvgRef}
+        className="smc-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="smc-overlay"
+        data-revision={revision}
+      >
+        {smcOverlays.map(renderSmcOverlay)}
+      </svg>
       <svg
         ref={svgRef}
         className="drawing-overlay"

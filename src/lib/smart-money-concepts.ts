@@ -16,17 +16,17 @@ import {
  * descriptive rather than a promise of a particular vendor's calculation.
  */
 export const SMC_COLORS = {
-  internalBull: '#3179f5',
-  internalBear: '#f77c80',
+  internalBull: '#2962ff',
+  internalBear: '#f23645',
   swingBull: '#089981',
   swingBear: '#f23645',
-  bullOrderBlock: '#3179f5',
-  bearOrderBlock: '#f77c80',
-  bullFvg: '#00b878',
-  bearFvg: '#ef5350',
-  premium: '#f77c80',
-  equilibrium: '#b2b5be',
-  discount: '#3179f5',
+  bullOrderBlock: '#2962ff',
+  bearOrderBlock: '#f23645',
+  bullFvg: '#089981',
+  bearFvg: '#f23645',
+  premium: '#f23645',
+  equilibrium: '#787b86',
+  discount: '#2962ff',
   monochrome: '#b2b5be',
   muted: '#636363',
 } as const
@@ -174,7 +174,17 @@ export function smcSettings(indicator: Indicator): SmartMoneyConceptsSettings {
 
 export function smcIndicatorLabel(indicator: Indicator): string {
   const settings = smcSettings(indicator)
-  return `Smart Money Concepts (${settings.mode}, ${settings.style}, ${settings.swingLength})`
+  const tiny = (size: SmartMoneyConceptsSettings['internalLabelSize']) => size.toLowerCase()
+  return (
+    `LuxAlgo - Smart Money Concepts (${settings.mode}, ${settings.style}, ` +
+    `${settings.internalBullish}, ${settings.internalBearish}, ${tiny(settings.internalLabelSize)}, ` +
+    `${settings.swingBullish}, ${settings.swingBearish}, ${tiny(settings.swingLabelSize)}, ` +
+    `${settings.swingLength}, ${settings.internalOrderBlockCount}, ${settings.swingOrderBlockCount}, ` +
+    `${settings.orderBlockFilter}, ${settings.orderBlockMitigation}, ${settings.equalHighLowBars}, ` +
+    `${settings.equalHighLowThreshold}, ${tiny(settings.equalHighLowLabelSize)}, ` +
+    `${settings.fvgTimeframe}, ${settings.fvgExtend}, ${settings.dailyLineStyle}, ` +
+    `${settings.weeklyLineStyle}, ${settings.monthlyLineStyle})`
+  )
 }
 
 export function isSmartMoneyConceptsSettings(value: unknown): value is SmartMoneyConceptsSettings {

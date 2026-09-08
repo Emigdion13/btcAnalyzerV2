@@ -81,6 +81,11 @@ import {
   pivotPointsMissedReversalsSettings,
 } from '../lib/pivot-points-missed-reversals'
 import type { PivotColorRole } from '../lib/pivot-points-missed-reversals'
+import {
+  calculateScalpSwing,
+  SCALPSWING_COLORS,
+  scalpSwingSettings,
+} from '../lib/scalpswing'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
@@ -158,6 +163,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const smcSvgRef = useRef<SVGSVGElement>(null)
   const srSvgRef = useRef<SVGSVGElement>(null)
   const pivotSvgRef = useRef<SVGSVGElement>(null)
+  const scalpswingSvgRef = useRef<SVGSVGElement>(null)
   const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -258,6 +264,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             indicator,
             settings,
             result: calculateCoinbaseStrike(candles, settings),
+          }
+        }),
+    [candles, indicators],
+  )
+  const scalpSwingOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'scalpswing')
+        .map((indicator) => {
+          const settings = scalpSwingSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateScalpSwing(candles, settings),
           }
         }),
     [candles, indicators],
@@ -467,6 +487,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       await paintSvg(smcSvgRef.current)
       await paintSvg(srSvgRef.current)
       await paintSvg(pivotSvgRef.current)
+      await paintSvg(scalpswingSvgRef.current)
       await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
@@ -560,6 +581,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               (indicator.visible && indicator.kind === 'smart-money-concepts') ||
               (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
               (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
+              (indicator.visible && indicator.kind === 'scalpswing') ||
               (indicator.visible && divergenceEnabled(indicator)),
           )
         )
@@ -2013,6 +2035,96 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  // SCALPSWING R1-6 – small bottom/top arrows at PAC breakouts
+  const scalpSwingLegendValue = (result?: (typeof scalpSwingOverlays)[number]['result']) => {
+    if (!result) return '—'
+    const buys = result.signals.filter((s) => s.side === 'buy').length
+    const sells = result.signals.filter((s) => s.side === 'sell').length
+    return `${buys} BUY · ${sells} SELL`
+  }
+
+  const renderScalpSwingOverlay = (overlay: (typeof scalpSwingOverlays)[number]) => {
+    const { indicator, settings, result } = overlay
+    const point = (index: number, price: number) => {
+      const candle = candles[index]
+      return candle ? position({ time: candle.time, price }) : null
+    }
+
+    const renderSignal = (signal: (typeof result.signals)[number]) => {
+      const candle = candles[signal.index]
+      if (!candle) return null
+      const isBuy = signal.side === 'buy'
+      const anchorPrice = isBuy ? candle.low : candle.high
+      const anchor = point(signal.index, anchorPrice)
+      if (!anchor) return null
+
+      const color = isBuy ? settings.buyColor : settings.sellColor
+      const bigColor = isBuy ? SCALPSWING_COLORS.bigBuy : SCALPSWING_COLORS.bigSell
+      const displayColor = settings.useBigArrows ? bigColor : color
+
+      // Original Pine: shape.arrowup belowbar (green) for BUY, arrowdown abovebar (red) for SELL
+      // Both point TOWARD the candle. Small arrows at candle bottom/top.
+      const size = settings.useBigArrows ? 14 : 8
+      const gap = settings.useBigArrows ? 12 : 8
+
+      // BUY: triangle pointing UP, just below low. Tip at y, base below.
+      // SELL: triangle pointing DOWN, just above high. Tip at y, base above.
+      const tipY = isBuy ? anchor.y + gap : anchor.y - gap
+      const baseY = isBuy ? tipY + size : tipY - size
+      const arrowPath = isBuy
+        ? `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
+        : `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
+
+      const stemHeight = settings.useBigArrows ? 28 : 0
+      const stemY2 = isBuy ? baseY + stemHeight : baseY - stemHeight
+
+      return (
+        <g
+          key={`scalpswing:${signal.side}:${signal.index}`}
+          className="scalpswing-signal"
+          data-testid={`scalpswing-${signal.side}`}
+          data-index={signal.index}
+        >
+          <title>
+            {isBuy ? 'BUY' : 'SELL'} {formatPrice(signal.close)} · PAC {settings.pacLength} {isBuy ? '>' : '<'} {isBuy ? formatPrice(signal.pacU ?? 0) : formatPrice(signal.pacL ?? 0)} · {settings.filterWithEma ? `EMA${settings.emaFilterLength} filter` : 'no filter'} {settings.signalOnNextBar ? '[next bar]' : '[same bar]'}
+          </title>
+          {settings.useBigArrows && (
+            <line
+              x1={anchor.x}
+              y1={baseY}
+              x2={anchor.x}
+              y2={stemY2}
+              stroke={displayColor}
+              strokeWidth={2.5}
+              strokeOpacity={0.9}
+            />
+          )}
+          <path d={arrowPath} fill={displayColor} stroke={displayColor} strokeWidth={0.6} />
+          {settings.showLabels && (
+            <text
+              x={anchor.x}
+              y={isBuy ? baseY + 12 : baseY - 7}
+              textAnchor="middle"
+              fill={displayColor}
+              fontSize={settings.useBigArrows ? 10 : 9}
+              fontWeight={settings.useBigArrows ? '700' : '700'}
+              fontFamily="DM Sans, sans-serif"
+              className="scalpswing-label"
+            >
+              {isBuy ? 'BUY' : 'SELL'}
+            </text>
+          )}
+        </g>
+      )
+    }
+
+    return (
+      <g key={indicator.id} data-scalpswing-length={settings.pacLength} data-testid="scalpswing-overlay">
+        {result.signals.map(renderSignal)}
+      </g>
+    )
+  }
+
   const renderDivergenceOverlay = (overlay: (typeof macdDivergences)[number]) => {
     const entry = indicatorSeries.current.get(overlay.indicator.id)
     if (!entry || !entry.pane) return null
@@ -2289,7 +2401,12 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                   pivotOverlays.find((item) => item.indicator.id === indicator.id)
                                     ?.result,
                                 )
-                              : plotValue(group?.plots[0])}
+                              : indicator.kind === 'scalpswing'
+                                ? scalpSwingLegendValue(
+                                    scalpSwingOverlays.find((item) => item.indicator.id === indicator.id)
+                                      ?.result,
+                                  )
+                                : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">
@@ -2555,6 +2672,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {pivotOverlays.map(renderPivotOverlay)}
+      </svg>
+      <svg
+        ref={scalpswingSvgRef}
+        className="scalpswing-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="scalpswing-overlay"
+        data-revision={revision}
+      >
+        {scalpSwingOverlays.map(renderScalpSwingOverlay)}
       </svg>
       <svg
         ref={divSvgRef}

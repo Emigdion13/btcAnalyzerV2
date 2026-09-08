@@ -51,6 +51,7 @@ import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
 import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedReversalsSettingsDialog'
 import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
+import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -527,6 +528,7 @@ export function IndicatorSettingsDialog(props: {
   if (props.indicator.kind === 'pivot-points-missed-reversals')
     return <PivotPointsMissedReversalsSettingsDialog {...props} />
   if (props.indicator.kind === 'coinbase-strike') return <CoinbaseStrikeSettingsDialog {...props} />
+  if (props.indicator.kind === 'scalpswing') return <ScalpSwingSettingsDialog {...props} />
   return <StandardIndicatorSettingsDialog {...props} />
 }
 

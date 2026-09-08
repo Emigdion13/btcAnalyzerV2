@@ -1017,10 +1017,28 @@ button {
   overflow: hidden;
   z-index: 1;
 }
+.scalpswing-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
+}
 /* Pivot Points High Low & Missed Reversal Levels: ▼ ▲ 👻 label glyphs keep the
    chart-message halo; the emoji only needs a light one. */
 .pivot-label-text {
   stroke-opacity: 0.6;
+}
+.scalpswing-label {
+  paint-order: stroke;
+  stroke: #101318;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.scalpswing-signal {
+  pointer-events: none;
 }
 .pivot-input-group .setting-row {
   border-bottom: 0;

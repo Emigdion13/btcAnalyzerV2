@@ -21,6 +21,14 @@ test('adds, renders, and persists the SR Breaks and Retests overlay', async ({ p
   await expect(page.getByTestId('sr-zone').first()).toBeVisible()
   expect(await page.getByTestId('sr-zone').count()).toBeGreaterThan(0)
 
+  // Break labels are messages inside the chart, so they stay transparent: the
+  // plate is an outline only (`fill="none"`) and the glyphs carry a halo class
+  // instead of a solid background hiding the candles behind the label.
+  const breakLabel = page.getByTestId('sr-break-label').first()
+  await expect(breakLabel).toBeVisible()
+  await expect(breakLabel.locator('rect')).toHaveAttribute('fill', 'none')
+  await expect(breakLabel.locator('text')).toHaveClass(/chart-message/)
+
   await legend.click()
   await expect(page.getByRole('dialog', { name: 'SR Breaks and Retests' })).toBeVisible()
   await expect(page.getByLabel('Lookback period')).toHaveValue('20')

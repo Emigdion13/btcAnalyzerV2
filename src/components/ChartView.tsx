@@ -74,6 +74,7 @@ import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
 import { uid } from '../lib/storage'
+import { ChartMessagePlate, ChartMessageText, SrBreakLabel } from './ChartMessage'
 import { CoinIcon, IconButton } from './ui'
 
 export interface ChartHandle {
@@ -1075,28 +1076,40 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             stroke={color}
             strokeWidth="1"
           />
-          <rect x="8" y={start.y - 20} width="100" height="18" rx="3" fill="#1c2637" />
-          <text x="15" y={start.y - 7} fill={color} fontSize="10" fontFamily="JetBrains Mono">
+          <ChartMessagePlate
+            x={8}
+            y={start.y - 20}
+            width={100}
+            height={18}
+            color={color}
+            testId="drawing-price-tag"
+          />
+          <ChartMessageText
+            x={15}
+            y={start.y - 7}
+            color={color}
+            fontFamily="JetBrains Mono, monospace"
+          >
             {formatPrice(drawing.start.price)}
-          </text>
+          </ChartMessageText>
         </g>
       )
     if (drawing.tool === 'text')
       return (
         <g key={drawing.id}>
-          <rect
+          <ChartMessagePlate
             x={start.x - 6}
             y={start.y - 19}
             width={Math.min(400, (drawing.text?.length ?? 4) * 7 + 14)}
-            height="27"
-            rx="4"
-            fill="#1b2638"
-            fillOpacity=".94"
-            stroke={`${color}60`}
+            height={27}
+            rx={4}
+            color={color}
+            strokeOpacity={0.45}
+            testId="drawing-text-plate"
           />
-          <text x={start.x + 1} y={start.y - 1} fill={color} fontSize="12" fontFamily="DM Sans">
+          <ChartMessageText x={start.x + 1} y={start.y - 1} color={color} size={12}>
             {drawing.text}
-          </text>
+          </ChartMessageText>
         </g>
       )
     if (!end) return <circle key={drawing.id} cx={start.x} cy={start.y} r="4" fill={color} />
@@ -1132,19 +1145,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   stroke={colors[i]}
                   strokeWidth="1"
                 />
-                <text
+                <ChartMessageText
                   x={Math.min(start.x, end.x) + 5}
                   y={y - 4}
-                  fill={colors[i]}
-                  fontSize="10"
-                  fontFamily="JetBrains Mono"
+                  color={colors[i]}
+                  fontFamily="JetBrains Mono, monospace"
                 >
                   {ratio.toFixed(3)} (
                   {formatPrice(
                     drawing.start.price + (drawing.end!.price - drawing.start.price) * ratio,
                   )}
                   )
-                </text>
+                </ChartMessageText>
               </g>
             )
           })}
@@ -1186,27 +1198,27 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         <circle cx={end.x} cy={end.y} r="3.5" fill="#101318" stroke={color} />
         {drawing.tool === 'measure' && (
           <g>
-            <rect
+            <ChartMessagePlate
               x={(start.x + end.x) / 2 - 69}
               y={Math.min(start.y, end.y) - 32}
-              width="138"
-              height="24"
-              rx="4"
-              fill="#233047"
+              width={138}
+              height={24}
+              rx={4}
+              color="#8b9bb2"
+              testId="drawing-measure-plate"
             />
-            <text
+            <ChartMessageText
               x={(start.x + end.x) / 2}
               y={Math.min(start.y, end.y) - 16}
-              textAnchor="middle"
-              fill="#dbe5f7"
-              fontSize="10"
-              fontFamily="JetBrains Mono"
+              color="#dbe5f7"
+              anchor="middle"
+              fontFamily="JetBrains Mono, monospace"
             >
               {change >= 0 ? '+' : ''}
               {change.toFixed(2)}% ·{' '}
               {Math.round(Math.abs(drawing.end!.time - drawing.start.time) / INTERVAL[timeframe])}{' '}
               bars
-            </text>
+            </ChartMessageText>
           </g>
         )}
       </g>
@@ -1309,7 +1321,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const y = Math.min(leftTop.y, leftBottom.y)
       const width = Math.max(2, Math.abs(right.x - leftTop.x))
       const height = Math.max(1, Math.abs(leftBottom.y - leftTop.y))
-      const strength = bookStrength(block.top, block.bottom, block.side === 'bullish' ? 'bid' : 'ask')
+      const strength = bookStrength(
+        block.top,
+        block.bottom,
+        block.side === 'bullish' ? 'bid' : 'ask',
+      )
       const chip = chipText(strength)
       return (
         <g key={block.id} className="smc-order-block">
@@ -1324,29 +1340,28 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeWidth="1"
             strokeOpacity={mitigated ? '.45' : '.9'}
           />
-          <text
+          <ChartMessageText
             x={x + 4}
             y={Math.min(y + 11, geometry.height - 3)}
-            fill={color}
-            fontSize="8"
-            fontWeight="600"
-            fontFamily="DM Sans, sans-serif"
+            color={color}
+            size={8}
+            weight={600}
           >
             {block.kind === 'internal' ? 'iOB' : 'OB'} {block.side === 'bullish' ? '+' : '−'}
             {mitigated ? ' · mitigated' : ''}
-          </text>
+          </ChartMessageText>
           {chip && strength && (
-            <text
+            <ChartMessageText
               x={x + 4}
               y={Math.min(y + 21, geometry.height - 3)}
-              fill={BUCKET_FILL[strength.bucket]}
-              fontSize="7"
-              fontWeight="700"
+              color={BUCKET_FILL[strength.bucket]}
+              size={7}
+              weight={700}
               fontFamily="JetBrains Mono, monospace"
-              data-testid="book-zone-chip"
+              testId="book-zone-chip"
             >
               {chip}
-            </text>
+            </ChartMessageText>
           )}
         </g>
       )
@@ -1417,28 +1432,27 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeOpacity=".58"
             strokeWidth="1"
           />
-          <text
+          <ChartMessageText
             x={x + 3}
             y={Math.min(y + 10, geometry.height - 3)}
-            fill={color}
-            fontSize="7"
-            fontWeight="600"
-            fontFamily="DM Sans, sans-serif"
+            color={color}
+            size={7}
+            weight={600}
           >
             FVG
-          </text>
+          </ChartMessageText>
           {chip && strength && (
-            <text
+            <ChartMessageText
               x={x + 3}
               y={Math.min(y + 20, geometry.height - 3)}
-              fill={BUCKET_FILL[strength.bucket]}
-              fontSize="7"
-              fontWeight="700"
+              color={BUCKET_FILL[strength.bucket]}
+              size={7}
+              weight={700}
               fontFamily="JetBrains Mono, monospace"
-              data-testid="book-zone-chip"
+              testId="book-zone-chip"
             >
               {chip}
-            </text>
+            </ChartMessageText>
           )}
         </g>
       )
@@ -1471,26 +1485,12 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeWidth="1"
             strokeDasharray={dash}
           />
-          <text
-            x={highEnd.x - 2}
-            y={highEnd.y - 4}
-            textAnchor="end"
-            fill={color}
-            fontSize="7"
-            fontFamily="DM Sans, sans-serif"
-          >
+          <ChartMessageText x={highEnd.x - 2} y={highEnd.y - 4} anchor="end" color={color} size={7}>
             P{level.timeframe}H
-          </text>
-          <text
-            x={lowEnd.x - 2}
-            y={lowEnd.y + 9}
-            textAnchor="end"
-            fill={color}
-            fontSize="7"
-            fontFamily="DM Sans, sans-serif"
-          >
+          </ChartMessageText>
+          <ChartMessageText x={lowEnd.x - 2} y={lowEnd.y + 9} anchor="end" color={color} size={7}>
             P{level.timeframe}L
-          </text>
+          </ChartMessageText>
         </g>
       )
     }
@@ -1539,17 +1539,16 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               strokeWidth="1"
               strokeDasharray="3 3"
             />
-            <text
+            <ChartMessageText
               x={end.x - 3}
               y={below ? end.y + 10 : end.y - 4}
-              textAnchor="end"
-              fill={color}
-              fontSize="8"
-              fontWeight="600"
-              fontFamily="DM Sans, sans-serif"
+              anchor="end"
+              color={color}
+              size={8}
+              weight={600}
             >
               {label}
-            </text>
+            </ChartMessageText>
           </g>
         )
       }
@@ -1602,18 +1601,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   strokeOpacity=".35"
                   strokeWidth="1"
                 />
-                <text
+                <ChartMessageText
                   x={x + width / 2}
                   y={y + Math.min(height / 2 + 3, 10)}
-                  textAnchor="middle"
-                  fill={zone.color}
-                  fillOpacity=".82"
-                  fontSize="7"
-                  fontWeight="600"
-                  fontFamily="DM Sans, sans-serif"
+                  anchor="middle"
+                  color={zone.color}
+                  opacity={0.82}
+                  size={7}
+                  weight={600}
                 >
                   {zone.label}
-                </text>
+                </ChartMessageText>
               </g>
             )
           })}
@@ -1652,10 +1650,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       if (y === null) return null
       const color = side === 'support' ? '#2ebd85' : '#f6465d'
       const label = `${side === 'support' ? 'S' : 'R'} ${formatNotional(wall.notional)}`
-      const hint =
-        wall.depth > 0 ? ` · in front ${formatNotional(wall.depth)}` : ''
+      const hint = wall.depth > 0 ? ` · in front ${formatNotional(wall.depth)}` : ''
       return (
-        <g key={`book-wall:${wall.side}:${wall.price}`} className="book-wall" data-testid="book-wall">
+        <g
+          key={`book-wall:${wall.side}:${wall.price}`}
+          className="book-wall"
+          data-testid="book-wall"
+        >
           <line
             x1={0}
             y1={y}
@@ -1666,20 +1667,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             strokeOpacity=".5"
             strokeDasharray="7 5"
           />
-          <text
+          <ChartMessageText
             x={5}
             y={Math.max(9, y - 5)}
-            fill={color}
-            fontSize="8"
-            fontWeight="700"
+            color={color}
+            size={8}
+            weight={700}
             fontFamily="JetBrains Mono, monospace"
-            paintOrder="stroke"
-            stroke="#101318"
-            strokeWidth="3"
           >
             {label}
             {hint}
-          </text>
+          </ChartMessageText>
         </g>
       )
     }
@@ -1760,17 +1758,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             </text>
           )}
           {chip && strength && height >= 22 && (
-            <text
+            <ChartMessageText
               x={x + 4}
               y={y + 9}
-              fill={BUCKET_FILL[strength.bucket]}
-              fontSize="7"
-              fontWeight="700"
+              color={BUCKET_FILL[strength.bucket]}
+              size={7}
+              weight={700}
               fontFamily="JetBrains Mono, monospace"
-              data-testid="book-zone-chip"
+              testId="book-zone-chip"
             >
               {chip}
-            </text>
+            </ChartMessageText>
           )}
         </g>
       )
@@ -1802,39 +1800,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const renderLabel = (label: (typeof result.labels)[number]) => {
       const anchor = srPoint(label.index, label.price)
       if (!anchor) return null
-      const text = label.kind === 'break-support' ? 'Break Sup' : 'Break Res'
-      const width = 60
-      const height = 17
-      const above = label.kind === 'break-support'
-      const x = anchor.x - width / 2
-      const y = above ? anchor.y - height - 7 : anchor.y + 7
+      // Transparent by contract: the published color outlines the label and tints
+      // the glyphs, but no plate is filled over the candles.
+      const textColor =
+        label.kind === 'break-support'
+          ? SR_BREAKS_RETESTS_COLORS.breakSupportText
+          : SR_BREAKS_RETESTS_COLORS.breakResistanceText
       return (
-        <g
+        <SrBreakLabel
           key={`sr-label:${label.kind}:${label.index}`}
-          className="sr-break-label"
-          data-testid="sr-break-label"
-        >
-          <rect x={x} y={y} width={width} height={height} rx={3} fill={label.color} />
-          <path
-            d={
-              above
-                ? `M ${anchor.x - 4} ${y + height} L ${anchor.x + 4} ${y + height} L ${anchor.x} ${y + height + 5} Z`
-                : `M ${anchor.x - 4} ${y} L ${anchor.x + 4} ${y} L ${anchor.x} ${y - 5} Z`
-            }
-            fill={label.color}
-          />
-          <text
-            x={anchor.x}
-            y={y + 12}
-            textAnchor="middle"
-            fill={SR_BREAKS_RETESTS_COLORS.foreground}
-            fontSize="9.5"
-            fontWeight="600"
-            fontFamily="DM Sans, sans-serif"
-          >
-            {text}
-          </text>
-        </g>
+          kind={label.kind}
+          anchor={anchor}
+          color={label.color}
+          textColor={textColor}
+        />
       )
     }
     return (

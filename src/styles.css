@@ -1016,6 +1016,32 @@ button {
   overflow: hidden;
   z-index: 1;
 }
+/*
+ * Messages drawn inside the chart pane (SR break labels, drawing tags, measure
+ * badges, zone captions). They are transparent by contract: the plate is an
+ * outline with no fill, so the candles behind a message always stay visible,
+ * and the glyphs stay readable through a dark halo stroked behind them instead
+ * of a solid background. The class names are declared in `src/lib/chart-message.ts`
+ * and applied by `src/components/ChartMessage.tsx`.
+ */
+.chart-message,
+.chart-message-plate {
+  pointer-events: none;
+}
+.chart-message {
+  paint-order: stroke;
+  stroke: #101318;
+  stroke-opacity: 0.78;
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+}
+.chart-message--small {
+  stroke-opacity: 0.7;
+  stroke-width: 1.7px;
+}
+.chart-message-plate {
+  fill: none;
+}
 .smc-label {
   paint-order: stroke;
   stroke: #101318;

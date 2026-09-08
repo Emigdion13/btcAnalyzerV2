@@ -1059,6 +1059,14 @@ button {
   border-color: #a6c682;
   box-shadow: 0 0 0 2px #b9ee8208;
 }
+.divergence-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
 /*
  * Messages drawn inside the chart pane (SR break labels, drawing tags, measure
  * badges, zone captions). They are transparent by contract: the plate is an

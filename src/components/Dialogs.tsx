@@ -43,8 +43,10 @@ import type {
 import { DEFAULT_SETTINGS } from '../lib/types'
 import { formatPrice, formatChange, changeClass, quoteCurrency, compactNumber } from '../lib/market'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
+import { divergenceSettings, isDivergenceSettings } from '../lib/macd-divergence'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
+import { DivergenceSettingsSection } from './DivergenceSettingsSection'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
 import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedReversalsSettingsDialog'
@@ -549,6 +551,14 @@ function StandardIndicatorSettingsDialog({
       result?.inputs.map((i) => [i.name, String(indicator.inputValues?.[i.name] ?? i.value)]) ?? [],
     ),
   )
+  const initialDiv = divergenceSettings(indicator)
+  const [divergence, setDivergence] = useState(initialDiv)
+  const [divNumbers, setDivNumbers] = useState(() => ({
+    pivotLookback: String(initialDiv.pivotLookback),
+    rangeLower: String(initialDiv.rangeLower),
+    rangeUpper: String(initialDiv.rangeUpper),
+  }))
+  const [divError, setDivError] = useState('')
   const hasPeriod = !['custom', 'vwap', 'volume'].includes(indicator.kind)
   return (
     <Modal
@@ -575,11 +585,28 @@ function StandardIndicatorSettingsDialog({
         id="indicator-settings-form"
         onSubmit={(e) => {
           e.preventDefault()
+          let divChange: Pick<Indicator, 'divergence'> = {}
+          if (indicator.kind === 'macd') {
+            const div = {
+              ...divergence,
+              pivotLookback: Number(divNumbers.pivotLookback),
+              rangeLower: Number(divNumbers.rangeLower),
+              rangeUpper: Number(divNumbers.rangeUpper),
+            }
+            if (!isDivergenceSettings(div)) {
+              setDivError(
+                'Divergence gaps must be whole numbers from 1 to 1000, and the max gap cannot be below the min gap.',
+              )
+              return
+            }
+            divChange = { divergence: div }
+          }
           onSave({
             ...indicator,
             period: Number(period),
             color,
             visible,
+            ...divChange,
             ...(indicator.kind === 'custom'
               ? {
                   inputValues: Object.fromEntries(
@@ -616,6 +643,21 @@ function StandardIndicatorSettingsDialog({
             Slow period scales at 26/12 of the fast period. Signal period is 9. MACD and signal
             lines are shown.
           </div>
+        )}
+        {indicator.kind === 'macd' && (
+          <>
+            <DivergenceSettingsSection
+              settings={divergence}
+              numbers={divNumbers}
+              onToggle={(key, value) => setDivergence({ ...divergence, [key]: value })}
+              onNumber={(key, value) => setDivNumbers({ ...divNumbers, [key]: value })}
+            />
+            {divError && (
+              <p className="negative" role="alert">
+                {divError}
+              </p>
+            )}
+          </>
         )}
         {indicator.kind === 'custom' &&
           result?.inputs.map((input) => (

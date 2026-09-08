@@ -1,6 +1,7 @@
 import { ASSETS, TIMEFRAMES } from './market'
 import { isProductId } from '../../shared/coinbase'
 import { isCmMacdSettings } from './cm-ult-macd'
+import { isDivergenceSettings } from './macd-divergence'
 import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
 import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
@@ -140,6 +141,19 @@ function indicator(value: unknown): Indicator {
       histogramColorChange: settings.histogramColorChange,
     }
     result.period = result.cmMacd.fastLength
+  }
+  if ((kind === 'macd' || kind === 'cm-ult-macd') && i.divergence !== undefined) {
+    const settings = i.divergence
+    if (!isDivergenceSettings(settings)) invalid('MACD divergence settings')
+    result.divergence = {
+      showRegular: settings.showRegular,
+      showHidden: settings.showHidden,
+      pivotLookback: settings.pivotLookback,
+      rangeUpper: settings.rangeUpper,
+      rangeLower: settings.rangeLower,
+      showLines: settings.showLines,
+      showLabels: settings.showLabels,
+    }
   }
   if (kind === 'smart-money-concepts' && i.smc !== undefined) {
     const settings = i.smc

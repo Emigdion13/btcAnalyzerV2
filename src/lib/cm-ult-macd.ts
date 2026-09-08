@@ -7,6 +7,7 @@ import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase
 import { ta } from './indicator-runtime'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
+import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
 
 export const CM_MACD_SOURCE =
@@ -96,6 +97,8 @@ export function indicatorLabel(indicator: Indicator): string {
   }
   if (indicator.kind === 'smart-money-concepts') return smcIndicatorLabel(indicator)
   if (indicator.kind === 'sr-breaks-retests') return srBreaksRetestsIndicatorLabel(indicator)
+  if (indicator.kind === 'pivot-points-missed-reversals')
+    return pivotPointsMissedReversalsIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
 export function requestedIndicatorTimeframes(

@@ -238,6 +238,67 @@ describe('workspace backups', () => {
     })
     expect(clean.indicators[0].period).toBe(12)
   })
+  it('round-trips each Pivot Points High Low & Missed Reversal Levels input and rejects malformed values', () => {
+    const pivots = {
+      pivotLength: 20,
+      showRegular: false,
+      regularHighColor: '#ff0000',
+      regularLowColor: '#00ff00',
+      showMissed: true,
+      missedHighColor: '#aa0000',
+      missedLowColor: '#00aa00',
+      labelTextColor: '#000000',
+    }
+    const saved = backup()
+    saved.indicators.push({
+      id: 'pivots',
+      kind: 'pivot-points-missed-reversals',
+      name: 'Pivot Points High Low & Missed Reversal Levels',
+      period: 20,
+      color: '#00ff00',
+      visible: true,
+      pivots,
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    for (const invalid of [
+      { ...pivots, pivotLength: 0 },
+      { ...pivots, pivotLength: 7.5 },
+      { ...pivots, pivotLength: 501 },
+      { ...pivots, showRegular: 'yes' },
+      { ...pivots, regularHighColor: 'red' },
+      { ...pivots, missedLowColor: '#0f0' },
+      { ...pivots, labelTextColor: undefined },
+    ])
+      expect(() =>
+        parseWorkspaceBackup({
+          ...backup(),
+          indicators: [
+            {
+              id: 'pivots',
+              kind: 'pivot-points-missed-reversals',
+              name: 'Pivot Points High Low & Missed Reversal Levels',
+              period: 50,
+              color: '#26a69a',
+              visible: true,
+              pivots: invalid,
+            },
+          ],
+        }),
+      ).toThrow(/Pivot Points High Low & Missed Reversal Levels/)
+    const clean = parseWorkspaceBackup({
+      ...backup(),
+      indicators: [
+        {
+          ...saved.indicators.at(-1)!,
+          period: 99,
+          pivots: { ...pivots, extra: 'ignored' },
+        },
+      ],
+    })
+    expect(clean.indicators[0].pivots).toEqual(pivots)
+    // `period` mirrors the pivot length so the legend "(n)" cannot drift.
+    expect(clean.indicators[0].period).toBe(20)
+  })
   it('round-trips Coinbase Strike inputs and rejects malformed values', () => {
     const saved = backup()
     saved.indicators.push({

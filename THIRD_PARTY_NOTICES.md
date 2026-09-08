@@ -18,6 +18,10 @@ This is an independent native implementation, not the later V2 update or a bundl
 
 The native TypeScript `SR Breaks and Retests` implementation is a port of **ChartPrime's "Support and Resistance (High Volume Boxes)"**, a TradingView indicator whose short title is "SR Breaks and Retests [ChartPrime]". The original Pine Script v5 source is published by ChartPrime at [chartprime.com/indicator/support-and-resistance-high-volume-boxes](https://chartprime.com/indicator/support-and-resistance-high-volume-boxes) under the **Mozilla Public License 2.0**, which permits derivative works with attribution and same-license availability of the source. This notice satisfies that attribution; it does not imply endorsement by ChartPrime or affiliation with TradingView. See [the compatibility notes](docs/sr-breaks-retests.md) for the behavioral contract, the single documented deviation, and verification boundaries.
 
+## Pivot Points High Low & Missed Reversal Levels indicator
+
+The native TypeScript `Pivot Points High Low & Missed Reversal Levels` implementation is a port of **LuxAlgo's "Pivot Points High Low & Missed Reversal Levels [LuxAlgo]"**, an open-source TradingView indicator. The original Pine Script v5 source is published by LuxAlgo at [tradingview.com/script/OxJJqZiN-Pivot-Points-High-Low-Missed-Reversal-Levels-LuxAlgo](https://www.tradingview.com/script/OxJJqZiN-Pivot-Points-High-Low-Missed-Reversal-Levels-LuxAlgo/) under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** license (© LuxAlgo). Under that license this derivative port is attributed here, is provided for non-commercial use, and is made available under the same license terms as the original; the attribution does not imply endorsement by LuxAlgo or affiliation with TradingView. See [the compatibility notes](docs/pivot-points-missed-reversals.md) for the behavioral contract, the single documented deviation, and verification boundaries.
+
 ## Fonts and icons
 
 - DM Sans: Copyright 2014 The DM Sans Project Authors. SIL Open Font License 1.1. See `node_modules/@fontsource/dm-sans/LICENSE`.

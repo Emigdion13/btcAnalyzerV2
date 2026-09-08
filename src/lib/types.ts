@@ -17,6 +17,7 @@ export type IndicatorKind =
   | 'cm-ult-macd'
   | 'smart-money-concepts'
   | 'sr-breaks-retests'
+  | 'pivot-points-missed-reversals'
   | 'coinbase-strike'
   | 'vwap'
   | 'volume'
@@ -196,6 +197,44 @@ export const SR_BREAKS_RETESTS_DEFAULTS: Readonly<SrBreaksRetestsSettings> = {
   boxWidth: 1,
 }
 
+/**
+ * Settings for the Atlas port of LuxAlgo's open-source "Pivot Points High
+ * Low & Missed Reversal Levels", whose TradingView legend reads
+ * "Pivot Points High Low & Missed Reversal Levels [LuxAlgo] (50)". The fields
+ * mirror the published inputs one for one.
+ */
+export interface PivotPointsMissedReversalsSettings {
+  /** Pine input: `input(50, 'Pivot Length')` — bars on each side of a pivot. */
+  pivotLength: number
+  /** Pine input: 'Regular Pivots' toggle (true). */
+  showRegular: boolean
+  /** Pine input: regular pivot 'High' color (#ef5350). */
+  regularHighColor: string
+  /** Pine input: regular pivot 'Low' color (#26a69a). */
+  regularLowColor: string
+  /** Pine input: 'Missed Pivots' toggle (true). */
+  showMissed: boolean
+  /** Pine input: missed pivot 'High' color (#ef5350). */
+  missedHighColor: string
+  /** Pine input: missed pivot 'Low' color (#26a69a). */
+  missedLowColor: string
+  /** Pine input: 'Text Label Color' (color.white). */
+  labelTextColor: string
+}
+
+/** The published defaults; the legend renders them as (50). */
+export const PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS: Readonly<PivotPointsMissedReversalsSettings> =
+  {
+    pivotLength: 50,
+    showRegular: true,
+    regularHighColor: '#ef5350',
+    regularLowColor: '#26a69a',
+    showMissed: true,
+    missedHighColor: '#ef5350',
+    missedLowColor: '#26a69a',
+    labelTextColor: '#ffffff',
+  }
+
 export interface CoinbaseStrikeSettings {
   /** Contract interval in minutes (5, 15, 30, 60, 240, 1440, etc.). */
   intervalMinutes: number
@@ -264,6 +303,7 @@ export interface Indicator {
   divergence?: DivergenceSettings
   smc?: SmartMoneyConceptsSettings
   sr?: SrBreaksRetestsSettings
+  pivots?: PivotPointsMissedReversalsSettings
   strike?: CoinbaseStrikeSettings
 }
 export interface SavedScript {

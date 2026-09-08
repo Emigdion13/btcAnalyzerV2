@@ -76,6 +76,11 @@ import {
   SR_BREAKS_RETESTS_COLORS,
 } from '../lib/sr-breaks-retests'
 import { calculateCoinbaseStrike, coinbaseStrikeSettings } from '../lib/coinbase-strike'
+import {
+  calculatePivotPointsMissedReversals,
+  pivotPointsMissedReversalsSettings,
+} from '../lib/pivot-points-missed-reversals'
+import type { PivotColorRole } from '../lib/pivot-points-missed-reversals'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
@@ -152,6 +157,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
   const srSvgRef = useRef<SVGSVGElement>(null)
+  const pivotSvgRef = useRef<SVGSVGElement>(null)
   const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -222,6 +228,22 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             indicator,
             settings,
             result: calculateSrBreaksRetests(candles, settings),
+          }
+        }),
+    [candles, indicators],
+  )
+  const pivotOverlays = useMemo(
+    () =>
+      indicators
+        .filter(
+          (indicator) => indicator.visible && indicator.kind === 'pivot-points-missed-reversals',
+        )
+        .map((indicator) => {
+          const settings = pivotPointsMissedReversalsSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculatePivotPointsMissedReversals(candles, settings),
           }
         }),
     [candles, indicators],
@@ -444,6 +466,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       }
       await paintSvg(smcSvgRef.current)
       await paintSvg(srSvgRef.current)
+      await paintSvg(pivotSvgRef.current)
       await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
@@ -536,6 +559,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             (indicator) =>
               (indicator.visible && indicator.kind === 'smart-money-concepts') ||
               (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
+              (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
               (indicator.visible && divergenceEnabled(indicator)),
           )
         )
@@ -1869,6 +1893,126 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  // Pivot Points High Low & Missed Reversal Levels: Pine labels (▼ ▲ 👻),
+  // zig-zag lines and ghost levels, drawn as a native SVG overlay.
+  const pivotLegendValue = (result?: (typeof pivotOverlays)[number]['result']) => {
+    if (!result) return '—'
+    const missed = result.labels.filter(
+      (label) => !label.estimate && label.kind.startsWith('missed'),
+    ).length
+    const regular = result.labels.filter((label) => label.kind.startsWith('regular')).length
+    return `${regular} pivots · ${missed} missed`
+  }
+  const renderPivotOverlay = (overlay: (typeof pivotOverlays)[number]) => {
+    const { indicator, settings: pivots, result } = overlay
+    const roleColor = (role: PivotColorRole) =>
+      role === 'regular-high'
+        ? pivots.regularHighColor
+        : role === 'regular-low'
+          ? pivots.regularLowColor
+          : role === 'missed-high'
+            ? pivots.missedHighColor
+            : pivots.missedLowColor
+    const point = (index: number, price: number) => {
+      const candle = candles[index]
+      return candle ? position({ time: candle.time, price }) : null
+    }
+    const renderLevel = (level: (typeof result.levels)[number]) => {
+      const start = point(level.x1, level.price)
+      const end = point(level.x2, level.price)
+      if (!start || !end) return null
+      // Historical levels: `color.new(reg_*_css, 50)`, width 2. The estimated
+      // level shares the treatment but is tinted with the leg color.
+      return (
+        <line
+          key={`pivot-level:${level.order}`}
+          x1={start.x}
+          y1={start.y}
+          x2={Math.max(start.x, end.x)}
+          y2={end.y}
+          stroke={roleColor(level.color)}
+          strokeOpacity="0.5"
+          strokeWidth="2"
+          data-testid={level.estimate ? 'pivot-estimate-level' : 'pivot-level'}
+        />
+      )
+    }
+    const renderSegment = (segment: (typeof result.zigzag)[number]) => {
+      const start = point(segment.x1, segment.y1)
+      const end = point(segment.x2, segment.y2)
+      if (!start || !end) return null
+      const color = segment.direction === 'up' ? pivots.missedLowColor : pivots.missedHighColor
+      return (
+        <line
+          key={`pivot-zigzag:${segment.order}`}
+          x1={start.x}
+          y1={start.y}
+          x2={end.x}
+          y2={end.y}
+          stroke={color}
+          strokeWidth="1"
+          strokeDasharray={segment.dashed ? '5 4' : undefined}
+          data-testid={segment.estimate ? 'pivot-estimate-leg' : 'pivot-zigzag'}
+        />
+      )
+    }
+    const renderLabel = (label: (typeof result.labels)[number]) => {
+      const anchor = point(label.index, label.price)
+      if (!anchor) return null
+      const missed = label.kind === 'missed-high' || label.kind === 'missed-low'
+      const color = roleColor(label.kind)
+      // `size.small` label plates: a rounded box with a pointer at the anchor.
+      // `label_down` sits above its anchor, `label_up` hangs below it.
+      const width = missed ? 22 : 18
+      const height = 17
+      const pointer = 5
+      const gap = 1
+      const above = label.style === 'down'
+      const x = anchor.x - width / 2
+      const y = above ? anchor.y - gap - pointer - height : anchor.y + gap + pointer
+      const pointerPath = above
+        ? `M ${anchor.x - 4} ${y + height} L ${anchor.x + 4} ${y + height} L ${anchor.x} ${anchor.y - gap} Z`
+        : `M ${anchor.x - 4} ${y} L ${anchor.x + 4} ${y} L ${anchor.x} ${anchor.y + gap} Z`
+      return (
+        <g
+          key={`pivot-label:${label.kind}:${label.index}:${label.estimate ? 'estimate' : 'fixed'}`}
+          className="pivot-label"
+          data-testid={label.estimate ? 'pivot-estimate-label' : `pivot-label-${label.kind}`}
+        >
+          <title>{label.tooltip}</title>
+          <ChartMessagePlate
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            rx={3}
+            color={color}
+            strokeOpacity={0.85}
+          />
+          <path d={pointerPath} fill={color} fillOpacity="0.85" />
+          <ChartMessageText
+            x={anchor.x}
+            y={y + (missed ? 13 : 12.5)}
+            color={missed ? color : pivots.labelTextColor}
+            size={missed ? 12 : 9}
+            weight={600}
+            anchor="middle"
+            className="pivot-label-text"
+          >
+            {label.kind === 'regular-high' ? '▼' : label.kind === 'regular-low' ? '▲' : '👻'}
+          </ChartMessageText>
+        </g>
+      )
+    }
+    return (
+      <g key={indicator.id} data-pivot-length={pivots.pivotLength}>
+        {result.levels.map(renderLevel)}
+        {result.zigzag.map(renderSegment)}
+        {result.labels.map(renderLabel)}
+      </g>
+    )
+  }
+
   const renderDivergenceOverlay = (overlay: (typeof macdDivergences)[number]) => {
     const entry = indicatorSeries.current.get(overlay.indicator.id)
     if (!entry || !entry.pane) return null
@@ -2140,13 +2284,26 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                     ?.result.zones ?? []
                                 ).filter((zone) => zone.boundary !== null).length
                               } zones`
-                            : plotValue(group?.plots[0])}
+                            : indicator.kind === 'pivot-points-missed-reversals'
+                              ? pivotLegendValue(
+                                  pivotOverlays.find((item) => item.indicator.id === indicator.id)
+                                    ?.result,
+                                )
+                              : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">
                         ATR({SR_ATR_LENGTH}) warming up · {candles.length}/{SR_ATR_LENGTH} bars
                       </span>
                     )}
+                    {indicator.kind === 'pivot-points-missed-reversals' &&
+                      candles.length <
+                        2 * pivotPointsMissedReversalsSettings(indicator).pivotLength + 1 && (
+                        <span className="cm-indicator-notice" role="status">
+                          Pivot window warming up · {candles.length}/
+                          {2 * pivotPointsMissedReversalsSettings(indicator).pivotLength + 1} bars
+                        </span>
+                      )}
                     <div className="legend-actions">
                       <IconButton
                         icon={indicator.visible ? Eye : EyeOff}
@@ -2385,6 +2542,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {srOverlays.map(renderSrOverlay)}
+      </svg>
+      <svg
+        ref={pivotSvgRef}
+        className="pivot-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="pivot-overlay"
+        data-revision={revision}
+      >
+        {pivotOverlays.map(renderPivotOverlay)}
       </svg>
       <svg
         ref={divSvgRef}

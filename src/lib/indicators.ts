@@ -1,6 +1,5 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
-import { coinbaseStrikePlots } from './coinbase-strike'
 import { scalpSwingPlots } from './scalpswing'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
@@ -182,7 +181,9 @@ export function builtInPlots(
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
   }
   if (indicator.kind === 'coinbase-strike') {
-    return coinbaseStrikePlots(candles, indicator)
+    // The active strike is a native dotted price-scale marker in ChartView, not a historical
+    // time-series plot. This keeps old interval strikes from becoming a line through the chart.
+    return []
   }
   // Smart Money Concepts is drawn as a native SVG price overlay in ChartView.
   // It intentionally has no Lightweight Charts line/pane series.

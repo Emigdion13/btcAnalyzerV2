@@ -12,7 +12,9 @@ import {
   createChart,
 } from 'lightweight-charts'
 import type {
+  CreatePriceLineOptions,
   IChartApi,
+  IPriceLine,
   ISeriesApi,
   Logical,
   MouseEventParams,
@@ -75,7 +77,11 @@ import {
   SR_BROKEN_FILL_OPACITY,
   SR_BREAKS_RETESTS_COLORS,
 } from '../lib/sr-breaks-retests'
-import { calculateCoinbaseStrike, coinbaseStrikeSettings } from '../lib/coinbase-strike'
+import {
+  calculateCoinbaseStrike,
+  coinbaseStrikePriceLevels,
+  coinbaseStrikeSettings,
+} from '../lib/coinbase-strike'
 import {
   calculatePivotPointsMissedReversals,
   pivotPointsMissedReversalsSettings,
@@ -132,6 +138,10 @@ interface IndicatorSeries {
   series: ISeriesApi<SeriesType>[]
   pane: number
 }
+interface ManagedStrikePriceLine {
+  series: ISeriesApi<SeriesType>
+  line: IPriceLine
+}
 interface Geometry {
   width: number
   height: number
@@ -170,6 +180,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const mainRef = useRef<ISeriesApi<SeriesType> | null>(null)
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const indicatorSeries = useRef<Map<string, IndicatorSeries>>(new Map())
+  const strikePriceLinesRef = useRef<Map<string, ManagedStrikePriceLine>>(new Map())
   const propsRef = useRef(props)
   propsRef.current = props
   const pendingRef = useRef<Anchor | null>(null)
@@ -543,6 +554,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     })
     chartRef.current = chart
     const currentIndicatorSeries = indicatorSeries.current
+    const currentStrikePriceLines = strikePriceLinesRef.current
     let raf = 0
     const refresh = () => {
       if (raf) return
@@ -697,13 +709,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       mainRef.current = null
       volumeRef.current = null
       currentIndicatorSeries.clear()
+      currentStrikePriceLines.clear()
     }
   }, [])
 
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
-    if (mainRef.current) chart.removeSeries(mainRef.current)
+    if (mainRef.current) {
+      strikePriceLinesRef.current.clear()
+      chart.removeSeries(mainRef.current)
+    }
     const current = propsRef.current
     const referencePrice = current.candles.at(-1)?.close ?? 100
     const digits = current.asset.priceIncrement
@@ -1026,6 +1042,44 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       if (mainRef.current === series) lines.forEach((line) => series.removePriceLine(line))
     }
   }, [alerts, asset.symbol, chartType])
+
+  useEffect(() => {
+    const series = mainRef.current
+    if (!series) return
+
+    const activeKeys = new Set<string>()
+    for (const { indicator, settings: strikeSettings, result } of strikeOverlays) {
+      for (const level of coinbaseStrikePriceLevels(result, strikeSettings)) {
+        const key = `${indicator.id}:${level.role}`
+        activeKeys.add(key)
+        const options: CreatePriceLineOptions = {
+          id: `coinbase-strike:${key}`,
+          price: level.price,
+          color: level.color,
+          lineWidth: level.role === 'strike' ? 2 : 1,
+          lineStyle: level.role === 'strike' ? LineStyle.Dotted : LineStyle.Dashed,
+          lineVisible: true,
+          axisLabelVisible: level.axisLabelVisible,
+          axisLabelColor: level.color,
+          title: level.title,
+        }
+        const managed = strikePriceLinesRef.current.get(key)
+        if (managed?.series === series) managed.line.applyOptions(options)
+        else {
+          strikePriceLinesRef.current.set(key, {
+            series,
+            line: series.createPriceLine(options),
+          })
+        }
+      }
+    }
+
+    for (const [key, managed] of strikePriceLinesRef.current) {
+      if (activeKeys.has(key) && managed.series === series) continue
+      if (managed.series === series) series.removePriceLine(managed.line)
+      strikePriceLinesRef.current.delete(key)
+    }
+  }, [asset.priceIncrement, asset.symbol, chartType, strikeOverlays])
 
   const hasCandles = candles.length > 0
   useEffect(() => {
@@ -2406,7 +2460,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                     scalpSwingOverlays.find((item) => item.indicator.id === indicator.id)
                                       ?.result,
                                   )
-                                : plotValue(group?.plots[0])}
+                                : indicator.kind === 'coinbase-strike'
+                                  ? formatPrice(
+                                      strikeOverlays.find(
+                                        (item) => item.indicator.id === indicator.id,
+                                      )?.result.currentStrike,
+                                    )
+                                  : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">

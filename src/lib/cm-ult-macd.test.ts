@@ -335,6 +335,11 @@ describe('multi-timeframe security() projection', () => {
     )
     expect(requestedIndicatorTimeframes([{ ...cm, visible: false }], '15m')).toEqual([])
     expect(requestedIndicatorTimeframes([cm, smc], '1h')).toEqual(['4h'])
+    // Extra resolutions (the timeframe peek window) reuse a feed already requested by an
+    // indicator, and never open one for the chart's own resolution.
+    expect(requestedIndicatorTimeframes([cm, smc], '15m', ['1h'])).toEqual(['1h', '4h'])
+    expect(requestedIndicatorTimeframes([], '15m', ['4h', '1h'])).toEqual(['1h', '4h'])
+    expect(requestedIndicatorTimeframes([], '15m', ['15m'])).toEqual([])
     expect(cmMacdSettings({ ...indicator, cmMacd: { ...defaults, slowLength: 0 } })).toEqual(
       defaults,
     )

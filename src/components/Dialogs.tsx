@@ -20,6 +20,7 @@ import {
   LockKeyhole,
   Monitor,
   Pencil,
+  PictureInPicture2,
   Play,
   Plus,
   Search,
@@ -1081,6 +1082,7 @@ const SHORTCUTS = [
   ['Run indicator', 'Ctrl / ⌘ Enter'],
   ['Trend line', 'Alt T'],
   ['Horizontal line', 'Alt H'],
+  ['Timeframe peek window', 'Alt P'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],
@@ -1150,6 +1152,11 @@ export function DocsDialog({
                   icon: Code2,
                   title: '04 · Make it your own',
                   text: 'Write JavaScript in Indicator Studio, then press Add to chart. Your plots follow the active symbol and timeframe.',
+                },
+                {
+                  icon: PictureInPicture2,
+                  title: '05 · Keep another timeframe in view',
+                  text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar.',
                 },
               ].map((item) => (
                 <div key={item.title}>

@@ -94,6 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
+- **Timeframe peek:** a floating window onto any other resolution — while you trade 1m it draws the last candles of, say, 15m _including the bar still forming_, with a countdown to that timeframe's close, a resolution dropdown, and an auto mode that follows the chart.
 - **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
@@ -218,6 +219,7 @@ src/
     IndicatorStudio.tsx        Code editor, object tree, OHLCV data window
     Sidebar.tsx                Watchlist, symbol detail, alerts, trading notes
     Dialogs.tsx                Lazy-loaded search, library, settings, docs, sharing
+    TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
     market.ts                  Asset metadata, explicit demo feed, quote formatting
@@ -231,6 +233,7 @@ src/
     sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests
     pivot-points-missed-reversals.ts  LuxAlgo pivot highs/lows, missed reversals, zig-zag and levels
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
+    timeframe-peek.ts          Auto resolution choice, window stats, forming bar and SVG geometry
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence
     storage.ts                 Versioned local persistence and downloads
@@ -294,6 +297,17 @@ shared Coinbase WebSocket — no new vendor or API key.
 Resting size is an invitation, not a lock: levels can be pulled or walked within seconds, the
 book sees only Coinbase, and hidden intent is invisible. See
 [the implementation notes and exact strength rules](docs/order-book-strength.md).
+
+## Timeframe peek window
+
+Charting 1m while a 15m structure decides the session is a scrolling problem: the context lives in another tab. The **peek window** puts it on the chart — a floating panel drawing the last few candles of any other resolution, **including the bar that is still forming**.
+
+- **Any resolution, up or down.** The dropdown lists every timeframe Atlas supports and defaults to **Auto**, which picks the resolution nearest 15× the chart (1m → 15m, 5m → 1h, 1h → 1D), so the window is a different zoom rather than a squashed copy. **Alt P** toggles it; the header dropdown re-points it without leaving the chart.
+- **The forming bar is labelled as forming.** It is drawn outlined with a live pip, and the meter below counts down to that resolution's close. Its high and low are the extremes so far and its close is the current tick — not a settled close — so nothing on screen implies the 15m candle has decided anything yet. Bars stay visible but go quiet (dimmed, carrying the feed's own state) while the stream is stale, reconnecting, or offline.
+- **One stream, not a second one.** The window reads the same `IndicatorTimeframes` feeds the multi-timeframe indicators share: `requestedIndicatorTimeframes(indicators, chart, extra)` de-duplicates, so peeking at 1h while `CM_Ult_MacD_MTF` runs on 1h costs a single connection, and hiding the window releases it. **Bar replay never peeks at live candles** — the window is hidden while replaying, like the whale-flow and book readouts.
+- **The rest is stated, not implied.** `1 bar = 15 chart bars` gives the ratio, volume is that resolution's volume, and the price axis is the window's own range rather than the chart's. Demo mode draws the synthetic bars and says so.
+
+Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar, the workspace menu, or its own close button. Below 1050px — the width the side panels collapse at — the window starts closed so it never sits on the price legend, and opening it there is remembered like any other preference. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
 
 ## Research notes (not implemented)
 

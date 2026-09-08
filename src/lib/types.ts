@@ -291,13 +291,13 @@ export interface ScalpSwingSettings {
 
 export const SCALPSWING_DEFAULTS: Readonly<ScalpSwingSettings> = {
   pacLength: 10,
-  filterWithEma: true,
+  filterWithEma: false,
   emaFilterLength: 200,
   showPacChannel: false,
-  showEmaFilter: true,
+  showEmaFilter: false,
   useBigArrows: false,
   showLabels: true,
-  signalOnNextBar: false,
+  signalOnNextBar: true,
   buyColor: '#26a69a',
   sellColor: '#ef5350',
 }

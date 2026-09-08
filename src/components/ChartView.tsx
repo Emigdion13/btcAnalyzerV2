@@ -2053,7 +2053,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const renderSignal = (signal: (typeof result.signals)[number]) => {
       const candle = candles[signal.index]
       if (!candle) return null
-      // Anchor at actual low/high for small arrows, but with offset so arrow sits outside candle
       const isBuy = signal.side === 'buy'
       const anchorPrice = isBuy ? candle.low : candle.high
       const anchor = point(signal.index, anchorPrice)
@@ -2063,19 +2062,21 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const bigColor = isBuy ? SCALPSWING_COLORS.bigBuy : SCALPSWING_COLORS.bigSell
       const displayColor = settings.useBigArrows ? bigColor : color
 
-      // Arrow geometry: small triangle up/down
-      // Original small arrows: shape.arrowup belowbar green, arrowdown abovebar red
-      // Big arrows: plotarrow aqua/fuchsia with minheight 10 maxheight 60
-      const size = settings.useBigArrows ? 12 : 7
-      const gap = settings.useBigArrows ? 10 : 6
+      // Original Pine: shape.arrowup belowbar (green) for BUY, arrowdown abovebar (red) for SELL
+      // Both point TOWARD the candle. Small arrows at candle bottom/top.
+      const size = settings.useBigArrows ? 14 : 8
+      const gap = settings.useBigArrows ? 12 : 8
 
-      const y = isBuy ? anchor.y + gap + size : anchor.y - gap - size
+      // BUY: triangle pointing UP, just below low. Tip at y, base below.
+      // SELL: triangle pointing DOWN, just above high. Tip at y, base above.
+      const tipY = isBuy ? anchor.y + gap : anchor.y - gap
+      const baseY = isBuy ? tipY + size : tipY - size
       const arrowPath = isBuy
-        ? `M ${anchor.x} ${y + size} L ${anchor.x - size} ${y} L ${anchor.x + size} ${y} Z`
-        : `M ${anchor.x} ${y - size} L ${anchor.x - size} ${y} L ${anchor.x + size} ${y} Z`
+        ? `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
+        : `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
 
-      // For big arrows, add a stem to mimic plotarrow length proportional
-      const stemHeight = settings.useBigArrows ? 18 : 0
+      const stemHeight = settings.useBigArrows ? 28 : 0
+      const stemY2 = isBuy ? baseY + stemHeight : baseY - stemHeight
 
       return (
         <g
@@ -2085,28 +2086,28 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           data-index={signal.index}
         >
           <title>
-            {isBuy ? 'BUY' : 'SELL'} {formatPrice(signal.close)} · PAC {settings.pacLength} {isBuy ? '>' : '<'} {isBuy ? formatPrice(signal.pacU ?? 0) : formatPrice(signal.pacL ?? 0)} · {settings.filterWithEma ? `EMA${settings.emaFilterLength} filter` : 'no filter'}
+            {isBuy ? 'BUY' : 'SELL'} {formatPrice(signal.close)} · PAC {settings.pacLength} {isBuy ? '>' : '<'} {isBuy ? formatPrice(signal.pacU ?? 0) : formatPrice(signal.pacL ?? 0)} · {settings.filterWithEma ? `EMA${settings.emaFilterLength} filter` : 'no filter'} {settings.signalOnNextBar ? '[next bar]' : '[same bar]'}
           </title>
           {settings.useBigArrows && (
             <line
               x1={anchor.x}
-              y1={isBuy ? y : y}
+              y1={baseY}
               x2={anchor.x}
-              y2={isBuy ? y + stemHeight : y - stemHeight}
+              y2={stemY2}
               stroke={displayColor}
-              strokeWidth={2}
+              strokeWidth={2.5}
               strokeOpacity={0.9}
             />
           )}
-          <path d={arrowPath} fill={displayColor} stroke={displayColor} strokeWidth={0.5} />
+          <path d={arrowPath} fill={displayColor} stroke={displayColor} strokeWidth={0.6} />
           {settings.showLabels && (
             <text
               x={anchor.x}
-              y={isBuy ? y + size + 12 : y - size - 6}
+              y={isBuy ? baseY + 12 : baseY - 7}
               textAnchor="middle"
               fill={displayColor}
-              fontSize={settings.useBigArrows ? 10 : 8}
-              fontWeight={settings.useBigArrows ? '700' : '600'}
+              fontSize={settings.useBigArrows ? 10 : 9}
+              fontWeight={settings.useBigArrows ? '700' : '700'}
               fontFamily="DM Sans, sans-serif"
               className="scalpswing-label"
             >

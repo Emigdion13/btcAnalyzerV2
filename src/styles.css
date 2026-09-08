@@ -1009,14 +1009,21 @@ button {
   z-index: 1;
 }
 .sr-overlay,
-.pivot-overlay,
-.scalpswing-overlay {
+.pivot-overlay {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
   overflow: hidden;
   z-index: 1;
+}
+.scalpswing-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
 }
 /* Pivot Points High Low & Missed Reversal Levels: ▼ ▲ 👻 label glyphs keep the
    chart-message halo; the emoji only needs a light one. */

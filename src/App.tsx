@@ -62,6 +62,7 @@ import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { AgentPanel } from './components/AgentPanel'
+import { AgentOutcomeCard } from './components/AgentOutcomeCard'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -285,6 +286,10 @@ export default function App() {
   const [agentJournal, setAgentJournal] = useLocalState(
     'agent-journal',
     defaultAgentPredictionJournal(),
+  )
+  const [agentOutcomeCardVisible, setAgentOutcomeCardVisible] = useLocalState(
+    'agent-outcome-card-visible',
+    true,
   )
   const [agentHorizons, setAgentHorizons] = useLocalState<Record<Timeframe, number>>(
     'agent-horizons',
@@ -1710,6 +1715,15 @@ export default function App() {
               <PictureInPicture2 size={17} strokeWidth={1.5} />
               <span>Peek</span>
             </button>
+            <button
+              className={`toolbar-button ai-outcome-toggle ${agentOutcomeCardVisible ? 'active' : ''}`}
+              onClick={() => setAgentOutcomeCardVisible(!agentOutcomeCardVisible)}
+              title="Floating AI outcome card"
+              aria-pressed={agentOutcomeCardVisible}
+            >
+              <Bot size={17} strokeWidth={1.5} />
+              <span>AI</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1842,6 +1856,16 @@ export default function App() {
                   replay={replayIndex !== null}
                   book={bookView}
                 />
+                {agentOutcomeCardVisible && (
+                  <AgentOutcomeCard
+                    assetLabel={asset.symbol}
+                    source={source}
+                    timeframe={timeframe}
+                    analysis={marketAnalysis}
+                    onOpenPanel={() => setSidePanel('agents')}
+                    onClose={() => setAgentOutcomeCardVisible(false)}
+                  />
+                )}
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}

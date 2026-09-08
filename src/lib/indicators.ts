@@ -90,6 +90,16 @@ export const INDICATOR_CATALOG: {
     color: '#4caf50',
   },
   {
+    kind: 'pivot-points-missed-reversals',
+    name: 'Pivot Points High Low & Missed Reversal Levels',
+    short: 'Pivots & Missed Reversals',
+    description:
+      'Bar-count pivot highs and lows with ▼/▲ labels, the 👻 reversals the method misses, a zig-zag through both, missed-reversal levels and a trailing reversal estimate — a faithful port of LuxAlgo’s open-source (50) indicator.',
+    category: 'Price Action',
+    period: 50,
+    color: '#26a69a',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -135,6 +145,9 @@ export function builtInPlots(
   // SR Breaks and Retests is likewise a native SVG price overlay (zones,
   // diamonds, labels) with no Lightweight Charts series.
   if (indicator.kind === 'sr-breaks-retests') return []
+  // Pivot Points High Low & Missed Reversal Levels draws labels, a zig-zag
+  // and levels as a native SVG price overlay; no Lightweight Charts series.
+  if (indicator.kind === 'pivot-points-missed-reversals') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

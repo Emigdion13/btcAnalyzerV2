@@ -107,6 +107,7 @@ import {
   DEFAULT_SETTINGS,
   SMC_DEFAULTS,
   SR_BREAKS_RETESTS_DEFAULTS,
+  PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS,
   COINBASE_STRIKE_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
@@ -751,15 +752,20 @@ export default function App() {
             ? 'Smart Money Concepts'
             : item.kind === 'sr-breaks-retests'
               ? 'SR Breaks and Retests'
-              : item.short === 'VOL'
-                ? 'Volume'
-                : item.short,
+              : item.kind === 'pivot-points-missed-reversals'
+                ? 'Pivot Points High Low & Missed Reversal Levels'
+                : item.short === 'VOL'
+                  ? 'Volume'
+                  : item.short,
         period: item.period,
         color: item.color,
         visible: true,
         ...(kind === 'cm-ult-macd' ? { cmMacd: { ...CM_MACD_DEFAULTS } } : {}),
         ...(kind === 'smart-money-concepts' ? { smc: { ...SMC_DEFAULTS } } : {}),
         ...(kind === 'sr-breaks-retests' ? { sr: { ...SR_BREAKS_RETESTS_DEFAULTS } } : {}),
+        ...(kind === 'pivot-points-missed-reversals'
+          ? { pivots: { ...PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS } }
+          : {}),
         ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),
       },
     ])
@@ -1241,9 +1247,7 @@ export default function App() {
                     close()
                   }}
                 >
-                  {bookBoxVisible
-                    ? 'Hide book depth & strength'
-                    : 'Show book depth & strength'}
+                  {bookBoxVisible ? 'Hide book depth & strength' : 'Show book depth & strength'}
                 </MenuItem>
                 <MenuItem
                   icon={RotateCcw}

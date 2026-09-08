@@ -1008,13 +1008,56 @@ button {
 .smc-overlay {
   z-index: 1;
 }
-.sr-overlay {
+.sr-overlay,
+.pivot-overlay {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
   overflow: hidden;
   z-index: 1;
+}
+/* Pivot Points High Low & Missed Reversal Levels: ▼ ▲ 👻 label glyphs keep the
+   chart-message halo; the emoji only needs a light one. */
+.pivot-label-text {
+  stroke-opacity: 0.6;
+}
+.pivot-input-group .setting-row {
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+.pivot-input-group .pivot-color-grid {
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2b3a4b;
+  margin-bottom: 4px;
+}
+/* Swatches stay editable while hidden, like TradingView's greyed inline inputs. */
+.pivot-input-group.is-disabled .pivot-color-grid {
+  opacity: 0.55;
+}
+.pivot-color-field {
+  margin-bottom: 13px;
+}
+.pivot-color-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pivot-color-inputs > input:not([type='color']) {
+  flex: 1;
+  min-width: 0;
+  height: 33px;
+  padding: 7px 10px;
+  background: #10171f;
+  border: 1px solid #344356;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: #d3ddeb;
+}
+.pivot-color-inputs > input:not([type='color']):focus {
+  border-color: #a6c682;
+  box-shadow: 0 0 0 2px #b9ee8208;
 }
 /*
  * Messages drawn inside the chart pane (SR break labels, drawing tags, measure

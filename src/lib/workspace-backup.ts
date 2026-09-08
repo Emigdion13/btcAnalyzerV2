@@ -3,6 +3,7 @@ import { isProductId } from '../../shared/coinbase'
 import { isCmMacdSettings } from './cm-ult-macd'
 import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
 import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
+import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import type { DataSource } from '../../shared/coinbase'
 import type {
@@ -105,6 +106,7 @@ function indicator(value: unknown): Indicator {
       'cm-ult-macd',
       'smart-money-concepts',
       'sr-breaks-retests',
+      'pivot-points-missed-reversals',
       'coinbase-strike',
       'vwap',
       'volume',
@@ -192,6 +194,22 @@ function indicator(value: unknown): Indicator {
       boxWidth: settings.boxWidth,
     }
     result.period = result.sr.lookbackPeriod
+  }
+  if (kind === 'pivot-points-missed-reversals' && i.pivots !== undefined) {
+    const settings = i.pivots
+    if (!isPivotPointsMissedReversalsSettings(settings))
+      invalid('Pivot Points High Low & Missed Reversal Levels settings')
+    result.pivots = {
+      pivotLength: settings.pivotLength,
+      showRegular: settings.showRegular,
+      regularHighColor: settings.regularHighColor,
+      regularLowColor: settings.regularLowColor,
+      showMissed: settings.showMissed,
+      missedHighColor: settings.missedHighColor,
+      missedLowColor: settings.missedLowColor,
+      labelTextColor: settings.labelTextColor,
+    }
+    result.period = result.pivots.pivotLength
   }
   if (kind === 'coinbase-strike' && i.strike !== undefined) {
     const settings = i.strike

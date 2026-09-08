@@ -94,7 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
@@ -138,6 +138,16 @@ Add it from **Indicators → SR Breaks and Retests**. The three published inputs
 Because Atlas loads a finite candle window (900 bars by default) while TradingView computes over much deeper history, one documented difference exists: the original hides the very first “Break” label of a session (`not na_flag` is `na` in Pine), which is invisible on TradingView’s deep history but would read as a missing label here. Atlas shows that first label so short windows match what the original displays on screen. Everything else— including quirks like a replacement zone printing a retest diamond instead of a second break label—matches the original behavior.
 
 See [the compatibility notes, calculation contract and provenance](docs/sr-breaks-retests.md).
+
+## Pivot Points High Low & Missed Reversal Levels
+
+Atlas includes a **faithful native port of LuxAlgo’s “Pivot Points High Low & Missed Reversal Levels [LuxAlgo]”**, the open-source TradingView indicator whose legend renders as **Pivot Points High Low & Missed Reversal Levels [LuxAlgo] (50)**. LuxAlgo publishes the Pine Script v5 source under CC BY-NC-SA 4.0, and the Atlas engine reproduces that published calculation statement by statement—`ta.pivothigh/pivotlow(length, length)` reversals, the running max/min and follow-up extremes between pivots, the two ways a reversal is missed (two pivots of the same kind in a row, or a pivot forming inside the prior swing), the zig-zag with its dashed detours, the missed-reversal levels, and the trailing reversal estimate.
+
+Add it from **Indicators → Pivot Points High Low & Missed Reversal Levels**. The published inputs—**Pivot Length 50**, the **Regular Pivots** and **Missed Pivots** toggles with their high/low colors, and the **Text Label Color**—are editable and persist like every other indicator. Confirmed pivots print **▼ / ▲** labels `length` bars behind the live edge; every reversal the method skipped prints a **👻**, the zig-zag detours through it with dashed legs, and a horizontal level starts there and runs to the next missed reversal; the newest 👻 is an estimate of the reversal in progress that readjusts with every new higher high or lower low and carries its own level to the latest bar. As with every message drawn inside the chart, the labels are transparent: the published colors outline the label and tint the glyphs, but no plate is filled over the price action.
+
+One documented difference exists, again because Atlas loads a finite candle window: Pine starts the zig-zag at bar 0, price 0—an artifact buried thousands of bars back on TradingView but a visible slash across a 900-bar window—so Atlas starts the zig-zag at the first confirmed pivot. Everything from that pivot on matches the original.
+
+See [the compatibility notes, calculation contract and provenance](docs/pivot-points-missed-reversals.md).
 
 ## Write a custom indicator
 
@@ -207,6 +217,7 @@ src/
     cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
     smart-money-concepts.ts     Independent SMC pivots, BOS/CHoCH, OB/FVG and overlay models
     sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests
+    pivot-points-missed-reversals.ts  LuxAlgo pivot highs/lows, missed reversals, zig-zag and levels
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence

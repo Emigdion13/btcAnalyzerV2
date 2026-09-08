@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   Activity,
   ArrowDownToLine,
+  Bot,
   Bell,
   BellPlus,
   Camera,
@@ -60,6 +61,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
+import { AgentPanel } from './components/AgentPanel'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -83,6 +85,21 @@ import {
   quoteCurrency,
 } from './lib/market'
 import { useCoinbaseMarket } from './lib/useCoinbaseMarket'
+import {
+  agentContextTimeframes,
+  defaultAgentPredictionJournal,
+  normalizeAgentLearningState,
+  normalizeAgentPredictionJournal,
+  recordAgentPrediction,
+  resolveAgentPredictionJournal,
+  suggestedHorizonBars,
+} from './lib/agent-journal'
+import {
+  analyzeMarket,
+  defaultAgentLearningState,
+  type AgentLearningState,
+  type MarketAnalysis,
+} from './lib/market-agents'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
@@ -177,6 +194,9 @@ const DRAW_TOOLS: { id: Tool; label: string; icon: LucideIcon; shortcut?: string
   { id: 'text', label: 'Text note', icon: TextCursorInput },
   { id: 'measure', label: 'Measure', icon: Ruler },
 ]
+const DEFAULT_AGENT_HORIZONS = Object.fromEntries(
+  TIMEFRAMES.map((interval) => [interval, suggestedHorizonBars(interval)]),
+) as Record<Timeframe, number>
 type ModalName =
   | 'symbols'
   | 'indicators'
@@ -258,6 +278,18 @@ export default function App() {
   const [drawingsLocked, setDrawingsLocked] = useLocalState('drawings-locked', false)
   const [magnet, setMagnet] = useLocalState('magnet', false)
   const [feedActive, setFeedActive] = useLocalState('feed-active', true)
+  const [agentLearning, setAgentLearning] = useLocalState<AgentLearningState>(
+    'agent-learning',
+    defaultAgentLearningState(),
+  )
+  const [agentJournal, setAgentJournal] = useLocalState(
+    'agent-journal',
+    defaultAgentPredictionJournal(),
+  )
+  const [agentHorizons, setAgentHorizons] = useLocalState<Record<Timeframe, number>>(
+    'agent-horizons',
+    DEFAULT_AGENT_HORIZONS,
+  )
   // The floating timeframe-peek window: a second resolution, forming bar included.
   // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
   const [peekPreference, setPeekPreference] = useLocalState<boolean | null>(
@@ -270,8 +302,8 @@ export default function App() {
     TIMEFRAME_PEEK_DEFAULTS,
   )
   const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
-  const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
-    window.innerWidth >= 1050 ? 'watchlist' : null,
+  const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | 'agents' | null>(
+    () => (window.innerWidth >= 1050 ? 'watchlist' : null),
   )
   const [modal, setModal] = useState<ModalName>(null)
   const [searchAdding, setSearchAdding] = useState(false)
@@ -320,6 +352,19 @@ export default function App() {
     label: string
     action: () => void
   } | null>(null)
+  const safeAgentLearning = useMemo(
+    () => normalizeAgentLearningState(agentLearning),
+    [agentLearning],
+  )
+  const safeAgentJournal = useMemo(
+    () => normalizeAgentPredictionJournal(agentJournal),
+    [agentJournal],
+  )
+  const agentHorizonBars = useMemo(() => {
+    const fallback = suggestedHorizonBars(timeframe)
+    const configured = Number(agentHorizons[timeframe] ?? fallback)
+    return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : fallback
+  }, [agentHorizons, timeframe])
   const chartRef = useRef<ChartHandle>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -386,11 +431,16 @@ export default function App() {
     () => peekResolution(peekSettings, timeframe),
     [peekSettings, timeframe],
   )
+  const agentTimeframes = useMemo(() => agentContextTimeframes(timeframe), [timeframe])
   // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
   const peekActive = peekVisible && replayIndex === null
   const indicatorTimeframes = useMemo(
-    () => requestedIndicatorTimeframes(indicators, timeframe, peekActive ? [peekTimeframe] : []),
-    [indicators, timeframe, peekActive, peekTimeframe],
+    () =>
+      requestedIndicatorTimeframes(indicators, timeframe, [
+        ...(peekActive ? [peekTimeframe] : []),
+        ...agentTimeframes,
+      ]),
+    [indicators, timeframe, peekActive, peekTimeframe, agentTimeframes],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
     () =>
@@ -424,6 +474,77 @@ export default function App() {
   const currentPrice = quotePrices[symbol] ?? candles[candles.length - 1]?.close
   const hasData = candles.length > 1
   const feedState = source === 'coinbase' ? live.state : feedActive ? 'live' : 'paused'
+  const analysisTimeframes = replayIndex === null ? nativeTimeframes : replayTimeframes
+  const contextAnalyses = useMemo(
+    () =>
+      agentTimeframes.map((interval) => {
+        const feed = analysisTimeframes[interval]
+        const contextCandles = feed?.candles ?? EMPTY_CANDLES
+        let analysis: MarketAnalysis | null = null
+        if (contextCandles.length >= 30) {
+          try {
+            analysis = analyzeMarket({ candles: contextCandles, timeframe: interval }, safeAgentLearning)
+          } catch {
+            analysis = null
+          }
+        }
+        return {
+          timeframe: interval,
+          state: feed?.state ?? (source === 'coinbase' ? 'loading' : 'paused'),
+          analysis,
+        }
+      }),
+    [agentTimeframes, analysisTimeframes, safeAgentLearning, source],
+  )
+  const contextSignals = useMemo(
+    () =>
+      contextAnalyses.flatMap((item) =>
+        item.analysis
+          ? [
+              {
+                timeframe: item.timeframe,
+                bias: item.analysis.bias,
+                score: item.analysis.score,
+                confidence: item.analysis.confidence,
+                regime: item.analysis.regime,
+              },
+            ]
+          : [],
+      ),
+    [contextAnalyses],
+  )
+  const settledCandles = useMemo(
+    () => (replayIndex === null && candles.length > 30 ? candles.slice(0, -1) : candles),
+    [candles, replayIndex],
+  )
+  const marketAnalysis = useMemo<MarketAnalysis | null>(() => {
+    if (candles.length < 30) return null
+    try {
+      return analyzeMarket(
+        { candles, timeframe, book: bookView ?? undefined, context: contextSignals },
+        safeAgentLearning,
+      )
+    } catch {
+      return null
+    }
+  }, [candles, timeframe, bookView, contextSignals, safeAgentLearning])
+  const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
+    if (settledCandles.length < 30) return null
+    try {
+      return analyzeMarket(
+        {
+          candles: settledCandles,
+          timeframe,
+          book: replayIndex === null ? (bookView ?? undefined) : undefined,
+          context: contextSignals,
+        },
+        safeAgentLearning,
+      )
+    } catch {
+      return null
+    }
+  }, [settledCandles, timeframe, replayIndex, bookView, contextSignals, safeAgentLearning])
+  const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
 
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
     if (!peekActive) return null
@@ -657,6 +778,42 @@ export default function App() {
       ),
     )
   }, [alerts, quotePrices, quotes, source, feedState, replayIndex, setAlerts, notify])
+
+  useEffect(() => {
+    if (replayIndex !== null || settledCandles.length < 30) return
+    const resolved = resolveAgentPredictionJournal(safeAgentJournal, safeAgentLearning, {
+      source,
+      symbol,
+      timeframe,
+      candles: settledCandles,
+    })
+    const journalWithPrediction =
+      settledMarketAnalysis && safeAgentJournal.autoJournal
+        ? recordAgentPrediction(resolved.journal, {
+            source,
+            symbol,
+            timeframe,
+            candles: settledCandles,
+            analysis: settledMarketAnalysis,
+            horizonBars: agentHorizonBars,
+          })
+        : resolved.journal
+    if (resolved.learning !== safeAgentLearning) setAgentLearning(resolved.learning)
+    if (journalWithPrediction !== safeAgentJournal) setAgentJournal(journalWithPrediction)
+  }, [
+    replayIndex,
+    safeAgentJournal,
+    safeAgentLearning,
+    settledMarketAnalysis,
+    agentHorizonBars,
+    source,
+    symbol,
+    timeframe,
+    settledCandles,
+    settledFingerprint,
+    setAgentJournal,
+    setAgentLearning,
+  ])
 
   const openSearch = (adding = false) => {
     setSearchAdding(adding)
@@ -1071,6 +1228,9 @@ export default function App() {
       draft,
       alerts,
       notes: readStored('notes', ''),
+      agentLearning: safeAgentLearning,
+      agentJournal: safeAgentJournal,
+      agentHorizons,
     }
     downloadFile('atlas-workspace.json', JSON.stringify(backup, null, 2))
     notify('Workspace backup downloaded.')
@@ -1094,6 +1254,12 @@ export default function App() {
       setScripts(backup.scripts)
       setDraft(backup.draft)
       setAlerts(backup.alerts)
+      setAgentLearning(backup.agentLearning ?? defaultAgentLearningState())
+      setAgentJournal(backup.agentJournal ?? defaultAgentPredictionJournal())
+      setAgentHorizons({
+        ...DEFAULT_AGENT_HORIZONS,
+        ...(backup.agentHorizons ?? {}),
+      })
       setDrawingHistory({})
       setComputed({})
       setReplayIndex(null)
@@ -1914,6 +2080,36 @@ export default function App() {
           />
         )}
         {sidePanel === 'notes' && <NotesPanel onClose={() => setSidePanel(null)} />}
+        {sidePanel === 'agents' && (
+          <AgentPanel
+            assetLabel={asset.symbol}
+            source={source}
+            timeframe={timeframe}
+            analysis={marketAnalysis}
+            context={contextAnalyses}
+            learning={safeAgentLearning}
+            journal={safeAgentJournal}
+            horizonBars={agentHorizonBars}
+            onClose={() => setSidePanel(null)}
+            onToggleAutoJournal={(autoJournal) =>
+              setAgentJournal((previous) => ({ ...previous, autoJournal, updatedAt: new Date().toISOString() }))
+            }
+            onHorizonBarsChange={(bars) =>
+              setAgentHorizons((previous) => ({
+                ...previous,
+                [timeframe]: bars,
+              }))
+            }
+            onClearJournal={() => {
+              setAgentJournal(defaultAgentPredictionJournal())
+              notify('Agent journal cleared.', 'info')
+            }}
+            onResetLearning={() => {
+              setAgentLearning(defaultAgentLearningState())
+              notify('Agent learning reset to neutral weights.', 'info')
+            }}
+          />
+        )}
         <aside className="activity-rail" aria-label="Workspace sidebar">
           <div>
             <IconButton
@@ -1931,6 +2127,12 @@ export default function App() {
               />
               {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
             </div>
+            <IconButton
+              icon={Bot}
+              label="Toggle agent panel"
+              active={sidePanel === 'agents'}
+              onClick={() => setSidePanel(sidePanel === 'agents' ? null : 'agents')}
+            />
             <IconButton
               icon={Code2}
               label="Open script library"

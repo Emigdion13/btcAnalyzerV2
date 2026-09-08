@@ -55,7 +55,7 @@ export function CoinbaseStrikeSettingsDialog({
   return (
     <Modal
       title="Coinbase BTC Up/Down Strike"
-      description="Intraday contract strike lines · live UP/DOWN prediction status · target buffer levels"
+      description="Right-scale strike marker · live UP/DOWN prediction status · target buffer levels"
       eyebrow="INDICATOR SETTINGS"
       className="compact-modal"
       onClose={onClose}
@@ -160,7 +160,7 @@ export function CoinbaseStrikeSettingsDialog({
           <div className="setting-row">
             <div>
               <strong>Show target bands</strong>
-              <p>Plot Strike + Buffer and Strike − Buffer target lines on the chart.</p>
+              <p>Mark the current Strike + Buffer and Strike − Buffer target levels.</p>
             </div>
             <Toggle
               checked={showTargets}
@@ -184,7 +184,7 @@ export function CoinbaseStrikeSettingsDialog({
           <div className="setting-row">
             <div>
               <strong>Show indicator</strong>
-              <p>Toggle strike line and level overlay visibility.</p>
+              <p>Toggle the right-scale strike marker and target levels.</p>
             </div>
             <Toggle checked={visible} onChange={setVisible} label="Show indicator on chart" />
           </div>
@@ -194,7 +194,7 @@ export function CoinbaseStrikeSettingsDialog({
           <h3>Colors</h3>
           <div className="smc-grid smc-grid-three">
             <label className="field">
-              Strike line
+              Strike marker
               <div className="color-field">
                 <input
                   type="color"

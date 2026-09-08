@@ -1,5 +1,4 @@
-import type { Candle, Indicator, Plot } from './types'
-import { formatPrice } from './market'
+import type { Candle, Indicator } from './types'
 
 export interface CoinbaseStrikeSettings {
   /** Contract interval in minutes: 5, 15, 30, 60, 240, 1440, etc. Default 15. */
@@ -84,6 +83,15 @@ export interface CoinbaseStrikeResult {
   timeRemainingSeconds: number
 }
 
+export interface CoinbaseStrikePriceLevel {
+  role: 'strike' | 'upper-target' | 'lower-target'
+  price: number
+  color: string
+  /** Only the strike gets a price-scale tag; target levels stay visually quiet. */
+  axisLabelVisible: boolean
+  title: string
+}
+
 export function calculateCoinbaseStrike(
   candles: Candle[],
   settings: CoinbaseStrikeSettings,
@@ -164,36 +172,44 @@ export function calculateCoinbaseStrike(
   }
 }
 
-export function coinbaseStrikePlots(candles: Candle[], indicator: Indicator): Plot[] {
-  const settings = coinbaseStrikeSettings(indicator)
-  const result = calculateCoinbaseStrike(candles, settings)
+/**
+ * Return only the active contract levels for native price-scale markers.
+ * Historical strike arrays remain available in the calculation result for hover readouts, but
+ * deliberately are not emitted as chart plots: the active strike belongs on the right price
+ * scale, like the market's current-price marker.
+ */
+export function coinbaseStrikePriceLevels(
+  result: CoinbaseStrikeResult,
+  settings: CoinbaseStrikeSettings,
+): CoinbaseStrikePriceLevel[] {
+  if (result.currentStrike === null) return []
 
-  const plots: Plot[] = [
+  const levels: CoinbaseStrikePriceLevel[] = [
     {
-      title: `Strike (${settings.intervalMinutes}m)`,
+      role: 'strike',
+      price: result.currentStrike,
       color: settings.strikeColor,
-      values: result.strikeLine,
-      pane: 'price',
-      lineWidth: 2,
+      axisLabelVisible: true,
+      title: 'STRIKE',
     },
   ]
 
   if (settings.showTargets && settings.buffer > 0) {
-    plots.push({
-      title: `Strike +$${formatPrice(settings.buffer, false)}`,
+    levels.push({
+      role: 'upper-target',
+      price: result.currentStrike + settings.buffer,
       color: settings.upColor,
-      values: result.upperTarget,
-      pane: 'price',
-      lineWidth: 1,
+      axisLabelVisible: false,
+      title: '',
     })
-    plots.push({
-      title: `Strike -$${formatPrice(settings.buffer, false)}`,
+    levels.push({
+      role: 'lower-target',
+      price: result.currentStrike - settings.buffer,
       color: settings.downColor,
-      values: result.lowerTarget,
-      pane: 'price',
-      lineWidth: 1,
+      axisLabelVisible: false,
+      title: '',
     })
   }
 
-  return plots
+  return levels
 }

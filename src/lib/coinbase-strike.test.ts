@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCoinbaseStrike,
-  coinbaseStrikePlots,
+  coinbaseStrikePriceLevels,
   coinbaseStrikeSettings,
   isCoinbaseStrikeSettings,
   COINBASE_STRIKE_DEFAULTS,
 } from './coinbase-strike'
+import { builtInPlots } from './indicators'
 import type { Candle, Indicator } from './types'
 
 describe('Coinbase Strike settings validation', () => {
@@ -107,7 +108,7 @@ describe('Coinbase Strike calculations', () => {
     expect(result.isUp).toBe(true)
   })
 
-  it('generates plots for builtInPlots', () => {
+  it('uses only active price-scale levels instead of historical chart plots', () => {
     const candles: Candle[] = [bar(0, 50000, 50200), bar(300, 50200, 50300)]
     const indicator: Indicator = {
       id: 'coinbase-strike',
@@ -122,12 +123,32 @@ describe('Coinbase Strike calculations', () => {
         buffer: 100,
       },
     }
+    const settings = coinbaseStrikeSettings(indicator)
+    const result = calculateCoinbaseStrike(candles, settings)
 
-    const plots = coinbaseStrikePlots(candles, indicator)
-    expect(plots).toHaveLength(3)
-    expect(plots[0].title).toBe('Strike (15m)')
-    expect(plots[0].pane).toBe('price')
-    expect(plots[1].title).toBe('Strike +$100.00')
-    expect(plots[2].title).toBe('Strike -$100.00')
+    expect(builtInPlots(candles, indicator)).toEqual([])
+    expect(coinbaseStrikePriceLevels(result, settings)).toEqual([
+      {
+        role: 'strike',
+        price: 50000,
+        color: '#f5a623',
+        axisLabelVisible: true,
+        title: 'STRIKE',
+      },
+      {
+        role: 'upper-target',
+        price: 50100,
+        color: '#2bb99b',
+        axisLabelVisible: false,
+        title: '',
+      },
+      {
+        role: 'lower-target',
+        price: 49900,
+        color: '#ed6773',
+        axisLabelVisible: false,
+        title: '',
+      },
+    ])
   })
 })

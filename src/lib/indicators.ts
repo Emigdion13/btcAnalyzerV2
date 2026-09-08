@@ -1,6 +1,7 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
 import { coinbaseStrikePlots } from './coinbase-strike'
+import { scalpSwingPlots } from './scalpswing'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
@@ -134,6 +135,16 @@ export const INDICATOR_CATALOG: {
     color: '#26a69a',
   },
   {
+    kind: 'scalpswing',
+    name: 'SCALPSWING R1-6 (PAC Swing Arrows)',
+    short: 'SCALPSWING R1-6',
+    description:
+      'Small bottom/top arrows from JustUncleL’s Scalping Swing Trading Tool R1-6 (10) – PAC EMA High/Low/Close breakout with optional 200EMA filter, recreated with the same EMA and cross logic.',
+    category: 'Price Action',
+    period: 10,
+    color: '#26a69a',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -182,6 +193,10 @@ export function builtInPlots(
   // Pivot Points High Low & Missed Reversal Levels draws labels, a zig-zag
   // and levels as a native SVG price overlay; no Lightweight Charts series.
   if (indicator.kind === 'pivot-points-missed-reversals') return []
+  // SCALPSWING R1-6 draws small buy/sell arrows as SVG overlay; optional PAC/EMA lines are Lightweight series.
+  if (indicator.kind === 'scalpswing') {
+    return scalpSwingPlots(candles, indicator)
+  }
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (
@@ -241,6 +256,61 @@ export function builtInPlots(
 }
 
 export const SCRIPT_TEMPLATES = [
+  {
+    name: 'SCALPSWING R1-6 Arrows (PAC Breakout)',
+    source: `// SCALPSWING R1-6 (10) – small bottom/top arrows logic
+// Based on JustUncleL's open-source Pine v3 indicator
+// PAC = EMA(high, len), EMA(low, len), EMA(close, len)
+// Buy: close > open && close > pacU && close[1] < pacU[1] && (no filter or pacC > ema200)
+// Sell: close < open && close < pacL && close[1] > pacL[1] && (no filter or pacC < ema200)
+
+const pacLength = input.number("PAC Length", 10, 2, 200);
+const emaFilterLength = input.number("EMA Filter Length", 200, 1, 2000);
+const filterWithEma = input.number("Filter with EMA? 1=yes 0=no", 1, 0, 1);
+
+const pacC = ta.ema(close, pacLength);
+const pacU = ta.ema(high, pacLength);
+const pacL = ta.ema(low, pacLength);
+const emaFilter = ta.ema(close, emaFilterLength);
+
+const buySignal = [];
+const sellSignal = [];
+for (let i = 0; i < close.length; i++) {
+  if (i === 0 || pacU[i] === null || pacL[i] === null || pacC[i] === null) {
+    buySignal.push(null);
+    sellSignal.push(null);
+    continue;
+  }
+  const prevClose = close[i-1];
+  const curClose = close[i];
+  const curOpen = open[i];
+  const curPacU = pacU[i];
+  const prevPacU = pacU[i-1];
+  const curPacL = pacL[i];
+  const prevPacL = pacL[i-1];
+  const curPacC = pacC[i];
+  const curEma = emaFilter[i];
+  const filterOkUp = filterWithEma === 0 || (curEma !== null && curPacC > curEma);
+  const filterOkDown = filterWithEma === 0 || (curEma !== null && curPacC < curEma);
+  const isUp = curClose > curOpen && curClose > curPacU && prevClose < prevPacU && filterOkUp;
+  const isDown = curClose < curOpen && curClose < curPacL && prevClose > prevPacL && filterOkDown;
+  // Plot markers as price-level points: we use close price for visibility in oscillator workaround,
+  // but in custom template we show PAC lines instead.
+  buySignal.push(isUp ? low[i] : null);
+  sellSignal.push(isDown ? high[i] : null);
+}
+
+// Draw PAC and filter for reference
+plot(pacU, { title: "PAC High", color: "#7a8592", pane: "price", lineWidth: 1 });
+plot(pacL, { title: "PAC Low", color: "#7a8592", pane: "price", lineWidth: 1 });
+plot(pacC, { title: "PAC Close", color: "#b0bec5", pane: "price", lineWidth: 1 });
+plot(emaFilter, { title: "EMA Filter " + emaFilterLength, color: "#42a5f5", pane: "price", lineWidth: 2 });
+// In native SCALPSWING overlay these become small arrows at candle bottom/top.
+// Here we plot dots as approximation – use built-in SCALPSWING for true arrows.
+plot(buySignal, { title: "Buy Breakout (PAC)", color: "#26a69a", pane: "price", lineWidth: 2 });
+plot(sellSignal, { title: "Sell Breakout (PAC)", color: "#ef5350", pane: "price", lineWidth: 2 });
+`,
+  },
   {
     name: 'Coinbase BTC Up/Down Strike',
     source: `// Coinbase BTC "Up or Down" Strike Line Indicator

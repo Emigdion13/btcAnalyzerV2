@@ -19,6 +19,7 @@ export type IndicatorKind =
   | 'sr-breaks-retests'
   | 'pivot-points-missed-reversals'
   | 'coinbase-strike'
+  | 'scalpswing'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -265,6 +266,42 @@ export const COINBASE_STRIKE_DEFAULTS: Readonly<CoinbaseStrikeSettings> = {
   downColor: '#ed6773',
 }
 
+export interface ScalpSwingSettings {
+  /** High/Low PAC length – Pine input \"High Low PAC Length\" (10). */
+  pacLength: number
+  /** Filter alerts with EMA – Pine input \"Filter PAC Alerts with 200ema\" */
+  filterWithEma: boolean
+  /** EMA filter length – 200 in original, 180 for 1m pane */
+  emaFilterLength: number
+  /** Show PAC channel lines (high/low/close EMA) */
+  showPacChannel: boolean
+  /** Show EMA filter line */
+  showEmaFilter: boolean
+  /** Use big aqua/fuchsia arrows (plotarrow) instead of small green/red */
+  useBigArrows: boolean
+  /** Show BUY/SELL text labels next to arrows */
+  showLabels: boolean
+  /** Replicate original [1] offset – arrow appears one bar after breakout */
+  signalOnNextBar: boolean
+  /** Buy arrow color */
+  buyColor: string
+  /** Sell arrow color */
+  sellColor: string
+}
+
+export const SCALPSWING_DEFAULTS: Readonly<ScalpSwingSettings> = {
+  pacLength: 10,
+  filterWithEma: true,
+  emaFilterLength: 200,
+  showPacChannel: false,
+  showEmaFilter: true,
+  useBigArrows: false,
+  showLabels: true,
+  signalOnNextBar: false,
+  buyColor: '#26a69a',
+  sellColor: '#ef5350',
+}
+
 export interface Plot {
   title: string
   color: string
@@ -305,6 +342,7 @@ export interface Indicator {
   sr?: SrBreaksRetestsSettings
   pivots?: PivotPointsMissedReversalsSettings
   strike?: CoinbaseStrikeSettings
+  scalpswing?: ScalpSwingSettings
 }
 export interface SavedScript {
   id: string

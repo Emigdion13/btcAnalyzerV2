@@ -51,9 +51,15 @@ import type { OrderBookView } from '../../shared/coinbase'
 import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
 import { formatNotional } from '../../shared/whale-flow'
-import { builtInPlots } from '../lib/indicators'
+import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
 import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
+import {
+  detectMacdDivergences,
+  divergenceEnabled,
+  divergenceSettings,
+} from '../lib/macd-divergence'
+import type { Divergence } from '../lib/macd-divergence'
 import {
   calculateSmartMoneyConcepts,
   displayedSmcResult,
@@ -120,6 +126,8 @@ interface Geometry {
   width: number
   height: number
   paneTops: number[]
+  paneHeights: number[]
+  totalHeight: number
 }
 
 export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props, ref) {
@@ -144,6 +152,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
   const srSvgRef = useRef<SVGSVGElement>(null)
+  const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const mainRef = useRef<ISeriesApi<SeriesType> | null>(null)
@@ -155,7 +164,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const [pending, setPending] = useState<Anchor | null>(null)
   const [preview, setPreview] = useState<Anchor | null>(null)
   const [hovered, setHovered] = useState<Candle | null>(null)
-  const [geometry, setGeometry] = useState<Geometry>({ width: 0, height: 0, paneTops: [] })
+  const [geometry, setGeometry] = useState<Geometry>({
+    width: 0,
+    height: 0,
+    paneTops: [],
+    paneHeights: [],
+    totalHeight: 0,
+  })
   const [revision, setRevision] = useState(0)
   const [legendOpen, setLegendOpen] = useState(true)
   const refreshRef = useRef<() => void>(() => {})
@@ -319,6 +334,28 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   )
   const generatedRef = useRef(generated)
   generatedRef.current = generated
+  const macdDivergences = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && divergenceEnabled(indicator))
+        .map((indicator) => {
+          const settings = divergenceSettings(indicator)
+          const histogram =
+            macdHistogram(candles, indicator, {
+              timeframe,
+              timeframes: indicatorTimeframes,
+              replay,
+              realtimeFrom,
+            }) ?? []
+          return {
+            indicator,
+            settings,
+            histogram,
+            divergences: detectMacdDivergences(candles, histogram, settings),
+          }
+        }),
+    [candles, indicators, timeframe, indicatorTimeframes, replay, realtimeFrom],
+  )
   const structure = generated
     .map(
       (g) =>
@@ -407,6 +444,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       }
       await paintSvg(smcSvgRef.current)
       await paintSvg(srSvgRef.current)
+      await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
     },
@@ -468,6 +506,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         raf = 0
         const panes = chart.panes()
         let top = 0
+        const paneHeights = panes.map((pane) => pane.getHeight())
         const paneTops = panes.map((pane) => {
           const current = top
           top += pane.getHeight() + 1
@@ -477,12 +516,16 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           width: chart.timeScale().width(),
           height: panes[0]?.getHeight() ?? 0,
           paneTops,
+          paneHeights,
+          totalHeight: top,
         }
         setGeometry((previous) =>
           previous.width === next.width &&
           previous.height === next.height &&
+          previous.totalHeight === next.totalHeight &&
           previous.paneTops.length === next.paneTops.length &&
-          previous.paneTops.every((top, i) => top === next.paneTops[i])
+          previous.paneTops.every((top, i) => top === next.paneTops[i]) &&
+          previous.paneHeights.every((h, i) => h === next.paneHeights[i])
             ? previous
             : next,
         )
@@ -492,7 +535,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           propsRef.current.indicators.some(
             (indicator) =>
               (indicator.visible && indicator.kind === 'smart-money-concepts') ||
-              (indicator.visible && indicator.kind === 'sr-breaks-retests'),
+              (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
+              (indicator.visible && divergenceEnabled(indicator)),
           )
         )
           setRevision((r) => r + 1)
@@ -1825,6 +1869,89 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  const renderDivergenceOverlay = (overlay: (typeof macdDivergences)[number]) => {
+    const entry = indicatorSeries.current.get(overlay.indicator.id)
+    if (!entry || !entry.pane) return null
+    // The oscillator pane holds the MACD/histogram series; its price scale maps
+    // histogram values to Y. priceToCoordinate is pane-relative, so add the
+    // pane's top offset to place the line in the full-height SVG overlay.
+    const series = entry.series[0]
+    const paneTop = geometry.paneTops[entry.pane] ?? 0
+    const paneHeight = geometry.paneHeights[entry.pane] ?? 0
+    const timeScale = chartRef.current?.timeScale()
+    if (!series || !timeScale) return null
+    const point = (index: number, value: number) => {
+      const candle = candles[index]
+      if (!candle) return null
+      const x = timeScale.timeToCoordinate(candle.time as UTCTimestamp)
+      const y = series.priceToCoordinate(value)
+      if (x === null || x === undefined || y === null || y === undefined) return null
+      const absY = paneTop + Number(y)
+      // Skip points scrolled out of the pane vertically or off the time axis.
+      if (Number(x) < 0 || Number(x) > geometry.width) return null
+      if (Number(y) < -2 || Number(y) > paneHeight + 2) return null
+      return { x: Number(x), y: absY }
+    }
+    const items = overlay.divergences
+      .map((divergence) => {
+        const from = point(divergence.fromIndex, divergence.fromValue)
+        const to = point(divergence.toIndex, divergence.toValue)
+        if (!from || !to) return null
+        return { divergence, from, to }
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          divergence: Divergence
+          from: { x: number; y: number }
+          to: { x: number; y: number }
+        } => item !== null,
+      )
+    if (!items.length) return null
+    return (
+      <g key={overlay.indicator.id} data-testid="macd-divergence">
+        {items.map(({ divergence, from, to }) => {
+          const labelBelow = divergence.bullish
+          const labelY = labelBelow
+            ? Math.min(to.y + 13, paneTop + paneHeight - 3)
+            : Math.max(to.y - 7, paneTop + 9)
+          return (
+            <g
+              key={`${divergence.kind}:${divergence.fromIndex}:${divergence.toIndex}`}
+              data-divergence={divergence.kind}
+            >
+              {overlay.settings.showLines && (
+                <line
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={divergence.color}
+                  strokeWidth={1.5}
+                  strokeDasharray={divergence.hidden ? '4 3' : undefined}
+                />
+              )}
+              {overlay.settings.showLabels && (
+                <text
+                  x={to.x}
+                  y={labelY}
+                  textAnchor="middle"
+                  fill={divergence.color}
+                  fontSize="9"
+                  fontFamily="DM Sans, sans-serif"
+                  className="smc-label"
+                >
+                  {divergence.label}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </g>
+    )
+  }
+
   return (
     <div
       className={`chart-stage ${drawingTool !== 'cursor' && !drawingsLocked ? 'is-drawing' : ''}`}
@@ -2258,6 +2385,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {srOverlays.map(renderSrOverlay)}
+      </svg>
+      <svg
+        ref={divSvgRef}
+        className="divergence-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.totalHeight || geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.totalHeight || geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="divergence-overlay"
+        data-revision={revision}
+      >
+        {macdDivergences.map(renderDivergenceOverlay)}
       </svg>
       <svg
         ref={svgRef}

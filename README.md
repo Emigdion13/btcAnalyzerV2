@@ -94,7 +94,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines, **CM_Ult_MacD_MTF (ChrisMoody’s original)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
@@ -118,6 +118,17 @@ The original ChrisMoody indicator is included in new workspaces and available un
 **The original repaints:** legacy Pine historical lookahead is intentionally retained, and open-candle values/dots can change. Replay freezes native histories and avoids using a future final close for an incomplete source candle. Finite history, different exchanges and live data timing affect numerical parity. This implementation has formula/renderer/browser fixture tests, not a certified side-by-side TradingView data match. Supported source resolutions are the app’s eight intervals; arbitrary Pine resolutions are not implemented.
 
 See [the compatibility specification, limitations and original-source references](docs/cm-ult-macd.md).
+
+## MACD histogram divergence
+
+Both MACD built-ins — the conventional **MACD** and **CM_Ult_MacD_MTF** — can overlay **regular** and **hidden** divergences detected on the MACD histogram. Open either indicator's settings to toggle each type, adjust the pivot lookback and the min/max bar gap between compared pivots, and choose whether to draw connecting lines, labels, or both.
+
+- **Regular bullish** — price makes a lower low while the histogram makes a higher low (possible reversal up).
+- **Regular bearish** — price makes a higher high while the histogram makes a lower high (possible reversal down).
+- **Hidden bullish** — price makes a higher low while the histogram makes a lower low (uptrend continuation); drawn with a dashed line.
+- **Hidden bearish** — price makes a lower high while the histogram makes a higher high (downtrend continuation); drawn with a dashed line.
+
+Pivots are confirmed only after `pivotLookback` bars close on **each** side, so the newest bars stay unconfirmed and the overlay can repaint as new candles arrive. Divergence is drawn on the oscillator pane, is included in chart screenshots, and its settings persist in workspace backups. It is informational deterministic analysis, not a trading signal.
 
 ## Smart Money Concepts (SMC)
 
@@ -205,6 +216,7 @@ src/
     indicator-runtime.ts       Self-contained technical-analysis helpers
     indicators.ts              Built-in plot calculations and script templates
     cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
+    macd-divergence.ts          Histogram pivots and regular/hidden divergence detection
     smart-money-concepts.ts     Independent SMC pivots, BOS/CHoCH, OB/FVG and overlay models
     sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers

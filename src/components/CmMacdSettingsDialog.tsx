@@ -8,8 +8,10 @@ import {
   cmMacdSettings,
   isCmMacdSettings,
 } from '../lib/cm-ult-macd'
+import { divergenceSettings, isDivergenceSettings } from '../lib/macd-divergence'
 import { TIMEFRAMES } from '../lib/market'
-import type { CmMacdSettings, Indicator, Timeframe } from '../lib/types'
+import type { CmMacdSettings, DivergenceSettings, Indicator, Timeframe } from '../lib/types'
+import { DivergenceSettingsSection } from './DivergenceSettingsSection'
 import { Modal, Toggle } from './ui'
 
 const OPTIONS = [
@@ -29,6 +31,11 @@ const lengthsFrom = (s: CmMacdSettings) => ({
   slowLength: String(s.slowLength),
   signalLength: String(s.signalLength),
 })
+const divNumbersFrom = (d: DivergenceSettings) => ({
+  pivotLookback: String(d.pivotLookback),
+  rangeLower: String(d.rangeLower),
+  rangeUpper: String(d.rangeUpper),
+})
 
 export function CmMacdSettingsDialog({
   indicator,
@@ -40,8 +47,11 @@ export function CmMacdSettingsDialog({
   onClose: () => void
 }) {
   const initial = cmMacdSettings(indicator)
+  const initialDiv = divergenceSettings(indicator)
   const [settings, setSettings] = useState(initial)
   const [lengths, setLengths] = useState(() => lengthsFrom(initial))
+  const [divergence, setDivergence] = useState(initialDiv)
+  const [divNumbers, setDivNumbers] = useState(() => divNumbersFrom(initialDiv))
   const [visible, setVisible] = useState(indicator.visible)
   const [error, setError] = useState('')
   const reset = () => {
@@ -81,6 +91,18 @@ export function CmMacdSettingsDialog({
             setError('Lengths must be whole numbers from 1 to 2000. Choose a supported timeframe.')
             return
           }
+          const div = {
+            ...divergence,
+            pivotLookback: Number(divNumbers.pivotLookback),
+            rangeLower: Number(divNumbers.rangeLower),
+            rangeUpper: Number(divNumbers.rangeUpper),
+          }
+          if (!isDivergenceSettings(div)) {
+            setError(
+              'Divergence gaps must be whole numbers from 1 to 1000, and the max gap cannot be below the min gap.',
+            )
+            return
+          }
           onSave({
             ...indicator,
             name: 'CM_Ult_MacD_MTF',
@@ -88,6 +110,7 @@ export function CmMacdSettingsDialog({
             color: CM_COLORS.lime,
             visible,
             cmMacd,
+            divergence: div,
           })
         }}
       >
@@ -166,6 +189,12 @@ export function CmMacdSettingsDialog({
             </span>
           </div>
         </div>
+        <DivergenceSettingsSection
+          settings={divergence}
+          numbers={divNumbers}
+          onToggle={(key, value) => setDivergence({ ...divergence, [key]: value })}
+          onNumber={(key, value) => setDivNumbers({ ...divNumbers, [key]: value })}
+        />
         <div className="cm-palette" aria-label="Original histogram palette">
           {[
             [CM_COLORS.aqua, 'Above 0 · rising'],

@@ -105,6 +105,7 @@ import type {
 import {
   DEFAULT_INDICATORS,
   DEFAULT_SETTINGS,
+  DIVERGENCE_DEFAULTS,
   SMC_DEFAULTS,
   SR_BREAKS_RETESTS_DEFAULTS,
   COINBASE_STRIKE_DEFAULTS,
@@ -757,7 +758,10 @@ export default function App() {
         period: item.period,
         color: item.color,
         visible: true,
-        ...(kind === 'cm-ult-macd' ? { cmMacd: { ...CM_MACD_DEFAULTS } } : {}),
+        ...(kind === 'cm-ult-macd'
+          ? { cmMacd: { ...CM_MACD_DEFAULTS }, divergence: { ...DIVERGENCE_DEFAULTS } }
+          : {}),
+        ...(kind === 'macd' ? { divergence: { ...DIVERGENCE_DEFAULTS } } : {}),
         ...(kind === 'smart-money-concepts' ? { smc: { ...SMC_DEFAULTS } } : {}),
         ...(kind === 'sr-breaks-retests' ? { sr: { ...SR_BREAKS_RETESTS_DEFAULTS } } : {}),
         ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),

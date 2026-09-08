@@ -56,6 +56,33 @@ export interface CmMacdSettings {
   histogramColorChange: boolean
 }
 
+/**
+ * Divergence detection shared by both the conventional MACD and CM_Ult_MacD_MTF.
+ * Pivots are found on the MACD histogram and compared against price pivots.
+ * Regular divergences warn of reversals; hidden divergences confirm the trend.
+ */
+export interface DivergenceSettings {
+  showRegular: boolean
+  showHidden: boolean
+  /** Bars on each side of a histogram pivot required to confirm it. */
+  pivotLookback: number
+  /** Maximum bars between two compared pivots. */
+  rangeUpper: number
+  /** Minimum bars between two compared pivots. */
+  rangeLower: number
+  showLines: boolean
+  showLabels: boolean
+}
+export const DIVERGENCE_DEFAULTS: Readonly<DivergenceSettings> = {
+  showRegular: true,
+  showHidden: true,
+  pivotLookback: 5,
+  rangeUpper: 60,
+  rangeLower: 5,
+  showLines: true,
+  showLabels: true,
+}
+
 /** Settings for Atlas's independent Smart Money Concepts implementation. */
 export type SMCStructureFilter = 'All' | 'BOS' | 'CHoCH'
 export type SMCLabelSize = 'Tiny' | 'Small' | 'Normal'
@@ -233,6 +260,8 @@ export interface Indicator {
   inputValues?: Record<string, number>
   scriptId?: string
   cmMacd?: CmMacdSettings
+  /** MACD histogram divergence overlay, valid for `macd` and `cm-ult-macd`. */
+  divergence?: DivergenceSettings
   smc?: SmartMoneyConceptsSettings
   sr?: SrBreaksRetestsSettings
   strike?: CoinbaseStrikeSettings
@@ -304,5 +333,6 @@ export const DEFAULT_INDICATORS: Indicator[] = [
     period: 12,
     color: '#00ff00',
     visible: true,
+    divergence: { ...DIVERGENCE_DEFAULTS },
   },
 ]

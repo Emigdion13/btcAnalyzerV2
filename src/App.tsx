@@ -31,6 +31,7 @@ import {
   NotebookPen,
   PanelRightClose,
   Pause,
+  PictureInPicture2,
   Play,
   Plus,
   Redo2,
@@ -61,6 +62,8 @@ import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
+import { TimeframePeekBox } from './components/TimeframePeekBox'
+import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
@@ -86,6 +89,12 @@ import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
+import {
+  TIMEFRAME_PEEK_DEFAULTS,
+  peekResolution,
+  timeframePeekSettings,
+} from './lib/timeframe-peek'
+import type { TimeframePeekSettings } from './lib/timeframe-peek'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -248,6 +257,13 @@ export default function App() {
   const [drawingsLocked, setDrawingsLocked] = useLocalState('drawings-locked', false)
   const [magnet, setMagnet] = useLocalState('magnet', false)
   const [feedActive, setFeedActive] = useLocalState('feed-active', true)
+  // The floating timeframe-peek window: a second resolution, forming bar included.
+  const [peekVisible, setPeekVisible] = useLocalState('timeframe-peek-visible', true)
+  const [peekStored, setPeekStored] = useLocalState<TimeframePeekSettings>(
+    'timeframe-peek',
+    TIMEFRAME_PEEK_DEFAULTS,
+  )
+  const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
   )
@@ -360,9 +376,15 @@ export default function App() {
     () => (replayIndex === null ? baseCandles : baseCandles.slice(0, replayIndex)),
     [baseCandles, replayIndex],
   )
+  const peekTimeframe = useMemo(
+    () => peekResolution(peekSettings, timeframe),
+    [peekSettings, timeframe],
+  )
+  // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
+  const peekActive = peekVisible && replayIndex === null
   const indicatorTimeframes = useMemo(
-    () => requestedIndicatorTimeframes(indicators, timeframe),
-    [indicators, timeframe],
+    () => requestedIndicatorTimeframes(indicators, timeframe, peekActive ? [peekTimeframe] : []),
+    [indicators, timeframe, peekActive, peekTimeframe],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
     () =>
@@ -396,6 +418,44 @@ export default function App() {
   const currentPrice = quotePrices[symbol] ?? candles[candles.length - 1]?.close
   const hasData = candles.length > 1
   const feedState = source === 'coinbase' ? live.state : feedActive ? 'live' : 'paused'
+
+  const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
+    if (!peekActive) return null
+    const peekingTheChart = peekTimeframe === timeframe
+    const feed = peekingTheChart ? undefined : nativeTimeframes[peekTimeframe]
+    return {
+      resolution: peekTimeframe,
+      chartTimeframe: timeframe,
+      candles: feed?.candles ?? (peekingTheChart ? candles : EMPTY_CANDLES),
+      state: feed?.state ?? feedState,
+      message:
+        feed?.message ??
+        (source === 'coinbase'
+          ? live.message
+          : feedActive
+            ? 'Demo feed · synthetic bars, not exchange data.'
+            : 'Demo feed paused.'),
+      // A resolution feed is refreshed by remounting it; the chart's own data belongs to the
+      // main connection, so it retries that one instead.
+      retry:
+        source === 'coinbase'
+          ? peekingTheChart
+            ? live.retry
+            : () => setTimeframeRetry((attempt) => attempt + 1)
+          : undefined,
+    }
+  }, [
+    peekActive,
+    peekTimeframe,
+    timeframe,
+    nativeTimeframes,
+    candles,
+    feedState,
+    source,
+    live.message,
+    live.retry,
+    feedActive,
+  ])
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
   const history = drawingHistory[drawKey]
@@ -1091,6 +1151,7 @@ export default function App() {
       return false
     }
   }
+  const togglePeek = () => setPeekVisible((visible) => !visible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1099,6 +1160,7 @@ export default function App() {
     openSearch,
     chooseTool,
     openDocs,
+    togglePeek,
     draft,
     modal,
     confirmation,
@@ -1111,6 +1173,7 @@ export default function App() {
     openSearch,
     chooseTool,
     openDocs,
+    togglePeek,
     draft,
     modal,
     confirmation,
@@ -1156,6 +1219,10 @@ export default function App() {
       if (event.altKey && event.key.toLowerCase() === 'h') {
         event.preventDefault()
         cmd.chooseTool('horizontal')
+      }
+      if (event.altKey && !mod && (event.key.toLowerCase() === 'p' || event.code === 'KeyP')) {
+        event.preventDefault()
+        cmd.togglePeek()
       }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
@@ -1244,6 +1311,16 @@ export default function App() {
                   {whaleBoxVisible ? 'Hide whale flow box' : 'Show whale flow box'}
                 </MenuItem>
                 <MenuItem
+                  icon={PictureInPicture2}
+                  selected={peekVisible}
+                  onClick={() => {
+                    setPeekVisible(!peekVisible)
+                    close()
+                  }}
+                >
+                  {peekVisible ? 'Hide timeframe peek window' : 'Show timeframe peek window'}
+                </MenuItem>
+                <MenuItem
                   icon={Layers}
                   selected={bookBoxVisible}
                   onClick={() => {
@@ -1262,6 +1339,7 @@ export default function App() {
                     setSidePanel('watchlist')
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
+                    setPeekVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1451,6 +1529,15 @@ export default function App() {
               <SkipBack size={16} strokeWidth={1.5} />
               <span>Replay</span>
             </button>
+            <button
+              className={`toolbar-button peek-toggle ${peekVisible ? 'active' : ''}`}
+              onClick={() => setPeekVisible(!peekVisible)}
+              title="Floating window onto another timeframe (Alt P)"
+              aria-pressed={peekVisible}
+            >
+              <PictureInPicture2 size={17} strokeWidth={1.5} />
+              <span>Peek</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1588,6 +1675,18 @@ export default function App() {
                 )}
                 {source === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
                   <BookStrengthBox book={bookView} onClose={() => setBookBoxVisible(false)} />
+                )}
+                {peekFeed && hasData && (
+                  <TimeframePeekBox
+                    ticker={asset.ticker}
+                    source={source}
+                    settings={peekSettings}
+                    onChange={setPeekStored}
+                    onClose={() => setPeekVisible(false)}
+                    feed={peekFeed}
+                    upColor={settings.upColor}
+                    downColor={settings.downColor}
+                  />
                 )}
                 {source === 'coinbase' && !hasData && (
                   <div className="market-feedback" role="status">

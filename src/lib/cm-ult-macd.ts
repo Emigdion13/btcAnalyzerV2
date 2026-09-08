@@ -101,9 +101,15 @@ export function indicatorLabel(indicator: Indicator): string {
     return pivotPointsMissedReversalsIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
+/**
+ * Extra resolutions the workspace needs beyond what the chart itself plots. Deduplicated, sorted,
+ * and never including the chart's own resolution, so one stream serves every consumer of it —
+ * a multi-timeframe indicator and the timeframe peek window share a connection.
+ */
 export function requestedIndicatorTimeframes(
   indicators: Indicator[],
   chart: Timeframe,
+  extra: Timeframe[] = [],
 ): Timeframe[] {
   const cmResolutions = indicators
     .filter((indicator) => indicator.kind === 'cm-ult-macd' && indicator.visible)
@@ -119,7 +125,9 @@ export function requestedIndicatorTimeframes(
     .filter((resolution): resolution is Timeframe => !!resolution)
   return [
     ...new Set(
-      [...cmResolutions, ...smcFvgResolutions].filter((resolution) => resolution !== chart),
+      [...cmResolutions, ...smcFvgResolutions, ...extra].filter(
+        (resolution) => resolution !== chart,
+      ),
     ),
   ].sort()
 }

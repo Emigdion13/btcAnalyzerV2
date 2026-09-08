@@ -63,10 +63,14 @@ export const SR_BREAKS_RETESTS_COLORS = {
   holdBelow: '#20ca26',
   /** Red ◆ (#e92929): resistance holds, support-as-resistance holds. */
   holdAbove: '#e92929',
-  /** "Break Sup" label background (#7e1e1e). */
+  /** "Break Sup" label color (#7e1e1e); drawn as an outline, never a filled plate. */
   breakSupport: '#7e1e1e',
-  /** "Break Res" label background (#2b6d2d). */
+  /** "Break Res" label color (#2b6d2d); drawn as an outline, never a filled plate. */
   breakResistance: '#2b6d2d',
+  /** `#7e1e1e` lightened — the label text has to read without a filled plate behind it. */
+  breakSupportText: '#f2808a',
+  /** `#2b6d2d` lightened — the label text has to read without a filled plate behind it. */
+  breakResistanceText: '#6fd477',
   /** Pine `chart.fg_color` on dark themes. */
   foreground: '#d1d4dc',
 } as const

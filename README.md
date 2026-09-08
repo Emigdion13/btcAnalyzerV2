@@ -133,7 +133,7 @@ This is deterministic OHLCV analysis, not a prediction service. Pivots are only 
 
 Atlas includes a **faithful native port of ChartPrime’s “Support and Resistance (High Volume Boxes)”**, the TradingView indicator whose short title renders as **SR Breaks and Retests [ChartPrime] (20, 2, 1)**. ChartPrime publishes the Pine Script v5 source under the Mozilla Public License 2.0, and the Atlas engine reproduces that published calculation statement by statement—delta volume, close pivots, volume-gated zones, ATR(200) depth, break/hold crosses, role-reversal memory, and every marker offset and color.
 
-Add it from **Indicators → SR Breaks and Retests**. The three published inputs—**Lookback Period 20**, **Delta Volume Filter Length 2**, **Adjust Box Width 1**—are editable and persist like every other indicator. Zones render as SVG boxes with volume-graded fills and “Vol:” labels; breaks print **Break Sup / Break Res** labels; holds and successful retests print ◆ diamonds, all at the original’s exact anchors.
+Add it from **Indicators → SR Breaks and Retests**. The three published inputs—**Lookback Period 20**, **Delta Volume Filter Length 2**, **Adjust Box Width 1**—are editable and persist like every other indicator. Zones render as SVG boxes with volume-graded fills and “Vol:” labels; breaks print **Break Sup / Break Res** labels; holds and successful retests print ◆ diamonds, all at the original’s exact anchors. Every message drawn inside the chart — those break labels included — is transparent: the published colors outline the label and tint the glyphs, but no plate is filled over the price action, so the candles behind a message always stay visible.
 
 Because Atlas loads a finite candle window (900 bars by default) while TradingView computes over much deeper history, one documented difference exists: the original hides the very first “Break” label of a session (`not na_flag` is `na` in Pine), which is invisible on TradingView’s deep history but would read as a missing label here. Atlas shows that first label so short windows match what the original displays on screen. Everything else— including quirks like a replacement zone printing a retest diamond instead of a second break label—matches the original behavior.
 
@@ -247,7 +247,7 @@ Drag it by the grip, collapse the print list, or hide it entirely from the heade
 
 ## Order-book depth & zone strength
 
-Indicators describe *where* price reacted before; this feature measures whether anyone is
+Indicators describe _where_ price reacted before; this feature measures whether anyone is
 willing to defend that level **right now**, using the resting `level2` order book on the same
 shared Coinbase WebSocket — no new vendor or API key.
 
@@ -258,8 +258,8 @@ shared Coinbase WebSocket — no new vendor or API key.
   showing how much USD is currently resting inside its price range (bids for support-side zones,
   asks for resistance-side), weighted by how long that size has rested unchanged. Zones with no
   resting liquidity show no chip — the book is not defending them at this moment.
-- **Readout panel.** A floating "Book" panel (workspace menu → *Hide/Show book depth &
-  strength*) lists the current walls, bid/ask totals, and a near-mid imbalance meter. Like the
+- **Readout panel.** A floating "Book" panel (workspace menu → _Hide/Show book depth &
+  strength_) lists the current walls, bid/ask totals, and a near-mid imbalance meter. Like the
   whale flow box it is a live-connection element: it only appears while a real Coinbase feed is
   active, never during replay, and clears entirely when the book is unavailable so no stale
   depth is implied.

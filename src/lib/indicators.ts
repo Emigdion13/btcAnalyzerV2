@@ -4,6 +4,40 @@ import { coinbaseStrikePlots } from './coinbase-strike'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
+/** Fast/slow/signal lengths for the conventional MACD, derived from `period`. */
+export function conventionalMacdLengths(period: number): {
+  fast: number
+  slow: number
+  signal: number
+} {
+  return { fast: period, slow: Math.max(period + 1, Math.round((period * 26) / 12)), signal: 9 }
+}
+
+/**
+ * MACD histogram (MACD − signal) aligned to `candles`, for either MACD kind.
+ * Unlike the plotted histogram this never suppresses exact zeros, so divergence
+ * pivots see the raw momentum series. Returns null for non-MACD indicators.
+ */
+export function macdHistogram(
+  candles: Candle[],
+  indicator: Indicator,
+  context?: IndicatorContext,
+): (number | null)[] | null {
+  if (indicator.kind === 'cm-ult-macd') {
+    return calculateCmMacd(candles, cmMacdSettings(indicator), context).histogram
+  }
+  if (indicator.kind === 'macd') {
+    const close = candles.map((c) => c.close)
+    const { fast, slow, signal } = conventionalMacdLengths(indicator.period)
+    const fastEma = ta.ema(close, fast)
+    const slowEma = ta.ema(close, slow)
+    const line = fastEma.map((v, i) => (v === null || slowEma[i] === null ? null : v - slowEma[i]!))
+    const signalLine = ta.ema(line, signal)
+    return line.map((v, i) => (v === null || signalLine[i] === null ? null : v - signalLine[i]!))
+  }
+  return null
+}
+
 export const INDICATOR_CATALOG: {
   kind: IndicatorKind
   name: string
@@ -162,10 +196,11 @@ export function builtInPlots(
     ]
   }
   if (kind === 'macd') {
-    const fast = ta.ema(close, period),
-      slow = ta.ema(close, Math.max(period + 1, Math.round((period * 26) / 12)))
+    const lengths = conventionalMacdLengths(period)
+    const fast = ta.ema(close, lengths.fast),
+      slow = ta.ema(close, lengths.slow)
     const line = fast.map((v, i) => (v === null || slow[i] === null ? null : v - slow[i]!))
-    const signal = ta.ema(line, 9)
+    const signal = ta.ema(line, lengths.signal)
     return [plot(line, 'MACD', 'oscillator'), plot(signal, 'Signal', 'oscillator', '#d6ad68')]
   }
   if (kind === 'vwap') {

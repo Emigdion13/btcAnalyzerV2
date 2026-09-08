@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './workspace-backup'
 import type { WorkspaceBackup } from './workspace-backup'
-import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, SMC_DEFAULTS } from './types'
+import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, DIVERGENCE_DEFAULTS, SMC_DEFAULTS } from './types'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 
 function backup(): WorkspaceBackup {
@@ -105,6 +105,41 @@ describe('workspace backups', () => {
       indicators: [{ ...originalIndicator, cmMacd: { ...CM_MACD_DEFAULTS, extra: 'ignored' } }],
     })
     expect(clean.indicators[0].cmMacd).toEqual(CM_MACD_DEFAULTS)
+  })
+  it('round-trips MACD divergence settings on both MACD kinds and rejects malformed values', () => {
+    const saved = backup()
+    const cm = saved.indicators.find((i) => i.kind === 'cm-ult-macd')!
+    cm.divergence = {
+      showRegular: false,
+      showHidden: true,
+      pivotLookback: 8,
+      rangeLower: 3,
+      rangeUpper: 90,
+      showLines: false,
+      showLabels: true,
+    }
+    saved.indicators.push({
+      id: 'macd-1',
+      kind: 'macd',
+      name: 'MACD',
+      period: 12,
+      color: '#7eacf3',
+      visible: true,
+      divergence: { ...DIVERGENCE_DEFAULTS },
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+
+    const original = backup()
+    const cmIndicator = original.indicators.find((i) => i.kind === 'cm-ult-macd')!
+    for (const divergence of [
+      { ...DIVERGENCE_DEFAULTS, showRegular: 'yes' },
+      { ...DIVERGENCE_DEFAULTS, pivotLookback: 0 },
+      { ...DIVERGENCE_DEFAULTS, rangeUpper: 2, rangeLower: 5 },
+    ]) {
+      expect(() =>
+        parseWorkspaceBackup({ ...original, indicators: [{ ...cmIndicator, divergence }] }),
+      ).toThrow(/divergence/)
+    }
   })
   it('round-trips each Smart Money Concepts input and rejects malformed values', () => {
     const saved = backup()

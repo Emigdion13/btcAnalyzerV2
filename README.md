@@ -307,7 +307,7 @@ Charting 1m while a 15m structure decides the session is a scrolling problem: th
 - **One stream, not a second one.** The window reads the same `IndicatorTimeframes` feeds the multi-timeframe indicators share: `requestedIndicatorTimeframes(indicators, chart, extra)` de-duplicates, so peeking at 1h while `CM_Ult_MacD_MTF` runs on 1h costs a single connection, and hiding the window releases it. **Bar replay never peeks at live candles** — the window is hidden while replaying, like the whale-flow and book readouts.
 - **The rest is stated, not implied.** `1 bar = 15 chart bars` gives the ratio, volume is that resolution's volume, and the price axis is the window's own range rather than the chart's. Demo mode draws the synthetic bars and says so.
 
-Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar, the workspace menu, or its own close button. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
+Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar, the workspace menu, or its own close button. Below 1050px — the width the side panels collapse at — the window starts closed so it never sits on the price legend, and opening it there is remembered like any other preference. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
 
 ## Research notes (not implemented)
 

@@ -91,6 +91,7 @@ import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-mac
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
   TIMEFRAME_PEEK_DEFAULTS,
+  peekDefaultVisible,
   peekResolution,
   timeframePeekSettings,
 } from './lib/timeframe-peek'
@@ -258,7 +259,12 @@ export default function App() {
   const [magnet, setMagnet] = useLocalState('magnet', false)
   const [feedActive, setFeedActive] = useLocalState('feed-active', true)
   // The floating timeframe-peek window: a second resolution, forming bar included.
-  const [peekVisible, setPeekVisible] = useLocalState('timeframe-peek-visible', true)
+  // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
+  const [peekPreference, setPeekPreference] = useLocalState<boolean | null>(
+    'timeframe-peek-visible',
+    null,
+  )
+  const peekVisible = peekPreference ?? peekDefaultVisible(window.innerWidth)
   const [peekStored, setPeekStored] = useLocalState<TimeframePeekSettings>(
     'timeframe-peek',
     TIMEFRAME_PEEK_DEFAULTS,
@@ -1151,7 +1157,7 @@ export default function App() {
       return false
     }
   }
-  const togglePeek = () => setPeekVisible((visible) => !visible)
+  const togglePeek = () => setPeekPreference(!peekVisible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1314,7 +1320,7 @@ export default function App() {
                   icon={PictureInPicture2}
                   selected={peekVisible}
                   onClick={() => {
-                    setPeekVisible(!peekVisible)
+                    setPeekPreference(!peekVisible)
                     close()
                   }}
                 >
@@ -1339,7 +1345,7 @@ export default function App() {
                     setSidePanel('watchlist')
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
-                    setPeekVisible(true)
+                    setPeekPreference(null)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1531,7 +1537,7 @@ export default function App() {
             </button>
             <button
               className={`toolbar-button peek-toggle ${peekVisible ? 'active' : ''}`}
-              onClick={() => setPeekVisible(!peekVisible)}
+              onClick={() => setPeekPreference(!peekVisible)}
               title="Floating window onto another timeframe (Alt P)"
               aria-pressed={peekVisible}
             >
@@ -1682,7 +1688,7 @@ export default function App() {
                     source={source}
                     settings={peekSettings}
                     onChange={setPeekStored}
-                    onClose={() => setPeekVisible(false)}
+                    onClose={() => setPeekPreference(false)}
                     feed={peekFeed}
                     upColor={settings.upColor}
                     downColor={settings.downColor}

@@ -43,6 +43,7 @@ test('minimizes, hides, and remembers the window across a reload', async ({ page
   await expect(peek.locator('.peek-bar')).toHaveCount(0)
   await peek.getByRole('button', { name: 'Expand the peek window' }).click()
   await expect(peek.locator('.peek-bar')).toHaveCount(12)
+  await peek.getByRole('button', { name: 'More candles in the peek window' }).click()
 
   await page.getByRole('button', { name: /^Peek/ }).click()
   await expect(peek).toBeHidden()
@@ -50,11 +51,34 @@ test('minimizes, hides, and remembers the window across a reload', async ({ page
   await expect(page.getByTestId('timeframe-peek')).toBeHidden()
   await page.keyboard.press('Alt+p')
   await expect(page.getByTestId('timeframe-peek')).toBeVisible()
+  // The bar count survives a reload, because the window is the kind of thing you set up once.
+  await expect(peek.locator('.peek-bar')).toHaveCount(14)
 
   const stored = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('atlas.v1.timeframe-peek') || 'null'),
   )
-  expect(stored).toMatchObject({ resolution: 'auto', bars: 12 })
+  expect(stored).toMatchObject({ resolution: 'auto', bars: 14 })
+})
+
+test('starts closed on a phone-width chart and opens on request', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?source=demo&interval=1m')
+  await expect(page.locator('canvas').first()).toBeVisible()
+  // No room for a second window at that width, so the price legend keeps the whole corner...
+  await expect(page.getByTestId('timeframe-peek')).toHaveCount(0)
+  const covered = await page.evaluate(() => {
+    const legend = document.querySelector('.indicator-legends')
+    if (!legend) return 'no legend'
+    const { x, y, width, height } = legend.getBoundingClientRect()
+    const hit = document.elementFromPoint(x + width / 2, y + height / 2)
+    return hit?.closest('.peek-box') ? 'peek window covers the legend' : 'clear'
+  })
+  expect(covered).toBe('clear')
+  // ...and the window is still one keystroke away when it is wanted.
+  await page.keyboard.press('Alt+p')
+  const peek = page.getByTestId('timeframe-peek')
+  await expect(peek).toBeVisible()
+  await expect(peek.locator('.peek-bar')).toHaveCount(12)
 })
 
 test('steps down when the chart is already the largest resolution', async ({ page }) => {

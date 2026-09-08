@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampPeekBars,
+  peekDefaultVisible,
+  PEEK_ROOMY_VIEWPORT,
   formatPeekCountdown,
   isTimeframePeekSettings,
   layoutPeekBars,
@@ -78,6 +80,15 @@ describe('timeframe peek settings', () => {
     expect(clampPeekBars(-20)).toBe(PEEK_BARS_MIN)
     expect(clampPeekBars(Infinity)).toBe(PEEK_BARS_MAX)
     expect(clampPeekBars(undefined)).toBe(TIMEFRAME_PEEK_DEFAULTS.bars)
+  })
+})
+
+describe('viewport default', () => {
+  it('opens only where a second window has room, like the side panels', () => {
+    expect(peekDefaultVisible(PEEK_ROOMY_VIEWPORT)).toBe(true)
+    expect(peekDefaultVisible(1440)).toBe(true)
+    expect(peekDefaultVisible(PEEK_ROOMY_VIEWPORT - 1)).toBe(false)
+    expect(peekDefaultVisible(390)).toBe(false)
   })
 })
 

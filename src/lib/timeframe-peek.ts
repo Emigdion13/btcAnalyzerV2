@@ -17,6 +17,15 @@ export const PEEK_AUTO = 'auto' as const
 export type PeekResolution = typeof PEEK_AUTO | Timeframe
 export const PEEK_RESOLUTIONS: readonly PeekResolution[] = [PEEK_AUTO, ...TIMEFRAMES]
 
+/**
+ * A second window needs a second half of a chart. Below the breakpoint the side panels collapse
+ * to, the peek window starts closed rather than covering the price legend — an explicit toggle
+ * still opens it at any width, and that choice is what persists.
+ */
+export const PEEK_ROOMY_VIEWPORT = 1050
+export const peekDefaultVisible = (viewportWidth: number): boolean =>
+  viewportWidth >= PEEK_ROOMY_VIEWPORT
+
 export const PEEK_BARS_MIN = 4
 export const PEEK_BARS_MAX = 40
 export const PEEK_BARS_DEFAULT = 12

@@ -313,10 +313,10 @@ export function AgentDecisionBox({
 
           {showInfo ? (
             <p className="ai-decision-note">
-              Six specialists — regime, trend, momentum, levels, structure and higher-timeframe
-              context — vote, and the ensemble weights them with what this browser has learned from
-              past outcomes. {agreement ? `${agreement}. ` : ''}Only their trust weights adapt; the
-              reasons stay visible.{' '}
+              Up to eight specialists — regime, trend, momentum, MACD, levels, structure, whale flow
+              and higher-timeframe context — vote, and the ensemble weights them with what this
+              browser has learned from past outcomes. {agreement ? `${agreement}. ` : ''}Only their
+              trust weights adapt; the reasons stay visible.{' '}
               {stale
                 ? `The feed is ${feedState}, so this is the last decision the data supported rather than a live one. `
                 : ''}

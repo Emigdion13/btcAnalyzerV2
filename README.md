@@ -322,8 +322,8 @@ bearish or no trade, with confidence, score, regime, current price and ATR, the 
 resistance with their distance in ATR, one primary reason, the biggest risk on the call, and the
 bias of the higher timeframes feeding the context agent.
 
-- **The call and its dissent, together.** A split bar shows how the six specialists voted and the
-  line under it reads `4 of 6 specialists bull`, so agreement and dissent are both on screen —
+- **The call and its dissent, together.** A split bar shows how the specialists voted and the
+  line under it reads `6 of 8 specialists bull`, so agreement and dissent are both on screen —
   a confident lone agent never looks like a consensus.
 - **Same chrome as the peek window.** Drag it by the header anywhere inside the chart and the
   position persists; minimize it to a single line, snap it back to its docked corner with the reset
@@ -337,6 +337,26 @@ bias of the higher timeframes feeding the context agent.
 Learning stays local: only the specialists' trust weights adapt, from outcomes this browser has
 recorded, and nothing places a trade. The panel is `src/components/AgentDecisionBox.tsx`; the
 ensemble itself lives in `src/lib/market-agents.ts` and its journal in `src/lib/agent-journal.ts`.
+
+### MACD and whale-flow specialists
+
+Two of the eight votes belong to the readings traders watch closest:
+
+- **MACD Agent** — a dedicated conventional 12/26/9 read, separate from the RSI-blended
+  momentum vote. It scores the line-vs-signal trigger, histogram thrust (widening or fading),
+  the freshness of the last cross, and the zero-line regime — all measured against the MACD
+  line's own recent swing, so a wiggle never reads as a quake. A cross against a strong
+  zero-line regime is scored as a pause, not a reversal, and says so in its warnings.
+- **Whale Flow Agent** — the live sweep, as a vote. While the whale box shows a figure, this
+  agent pushes the ensemble toward the push: taker buying (lifting the offer) leans bullish,
+  taker selling (hitting the bid) leans bearish. Conviction scales with absolute size —
+  `$100K+`, `$500K+` and `$1M+` sweeps each carry more weight — with how far past the adaptive
+  whale threshold the sweep runs and how one-sided the fills are. A sweep in progress pushes
+  hardest; a building one is unconfirmed and a finished one may already be in the price. At
+  rest the agent abstains entirely, so silence never dilutes the call, and its trust weights
+  adapt only from sweeps it actually voted on. Like the whale box itself it is Coinbase-live
+  only: demo mode and replays run the ensemble without it, and its warnings repeat the honest
+  caveat that big prints mark energy more reliably than direction.
 
 ## Research notes (not implemented)
 

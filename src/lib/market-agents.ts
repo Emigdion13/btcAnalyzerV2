@@ -1,5 +1,6 @@
 import { scoreZone, type BookStrengthBucket } from '../../shared/order-book'
-import type { ConnectionState, OrderBookView } from '../../shared/coinbase'
+import type { ConnectionState, OrderBookView, WhaleFlow } from '../../shared/coinbase'
+import { formatNotional } from '../../shared/whale-flow'
 import { ta } from './indicator-runtime'
 import {
   SR_BREAKS_RETESTS_DEFAULTS,
@@ -13,8 +14,10 @@ export type SpecializedAgentId =
   | 'regime'
   | 'trend'
   | 'momentum'
+  | 'macd'
   | 'level-strength'
   | 'structure'
+  | 'whale'
   | 'context'
 export type AgentId = SpecializedAgentId | 'ensemble'
 export type MarketRegime =
@@ -38,6 +41,12 @@ export interface AnalysisSnapshot {
   timeframe: Timeframe
   book?: OrderBookView | null
   context?: ContextSignal[]
+  /**
+   * Live whale sweep on this product, when one is under way.
+   * Ephemeral by design: null at rest, suppressed on stale/paused feeds and during replay.
+   * The whale specialist only votes while this is present, so silence never dilutes the call.
+   */
+  whale?: WhaleFlow | null
 }
 
 export interface AgentOpinion {
@@ -543,6 +552,133 @@ function analyzeMomentum(
   }
 }
 
+/**
+ * Dedicated MACD specialist: conventional 12/26/9 MACD on the chart candles.
+ *
+ * The momentum agent blends RSI with a MACD glance; this agent reads MACD on its own terms —
+ * the line-vs-signal trigger, histogram thrust, and the zero-line regime — all measured in
+ * MACD-native units (fractions of the line's own recent swing), so a wiggle never reads as a
+ * quake. A cross against a strong zero-line regime is a pause, not a reversal, and is scored
+ * that way: the trigger leans near-term, the regime anchors the call.
+ */
+function analyzeMacd(
+  currentPrice: number,
+  atrValue: number,
+  candles: Candle[],
+): SpecializedOpinion<'macd'> {
+  const close = candles.map((candle) => candle.close)
+  const { line, signal, histogram } = macd(close)
+  const lastLine = nonNullTail(line)
+  const lastSignal = nonNullTail(signal)
+  const lastHist = nonNullTail(histogram)
+  if (lastLine === null || lastSignal === null || lastHist === null)
+    return {
+      id: 'macd',
+      label: 'MACD Agent',
+      bias: 'neutral',
+      score: 0,
+      confidence: 0.2,
+      reasons: ['MACD is still warming up — not enough candles for a 26 EMA plus signal.'],
+      warnings: [],
+      metrics: {},
+    }
+
+  // Recent swing of the MACD line itself: the ruler everything else is measured against.
+  const recentLine: number[] = []
+  for (let i = line.length - 1; i >= 0 && recentLine.length < 30; i--) {
+    const value = numberOrNull(line[i])
+    if (value !== null) recentLine.push(value)
+  }
+  const swing = Math.max(
+    Math.max(...recentLine) - Math.min(...recentLine),
+    Math.max(atrValue, currentPrice * 0.0005) * 0.05,
+    1e-9,
+  )
+  const gap = lastLine - lastSignal
+  const prevHist = numberOrNull(histogram[histogram.length - 2]) ?? lastHist
+  const trigger = clamp((gap / swing) * 2.5, -1, 1)
+  const thrust = clamp(((lastHist - prevHist) / swing) * 5, -1, 1)
+  const regime = clamp(lastLine / swing, -1, 1)
+  const above = gap > 0 ? 1 : gap < 0 ? -1 : 0
+  const fading = Math.abs(lastHist) < Math.abs(prevHist)
+
+  // Most recent line/signal cross within the last dozen bars, and how fresh it is.
+  let crossAge: number | null = null
+  let crossDir = 0
+  for (let i = line.length - 1; i > Math.max(0, line.length - 13) && i > 0; i--) {
+    const l = numberOrNull(line[i])
+    const s = numberOrNull(signal[i])
+    const pl = numberOrNull(line[i - 1])
+    const ps = numberOrNull(signal[i - 1])
+    if (l === null || s === null || pl === null || ps === null) continue
+    const delta = l - s
+    const previous = pl - ps
+    if ((delta > 0 && previous <= 0) || (delta < 0 && previous >= 0)) {
+      crossAge = line.length - 1 - i
+      crossDir = delta > 0 ? 1 : -1
+      break
+    }
+  }
+  const freshCross = crossAge !== null && crossAge <= 2
+
+  let score = 0.35 * trigger + 0.25 * thrust + 0.3 * regime
+  if (freshCross) score += crossDir * 0.1
+  score = clamp(score, -1, 1)
+
+  const widening = Math.abs(lastHist) >= Math.abs(prevHist)
+  const reasons = [
+    `MACD ${lastLine.toFixed(3)} is ${above >= 0 ? 'above' : 'below'} signal ${lastSignal.toFixed(3)} with histogram ${lastHist >= 0 ? '+' : ''}${lastHist.toFixed(3)} (${widening ? 'widening' : 'fading'}).`,
+  ]
+  if (freshCross)
+    reasons.push(
+      `Fresh ${crossDir > 0 ? 'bullish' : 'bearish'} cross ${crossAge === 0 ? 'on this bar' : `${crossAge} bar${crossAge === 1 ? '' : 's'} ago`}.`,
+    )
+  else if (crossAge !== null)
+    reasons.push(
+      `Last cross was ${crossDir > 0 ? 'bullish' : 'bearish'}, ${crossAge} bars ago — the move is ${crossAge > 8 ? 'aging' : 'maturing'}.`,
+    )
+  if (Math.abs(regime) > 0.15)
+    reasons.push(
+      `MACD line sits ${Math.abs(regime) > 0.7 ? 'deeply' : Math.abs(regime) > 0.35 ? 'firmly' : 'marginally'} ${regime > 0 ? 'above' : 'below'} the zero line — ${regime > 0 ? 'bull' : 'bear'} momentum regime.`,
+    )
+  else reasons.push('MACD line is hugging the zero line — no momentum regime either way.')
+
+  const againstRegime =
+    Math.sign(trigger) !== 0 && Math.sign(regime) !== 0 && Math.sign(trigger) !== Math.sign(regime)
+  const warnings: string[] = []
+  if (fading && Math.abs(lastHist) > 1e-12)
+    warnings.push('Histogram is fading toward zero — momentum is stalling.')
+  if (Math.abs(trigger) > 0.8)
+    warnings.push('Histogram is stretched — momentum is strong but extended.')
+  if (Math.abs(gap) / swing < 0.04 && !freshCross)
+    warnings.push('MACD and signal are nearly touching — the cross could flip on the next bar.')
+  if (againstRegime && Math.abs(regime) > 0.4)
+    warnings.push(
+      `Signal cross runs against a ${regime > 0 ? 'bullish' : 'bearish'} zero-line regime — a pause, not a reversal.`,
+    )
+
+  return {
+    id: 'macd',
+    label: 'MACD Agent',
+    bias: biasFromScore(score, 0.15),
+    score,
+    confidence: clamp(0.38 + Math.abs(score) * 0.45 + (freshCross ? 0.08 : 0), 0.3, 0.92),
+    reasons,
+    warnings,
+    metrics: {
+      macd: lastLine,
+      signal: lastSignal,
+      histogram: lastHist,
+      trigger,
+      thrust,
+      zeroRegime: regime,
+      lineSwing: swing,
+      crossAge,
+      crossDir,
+    },
+  }
+}
+
 function analyzeLevelStrength(
   currentPrice: number,
   atrValue: number,
@@ -734,57 +870,162 @@ function analyzeContext(
   }
 }
 
+/**
+ * Whale-flow specialist: reads the live executed sweep and pushes the ensemble toward
+ * whichever direction the whale money is going.
+ *
+ * Direction is the sign of the net sweep — taker buying (lifting the offer) is a bullish
+ * push, taker selling (hitting the bid) is bearish. Conviction comes from absolute size
+ * ($100K+ sweeps are the ones that move books), how far past the adaptive whale threshold
+ * the sweep runs, and how one-sided the fills are. Returns null at rest so an idle tape
+ * never dilutes the call — this agent only speaks while (or just after) size prints.
+ * Its trust weights therefore adapt only from sweeps it actually voted on.
+ */
+function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'whale'> | null {
+  if (!flow) return null
+  const direction = flow.net > 0 ? 1 : flow.net < 0 ? -1 : 0
+  if (direction === 0) return null
+  const absNet = Math.abs(flow.net)
+  const tierScore =
+    absNet >= 1_000_000
+      ? 1
+      : absNet >= 500_000
+        ? 0.85
+        : absNet >= 100_000
+          ? 0.65
+          : absNet >= 25_000
+            ? 0.4
+            : 0.25
+  const tierLabel =
+    absNet >= 1_000_000
+      ? 'extreme $1M+'
+      : absNet >= 500_000
+        ? 'very large $500K+'
+        : absNet >= 100_000
+          ? 'large $100K+'
+          : absNet >= 25_000
+            ? 'notable'
+            : 'small'
+  const gross = flow.bought + flow.sold
+  const oneSided = gross > 0 ? Math.abs(flow.bought - flow.sold) / gross : 0
+  const intensityFactor = clamp(flow.intensity / 2, 0, 1)
+  const strength = clamp(0.45 * tierScore + 0.3 * intensityFactor + 0.25 * oneSided, 0, 1)
+  // A sweep in progress pushes hardest; a building one is unconfirmed and a finished one
+  // may already be in the price — but both still lean the call their way.
+  const phaseWeight = flow.phase === 'active' ? 1 : flow.phase === 'building' ? 0.7 : 0.55
+  const score = clamp(direction * strength * phaseWeight, -1, 1)
+  const base = flow.product.replace(/-USD$/, '')
+  const phaseLabel = flow.phase === 'active' ? 'happening now' : flow.phase
+
+  const reasons = [
+    `${formatNotional(flow.net)} ${direction > 0 ? 'push into' : 'push out of'} ${base} — takers ${direction > 0 ? 'lifting the offer' : 'hitting the bid'} across ${flow.count} fill${flow.count === 1 ? '' : 's'} (${phaseLabel}, ${flow.intensity.toFixed(1)}× the ${formatNotional(flow.threshold).replace('+', '')} whale threshold).`,
+    `Absolute size is ${tierLabel} at ${formatNotional(flow.net)} net, ${Math.round(oneSided * 100)}% one-sided.`,
+  ]
+  const warnings: string[] = []
+  if (flow.phase === 'fading')
+    warnings.push('The sweep has stopped — this push may already be in the price.')
+  if (flow.phase === 'building')
+    warnings.push('The sweep is still building below the whale threshold — direction can flip.')
+  if (!flow.calibrated)
+    warnings.push('The whale threshold is still calibrating — size reads as provisional.')
+  if (oneSided < 0.55) warnings.push('Flow is two-sided — both buys and sells are printing size.')
+  if (strength >= 0.6)
+    warnings.push('Big prints mark energy more reliably than direction — expect movement.')
+
+  return {
+    id: 'whale',
+    label: 'Whale Flow Agent',
+    bias: biasFromScore(score, 0.1),
+    score,
+    confidence: clamp(
+      0.3 +
+        strength * 0.35 +
+        oneSided * 0.1 +
+        (flow.phase === 'active' ? 0.12 : 0) +
+        (flow.calibrated ? 0.03 : -0.15),
+      0.2,
+      0.88,
+    ),
+    reasons,
+    warnings,
+    metrics: {
+      net: flow.net,
+      bought: flow.bought,
+      sold: flow.sold,
+      count: flow.count,
+      intensity: flow.intensity,
+      threshold: flow.threshold,
+      phase: flow.phase,
+      oneSided,
+      tier: tierLabel,
+      calibrated: flow.calibrated,
+    },
+  }
+}
+
 const BASE_WEIGHTS: Record<
   MarketRegime,
   Record<SpecializedAgentId, number>
 > = {
   'trend-up': {
-    regime: 0.13,
-    trend: 0.28,
-    momentum: 0.2,
-    'level-strength': 0.12,
-    structure: 0.1,
-    context: 0.17,
+    regime: 0.11,
+    trend: 0.22,
+    momentum: 0.14,
+    macd: 0.16,
+    'level-strength': 0.1,
+    structure: 0.08,
+    whale: 0.07,
+    context: 0.12,
   },
   'trend-down': {
-    regime: 0.13,
-    trend: 0.28,
-    momentum: 0.2,
-    'level-strength': 0.12,
-    structure: 0.1,
-    context: 0.17,
+    regime: 0.11,
+    trend: 0.22,
+    momentum: 0.14,
+    macd: 0.16,
+    'level-strength': 0.1,
+    structure: 0.08,
+    whale: 0.07,
+    context: 0.12,
   },
   range: {
-    regime: 0.13,
-    trend: 0.07,
-    momentum: 0.22,
-    'level-strength': 0.24,
-    structure: 0.2,
-    context: 0.14,
+    regime: 0.11,
+    trend: 0.06,
+    momentum: 0.17,
+    macd: 0.13,
+    'level-strength': 0.19,
+    structure: 0.16,
+    whale: 0.08,
+    context: 0.1,
   },
   breakout: {
-    regime: 0.12,
-    trend: 0.21,
-    momentum: 0.23,
-    'level-strength': 0.17,
-    structure: 0.1,
-    context: 0.17,
+    regime: 0.1,
+    trend: 0.17,
+    momentum: 0.17,
+    macd: 0.15,
+    'level-strength': 0.13,
+    structure: 0.08,
+    whale: 0.1,
+    context: 0.1,
   },
   breakdown: {
-    regime: 0.12,
-    trend: 0.21,
-    momentum: 0.23,
-    'level-strength': 0.17,
-    structure: 0.1,
-    context: 0.17,
+    regime: 0.1,
+    trend: 0.17,
+    momentum: 0.17,
+    macd: 0.15,
+    'level-strength': 0.13,
+    structure: 0.08,
+    whale: 0.1,
+    context: 0.1,
   },
   chop: {
-    regime: 0.15,
-    trend: 0.08,
-    momentum: 0.19,
-    'level-strength': 0.21,
-    structure: 0.22,
-    context: 0.15,
+    regime: 0.12,
+    trend: 0.07,
+    momentum: 0.15,
+    macd: 0.13,
+    'level-strength': 0.17,
+    structure: 0.18,
+    whale: 0.08,
+    context: 0.1,
   },
 }
 
@@ -852,7 +1093,9 @@ function buildEnsemble(
   const context = specialists.find((opinion) => opinion.id === 'context')
   const chartImpulse = average(
     specialists
-      .filter((opinion) => ['trend', 'momentum', 'level-strength', 'structure'].includes(opinion.id))
+      .filter((opinion) =>
+        ['trend', 'momentum', 'macd', 'level-strength', 'structure'].includes(opinion.id),
+      )
       .map((opinion) => opinion.score),
   )
   const contextAlignment = context ? chartImpulse * context.score : 0
@@ -915,15 +1158,19 @@ export function analyzeMarket(
   const regime = analyzeRegime(currentPrice, atrValue, candles)
   const trend = analyzeTrend(currentPrice, atrValue, candles)
   const momentum = analyzeMomentum(currentPrice, atrValue, candles, regime.regime)
+  const macdOpinion = analyzeMacd(currentPrice, atrValue, candles)
   const levelStrength = analyzeLevelStrength(currentPrice, atrValue, candles, snapshot.book)
   const structure = analyzeStructure(currentPrice, atrValue, levelStrength.summary)
+  const whale = analyzeWhale(snapshot.whale)
   const context = analyzeContext(snapshot.timeframe, snapshot.context ?? [])
   const specialists: SpecializedOpinion[] = [
     regime,
     trend,
     momentum,
+    macdOpinion,
     levelStrength,
     structure,
+    ...(whale ? [whale] : []),
     ...(context ? [context] : []),
   ]
   const ensemble = buildEnsemble(regime.regime, snapshot.timeframe, learning, specialists)

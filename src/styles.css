@@ -7355,6 +7355,26 @@ input[type='color']::-webkit-color-swatch {
   background: rgba(185, 238, 130, 0.13);
   color: var(--accent);
 }
+/* Absolute-size badge for $100K+ sweeps — the prints that walk books. */
+.whale-box-tier {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(245, 166, 35, 0.16);
+  color: #f5a623;
+  border: 1px solid rgba(245, 166, 35, 0.35);
+  white-space: nowrap;
+}
+.whale-box-tier + .whale-box-phase {
+  margin-left: 0;
+}
 .whale-pip {
   width: 5px;
   height: 5px;

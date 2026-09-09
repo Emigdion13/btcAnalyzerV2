@@ -431,6 +431,9 @@ export default function App() {
     [source, symbol, simulatedCandles],
   )
   const bookView = replayIndex === null ? (live.book ?? demoBookView) : null
+  // Executed whale flow is live tape, not replayable history: the ensemble reads it only
+  // while the chart is live, exactly like the book. Null at rest, in demo, or on a dead feed.
+  const whaleSignal = replayIndex === null ? live.whaleFlow : null
   const availableCandles =
     source === 'coinbase' ? (live.snapshot?.candles ?? EMPTY_CANDLES) : simulatedCandles
   const baseCandles = replaySnapshot ?? availableCandles
@@ -535,13 +538,19 @@ export default function App() {
     if (candles.length < 30) return null
     try {
       return analyzeMarket(
-        { candles, timeframe, book: bookView ?? undefined, context: contextSignals },
+        {
+          candles,
+          timeframe,
+          book: bookView ?? undefined,
+          context: contextSignals,
+          whale: whaleSignal ?? undefined,
+        },
         safeAgentLearning,
       )
     } catch {
       return null
     }
-  }, [candles, timeframe, bookView, contextSignals, safeAgentLearning])
+  }, [candles, timeframe, bookView, contextSignals, whaleSignal, safeAgentLearning])
   const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
     if (settledCandles.length < 30) return null
     try {
@@ -551,13 +560,22 @@ export default function App() {
           timeframe,
           book: replayIndex === null ? (bookView ?? undefined) : undefined,
           context: contextSignals,
+          whale: replayIndex === null ? (live.whaleFlow ?? undefined) : undefined,
         },
         safeAgentLearning,
       )
     } catch {
       return null
     }
-  }, [settledCandles, timeframe, replayIndex, bookView, contextSignals, safeAgentLearning])
+  }, [
+    settledCandles,
+    timeframe,
+    replayIndex,
+    bookView,
+    contextSignals,
+    live.whaleFlow,
+    safeAgentLearning,
+  ])
   const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
 
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {

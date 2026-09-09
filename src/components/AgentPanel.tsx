@@ -42,8 +42,10 @@ const AGENT_ORDER: AgentOpinion['id'][] = [
   'regime',
   'trend',
   'momentum',
+  'macd',
   'level-strength',
   'structure',
+  'whale',
   'context',
   'ensemble',
 ]
@@ -350,7 +352,17 @@ export function AgentPanel({
           </div>
           <div className="agent-learning-grid">
             {(
-              ['regime', 'trend', 'momentum', 'level-strength', 'structure', 'context', 'ensemble'] as const
+              [
+                'regime',
+                'trend',
+                'momentum',
+                'macd',
+                'level-strength',
+                'structure',
+                'whale',
+                'context',
+                'ensemble',
+              ] as const
             ).map((agentId) => (
               <div key={agentId} className="agent-learning-chip">
                 <strong>{agentId}</strong>

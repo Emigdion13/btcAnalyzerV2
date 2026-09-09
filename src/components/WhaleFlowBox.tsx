@@ -18,6 +18,18 @@ const PHASE_LABEL: Record<WhaleFlow['phase'], string> = {
 }
 
 /**
+ * Absolute-size tier for the sweep. $100K+ net pushes are the ones that walk books —
+ * they get their own badge so the crazy prints are unmissable at a glance.
+ */
+const sizeTier = (net: number): string | null => {
+  const abs = Math.abs(net)
+  if (abs >= 1_000_000) return '$1M+ mega sweep'
+  if (abs >= 500_000) return '$500K+ huge sweep'
+  if (abs >= 100_000) return '$100K+ large sweep'
+  return null
+}
+
+/**
  * Transient readout of a whale sweep on the charted Coinbase product.
  *
  * Ephemeral by design: a figure appears while a large directional sweep is under way, lingers a
@@ -114,10 +126,17 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
         </button>
         <h2>Whale flow</h2>
         {flow ? (
-          <span className={`whale-box-phase whale-box-phase-${phase}`}>
-            {phase === 'active' ? <span className="whale-pip" aria-hidden /> : null}
-            {PHASE_LABEL[flow.phase]}
-          </span>
+          <>
+            {sizeTier(flow.net) ? (
+              <span className="whale-box-tier" title="Absolute net size of this sweep">
+                {sizeTier(flow.net)}
+              </span>
+            ) : null}
+            <span className={`whale-box-phase whale-box-phase-${phase}`}>
+              {phase === 'active' ? <span className="whale-pip" aria-hidden /> : null}
+              {PHASE_LABEL[flow.phase]}
+            </span>
+          </>
         ) : (
           <span className="whale-box-phase whale-box-phase-idle">Watching</span>
         )}

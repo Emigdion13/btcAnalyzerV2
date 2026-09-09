@@ -9,7 +9,6 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { ConnectionState } from '../../shared/coinbase'
 import {
   horizonChoices,
   journalStats,
@@ -17,16 +16,15 @@ import {
   suggestedHorizonBars,
   type AgentPredictionJournal,
 } from '../lib/agent-journal'
-import type { AgentLearningState, AgentOpinion, MarketAnalysis } from '../lib/market-agents'
+import type {
+  AgentLearningState,
+  AgentOpinion,
+  ContextAnalysis,
+  MarketAnalysis,
+} from '../lib/market-agents'
 import { formatPrice } from '../lib/market'
 import type { DataSource, Timeframe } from '../lib/types'
 import { EmptyState, IconButton, Toggle } from './ui'
-
-interface ContextAnalysis {
-  timeframe: Timeframe
-  state?: ConnectionState | 'paused'
-  analysis: MarketAnalysis | null
-}
 
 const BIAS_LABEL: Record<AgentOpinion['bias'], string> = {
   bullish: 'Bullish',

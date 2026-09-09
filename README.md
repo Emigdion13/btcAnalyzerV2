@@ -99,6 +99,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
+- **AI decision window:** the ensemble's general call — bias, confidence, score, regime, the levels it leans on and the reason behind it — as a floating picture-in-picture window on the chart, so the verdict is readable without opening a panel. **Alt A** toggles it.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
 - **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
@@ -220,6 +221,7 @@ src/
     Sidebar.tsx                Watchlist, symbol detail, alerts, trading notes
     Dialogs.tsx                Lazy-loaded search, library, settings, docs, sharing
     TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
+    AgentDecisionBox.tsx      Floating AI ensemble decision, with levels and reasons
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
     market.ts                  Asset metadata, explicit demo feed, quote formatting
@@ -234,6 +236,8 @@ src/
     pivot-points-missed-reversals.ts  LuxAlgo pivot highs/lows, missed reversals, zig-zag and levels
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     timeframe-peek.ts          Auto resolution choice, window stats, forming bar and SVG geometry
+    floating-window.ts        Shared drag/dock/remember logic for the floating chart windows
+    market-agents.ts           Specialist agents, ensemble vote, adaptive trust weights
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence
     storage.ts                 Versioned local persistence and downloads
@@ -308,6 +312,31 @@ Charting 1m while a 15m structure decides the session is a scrolling problem: th
 - **The rest is stated, not implied.** `1 bar = 15 chart bars` gives the ratio, volume is that resolution's volume, and the price axis is the window's own range rather than the chart's. Demo mode draws the synthetic bars and says so.
 
 Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar, the workspace menu, or its own close button. Below 1050px — the width the side panels collapse at — the window starts closed so it never sits on the price legend, and opening it there is remembered like any other preference. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
+
+## AI decision window
+
+The agent ensemble's general decision belongs next to the candles it describes, not behind a panel
+you have to open. The **AI decision window** is a floating picture-in-picture panel — the same
+shape as the peek window, docked in the opposite corner — carrying the ensemble verdict: bullish,
+bearish or no trade, with confidence, score, regime, current price and ATR, the nearest support and
+resistance with their distance in ATR, one primary reason, the biggest risk on the call, and the
+bias of the higher timeframes feeding the context agent.
+
+- **The call and its dissent, together.** A split bar shows how the six specialists voted and the
+  line under it reads `4 of 6 specialists bull`, so agreement and dissent are both on screen —
+  a confident lone agent never looks like a consensus.
+- **Same chrome as the peek window.** Drag it by the header anywhere inside the chart and the
+  position persists; minimize it to a single line, snap it back to its docked corner with the reset
+  button, or hide it from its own close button, the toolbar, the workspace menu, or **Alt A**.
+  Opening the full agent panel is one click away in the footer.
+- **Honest about its freshness.** The window needs 30 candles before it says anything, and it
+  dims while the feed is stale, reconnecting, offline, or paused — a decision is only as current as
+  the data behind it. It is hidden during bar replay, like the peek window, because replayed bars
+  are not live candles.
+
+Learning stays local: only the specialists' trust weights adapt, from outcomes this browser has
+recorded, and nothing places a trade. The panel is `src/components/AgentDecisionBox.tsx`; the
+ensemble itself lives in `src/lib/market-agents.ts` and its journal in `src/lib/agent-journal.ts`.
 
 ## Research notes (not implemented)
 

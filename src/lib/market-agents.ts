@@ -1,7 +1,15 @@
 import { scoreZone, type BookStrengthBucket } from '../../shared/order-book'
-import type { ConnectionState, OrderBookView, WhaleFlow } from '../../shared/coinbase'
+import { INTERVAL_SECONDS, type ConnectionState, type OrderBookView, type WhaleFlow } from '../../shared/coinbase'
 import { formatNotional } from '../../shared/whale-flow'
 import { ta } from './indicator-runtime'
+import {
+  KALSHI_WINDOW_SECONDS,
+  formatCountdown,
+  strikePosition,
+  type StrikeContext,
+  type StrikeSide,
+} from './kalshi-window'
+import { formatPrice } from './market'
 import {
   SR_BREAKS_RETESTS_DEFAULTS,
   type Candle,
@@ -47,6 +55,12 @@ export interface AnalysisSnapshot {
    * The whale specialist only votes while this is present, so silence never dilutes the call.
    */
   whale?: WhaleFlow | null
+  /**
+   * The live 15-minute up/down window: strike price plus the cut. This is the game
+   * every agent is playing — UP or DOWN from the strike at the next :00/:15/:30/:45.
+   * Null when no chart timeframe can defend a strike (coarse grids, stale candles).
+   */
+  strike?: StrikeContext | null
 }
 
 export interface AgentOpinion {
@@ -87,6 +101,16 @@ export interface LevelStrengthSummary {
   imbalance: number
 }
 
+export interface StrikeSummary {
+  price: number
+  windowEnd: number
+  secondsLeft: number
+  delta: number
+  deltaAtr: number
+  side: StrikeSide
+  provisional: boolean
+}
+
 export interface MarketAnalysis {
   regime: MarketRegime
   bias: AgentBias
@@ -101,6 +125,7 @@ export interface MarketAnalysis {
     atr: number
     nearestSupport: LevelReference | null
     nearestResistance: LevelReference | null
+    strike: StrikeSummary | null
   }
 }
 
@@ -876,7 +901,7 @@ function analyzeContext(
  *
  * Direction is the sign of the net sweep — taker buying (lifting the offer) is a bullish
  * push, taker selling (hitting the bid) is bearish. Conviction comes from absolute size
- * ($100K+ sweeps are the ones that move books), how far past the adaptive whale threshold
+ * ($50K+ sweeps are the ones that move books), how far past the adaptive whale threshold
  * the sweep runs, and how one-sided the fills are. Returns null at rest so an idle tape
  * never dilutes the call — this agent only speaks while (or just after) size prints.
  * Its trust weights therefore adapt only from sweeps it actually voted on.
@@ -893,9 +918,9 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
         ? 0.85
         : absNet >= 100_000
           ? 0.65
-          : absNet >= 25_000
-            ? 0.4
-            : 0.25
+          : absNet >= 50_000
+            ? 0.5
+            : 0.3
   const tierLabel =
     absNet >= 1_000_000
       ? 'extreme $1M+'
@@ -903,9 +928,9 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
         ? 'very large $500K+'
         : absNet >= 100_000
           ? 'large $100K+'
-          : absNet >= 25_000
-            ? 'notable'
-            : 'small'
+          : absNet >= 50_000
+            ? 'notable $50K+'
+            : 'below the $50K whale line'
   const gross = flow.bought + flow.sold
   const oneSided = gross > 0 ? Math.abs(flow.bought - flow.sold) / gross : 0
   const intensityFactor = clamp(flow.intensity / 2, 0, 1)
@@ -1060,13 +1085,75 @@ function effectiveAgentWeight(
   return clamp(0.6 + weightedSkill * 0.8, 0.55, 1.4)
 }
 
+/**
+ * Agents that read the next few minutes versus agents that read the next few hours.
+ * As the 15-minute cut approaches, the window call belongs to the fast readers: a
+ * whale sweep or a MACD trigger says more about the next 3 minutes than the daily
+ * structure does. The tilt fades the slow votes out instead of switching them off,
+ * so the call stays smooth through the window.
+ */
+const FAST_AGENTS: ReadonlySet<SpecializedAgentId> = new Set(['whale', 'momentum', 'macd'])
+const SLOW_AGENTS: ReadonlySet<SpecializedAgentId> = new Set(['context', 'regime', 'structure'])
+
+export interface StrikeFrame {
+  strike: StrikeContext
+  currentPrice: number
+  atrValue: number
+}
+
+/**
+ * Frames the ensemble verdict as the window call it is: UP or DOWN from the strike
+ * at the cut. Leads with the position (the objective, in one line), then says whether
+ * the call needs a cross or just needs the side to hold, with extra honesty under a
+ * minute out and whenever the chart timeframe outruns the 15-minute expiry.
+ */
+function frameStrikeCall(
+  reasons: string[],
+  warnings: string[],
+  strikeFrame: StrikeFrame,
+  score: number,
+  timeframe: Timeframe,
+): void {
+  const { strike, currentPrice, atrValue } = strikeFrame
+  const position = strikePosition(currentPrice, strike.price, atrValue)
+  const countdown = formatCountdown(strike.secondsLeft)
+  const strikePrice = formatPrice(strike.price)
+  const call = score >= 0.12 ? 'UP' : score <= -0.12 ? 'DOWN' : null
+  const magnitude = formatPrice(Math.abs(position.delta), false, 2).replace('$', '')
+  const signedDelta = `${position.delta >= 0 ? '+' : '\u2212'}${magnitude}`
+  reasons.unshift(
+    `Price sits ${signedDelta} ${position.side} the ${strikePrice} strike with ${countdown} to the ${strike.expiryLabel} cut — the call is ${call ?? 'whether UP or DOWN holds'}.`,
+  )
+  const holding = call !== null && Math.sign(score) === (position.delta >= 0 ? 1 : -1)
+  if (call && holding) reasons.push(`The ${call} call and the side agree — this is a hold-the-lead call.`)
+  // Unshifted in reverse urgency so the finished order reads: the cut, the cross, the chart.
+  if ((INTERVAL_SECONDS[timeframe] ?? 0) > KALSHI_WINDOW_SECONDS)
+    warnings.unshift(
+      `${timeframe} candles for a 15-minute expiry — slow agents are down-weighted, read the call with care.`,
+    )
+  if (call && !holding)
+    warnings.unshift(
+      `The ${call} call needs price to cross the ${strikePrice} strike with ${countdown} left.`,
+    )
+  if (strike.secondsLeft <= 60)
+    (call && holding ? reasons : warnings).unshift(
+      call && holding
+        ? 'Under a minute to the cut — the side in the lead only needs to hold.'
+        : 'Under a minute to the cut and the side is not held — this window is close to a coin flip.',
+    )
+}
+
 function buildEnsemble(
   regime: MarketRegime,
   timeframe: Timeframe,
   learning: AgentLearningState,
   specialists: SpecializedOpinion[],
+  strikeFrame: StrikeFrame | null = null,
 ): AgentOpinion {
   const weights = BASE_WEIGHTS[regime]
+  const urgency = strikeFrame
+    ? clamp(1 - strikeFrame.strike.secondsLeft / KALSHI_WINDOW_SECONDS, 0, 1)
+    : 0
   let weightedScore = 0
   let totalWeight = 0
   let bullishWeight = 0
@@ -1077,7 +1164,12 @@ function buildEnsemble(
   const aligned = [...specialists].sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
   for (const opinion of specialists) {
     const adaptive = effectiveAgentWeight(learning, opinion.id, regime, timeframe)
-    const weight = weights[opinion.id] * adaptive
+    const pace = FAST_AGENTS.has(opinion.id)
+      ? 1 + 0.6 * urgency
+      : SLOW_AGENTS.has(opinion.id)
+        ? 1 - 0.45 * urgency
+        : 1
+    const weight = weights[opinion.id] * adaptive * pace
     weightedScore += opinion.score * weight
     totalWeight += weight
     confidenceNumerator += opinion.confidence * weight
@@ -1121,6 +1213,7 @@ function buildEnsemble(
     warnings.push('Higher-timeframe context is fighting the chart-timeframe impulse.')
   if (contextAlignment > 0.08 && context) reasons.push('Higher-timeframe context agrees with the chart-timeframe setup.')
   if (!reasons.length) reasons.push('Specialists are mixed, so the ensemble is favoring caution over conviction.')
+  if (strikeFrame) frameStrikeCall(reasons, warnings, strikeFrame, score, timeframe)
   return {
     id: 'ensemble',
     label: 'Decision Agent',
@@ -1135,6 +1228,7 @@ function buildEnsemble(
       bearishWeight,
       averageConfidence,
       contextAlignment: context ? contextAlignment : null,
+      urgency,
     },
   }
 }
@@ -1173,13 +1267,22 @@ export function analyzeMarket(
     ...(whale ? [whale] : []),
     ...(context ? [context] : []),
   ]
-  const ensemble = buildEnsemble(regime.regime, snapshot.timeframe, learning, specialists)
+  const strikeFrame: StrikeFrame | null =
+    snapshot.strike && snapshot.strike.price > 0
+      ? { strike: snapshot.strike, currentPrice, atrValue }
+      : null
+  const ensemble = buildEnsemble(
+    regime.regime,
+    snapshot.timeframe,
+    learning,
+    specialists,
+    strikeFrame,
+  )
   const risks = [
     ...new Set(
-      specialists
-        .flatMap((opinion) => opinion.warnings)
+      [...ensemble.warnings, ...specialists.flatMap((opinion) => opinion.warnings)]
         .filter(Boolean)
-        .slice(0, 5),
+        .slice(0, 7),
     ),
   ]
   return {
@@ -1211,6 +1314,15 @@ export function analyzeMarket(
       atr: atrValue,
       nearestSupport: levelStrength.summary.nearestSupport,
       nearestResistance: levelStrength.summary.nearestResistance,
+      strike: strikeFrame
+        ? {
+            price: strikeFrame.strike.price,
+            windowEnd: strikeFrame.strike.windowEnd,
+            secondsLeft: strikeFrame.strike.secondsLeft,
+            provisional: strikeFrame.strike.provisional,
+            ...strikePosition(currentPrice, strikeFrame.strike.price, atrValue),
+          }
+        : null,
     },
   }
 }

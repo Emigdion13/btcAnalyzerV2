@@ -35,8 +35,8 @@ export const CALIBRATION_MINIMUM = 200
 export const SAMPLE_CAPACITY = 1500
 /** Percentile of recent trade notionals that sizes a burst. */
 export const DEFAULT_PERCENTILE = 0.99
-/** Absolute floor so a dead-quiet market cannot mark dust as a whale. */
-export const MINIMUM_THRESHOLD = 25_000
+/** Absolute floor: only $50K+ bursts count as whale activity, however quiet the book. */
+export const MINIMUM_THRESHOLD = 50_000
 /** Prints carried for display. */
 export const MAX_PRINTS = 12
 

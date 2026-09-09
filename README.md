@@ -338,6 +338,28 @@ Learning stays local: only the specialists' trust weights adapt, from outcomes t
 recorded, and nothing places a trade. The panel is `src/components/AgentDecisionBox.tsx`; the
 ensemble itself lives in `src/lib/market-agents.ts` and its journal in `src/lib/agent-journal.ts`.
 
+### The game: UP or DOWN from the strike at every quarter-hour cut
+
+Every agent answers one question: at the next `:00` / `:15` / `:30` / `:45` cut, will price
+be **UP** or **DOWN** from the strike — the price when the window opened? The window math
+lives in `src/lib/kalshi-window.ts`: the strike is the open of the candle that opened the
+window (a live print stands in as a provisional strike for the first two minutes after a
+fresh boundary, and anything the chart cannot defend yields no strike at all rather than a
+fake one). When a strike is live:
+
+- The AI decision window and the agent panel read **UP / DOWN** instead of Bullish /
+  Bearish, with a strike strip showing the strike, the side and distance, and a live
+  `4:32 → 9:30` countdown to the cut.
+- The ensemble leads its reasons with the position (`Price sits +$12.40 above the strike
+  with 4:32 to the 9:30 cut`) and says whether the call needs a cross or just needs the
+  side to hold — with extra honesty under a minute out.
+- A horizon tilt hands the call to the fast readers (whale flow, momentum, MACD) as the
+  cut approaches while fading the slow ones (regime, structure, higher-timeframe context).
+  A chart coarser than the 15-minute expiry says so in the risks.
+- The journal settles forecasts **at the cut, UP/DOWN from the strike** — the exact binary
+  outcome — on 1m/3m/5m/15m charts, so the trust weights learn from the game being played.
+  Coarser timeframes keep the legacy bars-later directional read.
+
 ### MACD and whale-flow specialists
 
 Two of the eight votes belong to the readings traders watch closest:
@@ -350,8 +372,8 @@ Two of the eight votes belong to the readings traders watch closest:
 - **Whale Flow Agent** — the live sweep, as a vote. While the whale box shows a figure, this
   agent pushes the ensemble toward the push: taker buying (lifting the offer) leans bullish,
   taker selling (hitting the bid) leans bearish. Conviction scales with absolute size —
-  `$100K+`, `$500K+` and `$1M+` sweeps each carry more weight — with how far past the adaptive
-  whale threshold the sweep runs and how one-sided the fills are. A sweep in progress pushes
+  `$50K+`, `$100K+`, `$500K+` and `$1M+` sweeps each carry more weight — with how far past
+  the adaptive whale threshold the sweep runs and how one-sided the fills are. A sweep in progress pushes
   hardest; a building one is unconfirmed and a finished one may already be in the price. At
   rest the agent abstains entirely, so silence never dilutes the call, and its trust weights
   adapt only from sweeps it actually voted on. Like the whale box itself it is Coinbase-live

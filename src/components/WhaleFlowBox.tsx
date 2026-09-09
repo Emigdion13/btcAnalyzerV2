@@ -18,7 +18,7 @@ const PHASE_LABEL: Record<WhaleFlow['phase'], string> = {
 }
 
 /**
- * Absolute-size tier for the sweep. $100K+ net pushes are the ones that walk books —
+ * Absolute-size tier for the sweep. $50K+ net pushes are the ones that walk books —
  * they get their own badge so the crazy prints are unmissable at a glance.
  */
 const sizeTier = (net: number): string | null => {
@@ -26,6 +26,7 @@ const sizeTier = (net: number): string | null => {
   if (abs >= 1_000_000) return '$1M+ mega sweep'
   if (abs >= 500_000) return '$500K+ huge sweep'
   if (abs >= 100_000) return '$100K+ large sweep'
+  if (abs >= 50_000) return '$50K+ sweep'
   return null
 }
 

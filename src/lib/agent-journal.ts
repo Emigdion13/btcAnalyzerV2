@@ -1,4 +1,5 @@
 import { INTERVAL_SECONDS, type DataSource } from '../../shared/coinbase'
+import { canSettleAtWindow } from './kalshi-window'
 import {
   actualBiasFromOutcome,
   defaultAgentLearningState,
@@ -16,7 +17,18 @@ export interface AgentPredictionJournalEntry {
   timeframe: Timeframe
   createdAt: string
   candleTime: number
+  /**
+   * How this forecast settles. `window` entries are the 15-minute up/down game:
+   * entryPrice is the strike, targetTime is the cut, and the outcome is UP/DOWN
+   * from the strike — the exact binary the agents are called to play. `bars`
+   * entries keep the legacy N-bars-later directional read for coarse timeframes.
+   */
+  mode: 'window' | 'bars'
   entryPrice: number
+  /** Strike price for window entries; entryPrice mirrors it. */
+  strike?: number
+  /** Window open for window entries; the duplicate key. */
+  windowStart?: number
   horizonBars: number
   targetTime: number
   regime: MarketAnalysis['regime']
@@ -133,19 +145,33 @@ export function recordAgentPrediction(
     candles: Candle[]
     analysis: MarketAnalysis
     horizonBars?: number
+    /**
+     * Live strike window. When present on a short timeframe the forecast is
+     * recorded as the window call it is — strike in, cut as the target — so the
+     * agents learn from the binary outcome instead of a bars-later drift.
+     * Callers must only pass defended (non-provisional) strikes.
+     */
+    strike?: { price: number; windowStart: number; windowEnd: number } | null
   },
 ): AgentPredictionJournal {
   if (!journal.autoJournal || params.candles.length < 2) return journal
   const anchor = last(params.candles)
-  const horizonBars = Math.max(1, Math.round(params.horizonBars ?? suggestedHorizonBars(params.timeframe)))
-  const targetTime = anchor.time + horizonBars * INTERVAL_SECONDS[params.timeframe]
+  const windowMode =
+    !!params.strike && params.strike.price > 0 && canSettleAtWindow(params.timeframe)
+  const horizonBars = windowMode
+    ? 0
+    : Math.max(1, Math.round(params.horizonBars ?? suggestedHorizonBars(params.timeframe)))
+  const targetTime = windowMode
+    ? params.strike!.windowEnd
+    : anchor.time + horizonBars * INTERVAL_SECONDS[params.timeframe]
   const duplicate = journal.entries.some(
     (entry) =>
       entry.source === params.source &&
       entry.symbol === params.symbol &&
       entry.timeframe === params.timeframe &&
-      entry.candleTime === anchor.time &&
-      entry.horizonBars === horizonBars,
+      (windowMode
+        ? entry.mode === 'window' && entry.windowStart === params.strike!.windowStart
+        : entry.candleTime === anchor.time && entry.horizonBars === horizonBars),
   )
   if (duplicate) return journal
   const nextEntry: AgentPredictionJournalEntry = {
@@ -155,7 +181,11 @@ export function recordAgentPrediction(
     timeframe: params.timeframe,
     createdAt: new Date(anchor.time * 1000).toISOString(),
     candleTime: anchor.time,
-    entryPrice: anchor.close,
+    mode: windowMode ? 'window' : 'bars',
+    entryPrice: windowMode ? params.strike!.price : anchor.close,
+    ...(windowMode
+      ? { strike: params.strike!.price, windowStart: params.strike!.windowStart }
+      : {}),
     horizonBars,
     targetTime,
     regime: params.analysis.regime,
@@ -170,6 +200,26 @@ export function recordAgentPrediction(
     updatedAt: new Date().toISOString(),
     entries: [...journal.entries, nextEntry].slice(-MAX_JOURNAL_ENTRIES),
   }
+}
+
+/**
+ * The final print of a settled 15-minute window: the last candle fully inside it.
+ * Null while the window is still forming or the feed has no print from inside it,
+ * so a window entry can only resolve on the complete window, never mid-flight.
+ */
+function windowResolutionCandle(
+  candles: Candle[],
+  entry: AgentPredictionJournalEntry,
+): Candle | null {
+  if (!candles.length || entry.windowStart == null) return null
+  const interval = INTERVAL_SECONDS[entry.timeframe] ?? 60
+  const lastCandle = candles[candles.length - 1]
+  if (lastCandle.time + interval < entry.targetTime) return null
+  for (let i = candles.length - 1; i >= 0; i--) {
+    if (candles[i].time < entry.targetTime)
+      return candles[i].time >= entry.windowStart ? candles[i] : null
+  }
+  return null
 }
 
 function classifyResult(predicted: MarketAnalysis['bias'], actual: MarketAnalysis['bias']) {
@@ -205,10 +255,14 @@ export function resolveAgentPredictionJournal(
       entry.timeframe !== params.timeframe
     )
       return entry
-    const resolutionCandle = params.candles.find((candle) => candle.time >= entry.targetTime)
+    const windowEntry = entry.mode === 'window' && entry.strike != null && entry.windowStart != null
+    const flatThreshold = windowEntry ? 0 : params.flatThreshold
+    const resolutionCandle = windowEntry
+      ? windowResolutionCandle(params.candles, entry)
+      : params.candles.find((candle) => candle.time >= entry.targetTime)
     if (!resolutionCandle) return entry
     const move = (resolutionCandle.close - entry.entryPrice) / Math.max(entry.entryPrice, 1e-9)
-    const actualBias = actualBiasFromOutcome({ move, flatThreshold: params.flatThreshold })
+    const actualBias = actualBiasFromOutcome({ move, flatThreshold })
     const resolvedEntry: AgentPredictionJournalEntry = {
       ...entry,
       resolvedAt: new Date(resolutionCandle.time * 1000).toISOString(),
@@ -273,7 +327,10 @@ export function normalizeAgentPredictionJournal(value: unknown): AgentPrediction
     version: 1,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
     autoJournal: raw.autoJournal !== false,
-    entries: entries.slice(-MAX_JOURNAL_ENTRIES),
+    // Entries saved before window mode predate the field; they settled by bars.
+    entries: entries
+      .map((entry) => (entry.mode === 'window' ? entry : { ...entry, mode: 'bars' as const }))
+      .slice(-MAX_JOURNAL_ENTRIES),
   }
 }
 

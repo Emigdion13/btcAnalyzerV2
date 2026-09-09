@@ -98,6 +98,18 @@ function whaleFlow(overrides: Partial<WhaleFlow> = {}): WhaleFlow {
   }
 }
 
+function strikeInput(overrides: Record<string, number | string | boolean> = {}) {
+  return {
+    price: 205,
+    windowStart: 0,
+    windowEnd: 900,
+    secondsLeft: 300,
+    expiryLabel: '9:15',
+    provisional: false,
+    ...overrides,
+  }
+}
+
 function opinion(result: ReturnType<typeof analyzeMarket>, id: AgentId) {
   const found = result.agents.find((entry) => entry.id === id)
   expect(found).toBeDefined()
@@ -260,6 +272,81 @@ describe('market agents', () => {
     )
     expect(provisional.warnings.join(' ')).toContain('calibrating')
     expect(provisional.confidence).toBeLessThan(active.confidence)
+  })
+
+  it('frames the verdict as the UP/DOWN window call against the strike', () => {
+    const candles = bullishTrendCandles()
+    const close = candles[candles.length - 1].close
+    const holding = analyzeMarket({ candles, timeframe: '5m', strike: strikeInput({ price: close - 5 }) })
+    expect(holding.summary.strike?.side).toBe('above')
+    expect(holding.summary.strike?.delta).toBeCloseTo(5, 6)
+    expect(holding.reasons[0]).toContain('above the')
+    expect(holding.reasons[0]).toContain('strike with 5:00 to the 9:15 cut')
+    expect(holding.reasons.join(' ')).toContain('hold-the-lead')
+
+    const crossing = analyzeMarket({ candles, timeframe: '5m', strike: strikeInput({ price: close + 5 }) })
+    expect(crossing.summary.strike?.side).toBe('below')
+    expect(crossing.risks.join(' ')).toContain('needs price to cross')
+  })
+
+  it('hands the window call to the fast readers as the cut approaches', () => {
+    const candles = bullishTrendCandles()
+    const close = candles[candles.length - 1].close
+    const base = {
+      candles,
+      timeframe: '5m' as const,
+      // Fast money disagrees with the slow advisors: whale sweep down, HTF still up.
+      whale: whaleFlow({ net: -800_000, bought: 40_000, sold: 840_000, intensity: 2.6 }),
+      context: [
+        { timeframe: '15m' as const, bias: 'bullish' as const, score: 0.6, confidence: 0.7, regime: 'trend-up' as const },
+      ],
+    }
+    const early = analyzeMarket({ ...base, strike: strikeInput({ price: close - 5, secondsLeft: 870 }) })
+    const late = analyzeMarket({ ...base, strike: strikeInput({ price: close - 5, secondsLeft: 30 }) })
+    const urgency = Number(opinion(late, 'ensemble').metrics.urgency ?? 0)
+    expect(urgency).toBeCloseTo(1 - 30 / 900, 6)
+    // Same tape, less clock: the bearish sweep outweighs the bullish context.
+    expect(late.score).toBeLessThan(early.score)
+    expect(late.reasons.join(' ')).toContain('Under a minute')
+  })
+
+  it('stays honest about coarse charts and coin-flip finishes', () => {
+    const candles = bullishTrendCandles()
+    const close = candles[candles.length - 1].close
+    const hourly = analyzeMarket({ candles, timeframe: '1h', strike: strikeInput({ price: close - 5 }) })
+    expect(hourly.risks.join(' ')).toContain('1h candles for a 15-minute expiry')
+
+    const coinFlip = analyzeMarket({
+      candles,
+      timeframe: '1m',
+      strike: strikeInput({ price: close + 5, secondsLeft: 20 }),
+    })
+    expect(coinFlip.risks.join(' ')).toContain('close to a coin flip')
+  })
+
+  it('reacts to whale sweeps from $50K up', () => {
+    const candles = bullishTrendCandles()
+    const notable = opinion(
+      analyzeMarket({
+        candles,
+        timeframe: '1m',
+        whale: whaleFlow({ net: 75_000, bought: 75_000, sold: 0, intensity: 1.2 }),
+      }),
+      'whale',
+    )
+    expect(notable.metrics.tier).toBe('notable $50K+')
+    expect(notable.score).toBeGreaterThan(0.35)
+
+    const small = opinion(
+      analyzeMarket({
+        candles,
+        timeframe: '1m',
+        whale: whaleFlow({ phase: 'building', net: 20_000, bought: 20_000, sold: 0, intensity: 0.5 }),
+      }),
+      'whale',
+    )
+    expect(small.metrics.tier).toBe('below the $50K whale line')
+    expect(small.score).toBeLessThan(notable.score)
   })
 
   it('updates agent learning conservatively from resolved outcomes', () => {

@@ -22,6 +22,7 @@ import type {
   ContextAnalysis,
   MarketAnalysis,
 } from '../lib/market-agents'
+import { canSettleAtWindow, formatCountdown, kalshiClockLabel } from '../lib/kalshi-window'
 import { formatPrice } from '../lib/market'
 import type { DataSource, Timeframe } from '../lib/types'
 import { EmptyState, IconButton, Toggle } from './ui'
@@ -29,6 +30,13 @@ import { EmptyState, IconButton, Toggle } from './ui'
 const BIAS_LABEL: Record<AgentOpinion['bias'], string> = {
   bullish: 'Bullish',
   bearish: 'Bearish',
+  neutral: 'No trade',
+}
+
+/** When a live strike frames the analysis, every vote reads as the window call. */
+const CALL_LABEL: Record<AgentOpinion['bias'], string> = {
+  bullish: 'UP',
+  bearish: 'DOWN',
   neutral: 'No trade',
 }
 
@@ -42,8 +50,10 @@ const AGENT_ORDER: AgentOpinion['id'][] = [
   'regime',
   'trend',
   'momentum',
+  'macd',
   'level-strength',
   'structure',
+  'whale',
   'context',
   'ensemble',
 ]
@@ -83,14 +93,14 @@ function AnalysisChip({
   )
 }
 
-function AgentCard({ opinion }: { opinion: AgentOpinion }) {
+function AgentCard({ opinion, windowCall }: { opinion: AgentOpinion; windowCall: boolean }) {
   const meter = `${50 + opinion.score * 50}%`
   return (
     <article className={`agent-card ${BIAS_CLASS[opinion.bias]}`}>
       <header className="agent-card-head">
         <div>
           <strong>{opinion.label}</strong>
-          <span>{BIAS_LABEL[opinion.bias]}</span>
+          <span>{windowCall ? CALL_LABEL[opinion.bias] : BIAS_LABEL[opinion.bias]}</span>
         </div>
         <div className="agent-card-metrics">
           <span>{Math.round(opinion.confidence * 100)}%</span>
@@ -146,6 +156,13 @@ export function AgentPanel({
     [journal.entries],
   )
   const horizonOptions = useMemo(() => horizonChoices(timeframe), [timeframe])
+  const strike = analysis?.summary.strike ?? null
+  const windowCall = strike !== null
+  const windowSettles = windowCall && canSettleAtWindow(timeframe)
+  const strikeDelta =
+    strike == null
+      ? null
+      : `${strike.delta >= 0 ? '+' : '\u2212'}${formatPrice(Math.abs(strike.delta), false, 2)}`
   const orderedAgents = useMemo(
     () =>
       analysis
@@ -179,6 +196,27 @@ export function AgentPanel({
             </span>
             <span>Adaptive ensemble · local learning only</span>
           </div>
+          {strike ? (
+            <div
+              className="agent-strike-strip"
+              title={
+                strike.provisional
+                  ? 'Strike is still setting — provisional print from the live tape.'
+                  : `Price is ${strike.side} the strike by ${Math.abs(strike.deltaAtr).toFixed(2)} ATR · settles UP/DOWN at the ${kalshiClockLabel(strike.windowEnd)} cut.`
+              }
+            >
+              <span>
+                STRIKE {strike.provisional ? '~' : ''}
+                {formatPrice(strike.price, true)}
+              </span>
+              <span className={strike.delta >= 0 ? 'is-up' : 'is-down'}>
+                {strike.delta >= 0 ? '\u25B2' : '\u25BC'} {strikeDelta} {strike.side}
+              </span>
+              <span className="mono">
+                {formatCountdown(strike.secondsLeft)} \u2192 {kalshiClockLabel(strike.windowEnd)}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {!analysis ? (
@@ -195,7 +233,9 @@ export function AgentPanel({
               <div className="agent-summary-head">
                 <div>
                   <span className="agent-summary-label">Decision agent</span>
-                  <strong>{BIAS_LABEL[analysis.bias]}</strong>
+                  <strong>
+                    {windowCall ? CALL_LABEL[analysis.bias] : BIAS_LABEL[analysis.bias]}
+                  </strong>
                 </div>
                 <span className={`agent-bias-badge ${BIAS_CLASS[analysis.bias]}`}>{analysis.regime}</span>
               </div>
@@ -286,7 +326,7 @@ export function AgentPanel({
               </div>
               <div className="agent-card-list">
                 {orderedAgents.map((opinion) => (
-                  <AgentCard key={opinion.id} opinion={opinion} />
+                  <AgentCard key={opinion.id} opinion={opinion} windowCall={windowCall} />
                 ))}
               </div>
             </section>
@@ -300,6 +340,18 @@ export function AgentPanel({
             </h3>
             <span>weights adapt after outcomes settle</span>
           </div>
+          {windowSettles && strike ? (
+            <div className="agent-setting-row">
+              <div>
+                <strong>Window settlement</strong>
+                <p>
+                  Forecasts settle UP/DOWN from the {formatPrice(strike.price, true)} strike at the{' '}
+                  {kalshiClockLabel(strike.windowEnd)} cut — the bars below apply while no strike is
+                  live.
+                </p>
+              </div>
+            </div>
+          ) : null}
           <div className="agent-setting-row">
             <div>
               <strong>Prediction horizon</strong>
@@ -350,7 +402,17 @@ export function AgentPanel({
           </div>
           <div className="agent-learning-grid">
             {(
-              ['regime', 'trend', 'momentum', 'level-strength', 'structure', 'context', 'ensemble'] as const
+              [
+                'regime',
+                'trend',
+                'momentum',
+                'macd',
+                'level-strength',
+                'structure',
+                'whale',
+                'context',
+                'ensemble',
+              ] as const
             ).map((agentId) => (
               <div key={agentId} className="agent-learning-chip">
                 <strong>{agentId}</strong>
@@ -367,7 +429,10 @@ export function AgentPanel({
                       {entry.symbol} · {entry.timeframe}
                     </strong>
                     <span>
-                      {entry.bias} · {Math.round(entry.confidence * 100)}% · {entry.horizonBars} bars
+                      {entry.bias} · {Math.round(entry.confidence * 100)}% ·{' '}
+                      {entry.mode === 'window'
+                        ? `window \u2192${kalshiClockLabel(entry.targetTime)}`
+                        : `${entry.horizonBars} bars`}
                     </span>
                   </div>
                   <div className="agent-journal-outcome">

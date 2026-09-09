@@ -104,7 +104,8 @@ import {
 import { agentDecisionDefaultVisible } from './lib/floating-window'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
-import { isProductId, candleFingerprint } from '../shared/coinbase'
+import { INTERVAL_SECONDS, isProductId, candleFingerprint } from '../shared/coinbase'
+import { kalshiStrike } from './lib/kalshi-window'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
@@ -325,6 +326,8 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false)
   const [tool, setTool] = useState<Tool>('cursor')
   const [tick, setTick] = useState(0)
+  // One-second wall clock so the 15-minute strike countdown ticks even when the feed is quiet.
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const [replayIndex, setReplayIndex] = useState<number | null>(null)
   const [replaySnapshot, setReplaySnapshot] = useState<Candle[] | null>(null)
   const [timeframeFeeds, setTimeframeFeeds] = useState<Record<string, IndicatorTimeframeData>>({})
@@ -431,6 +434,9 @@ export default function App() {
     [source, symbol, simulatedCandles],
   )
   const bookView = replayIndex === null ? (live.book ?? demoBookView) : null
+  // Executed whale flow is live tape, not replayable history: the ensemble reads it only
+  // while the chart is live, exactly like the book. Null at rest, in demo, or on a dead feed.
+  const whaleSignal = replayIndex === null ? live.whaleFlow : null
   const availableCandles =
     source === 'coinbase' ? (live.snapshot?.candles ?? EMPTY_CANDLES) : simulatedCandles
   const baseCandles = replaySnapshot ?? availableCandles
@@ -531,17 +537,39 @@ export default function App() {
     () => (replayIndex === null && candles.length > 30 ? candles.slice(0, -1) : candles),
     [candles, replayIndex],
   )
+  // The clock the strike window reads: wall time live, the replay cursor on replay.
+  const strikeNowSec = useMemo(() => {
+    if (replayIndex === null) return nowMs / 1000
+    const anchor = candles[candles.length - 1]
+    return anchor ? anchor.time + (INTERVAL_SECONDS[timeframe] ?? 60) : nowMs / 1000
+  }, [replayIndex, candles, timeframe, nowMs])
+  // The game every agent is playing: UP or DOWN from this strike at the cut.
+  const kalshiLive = useMemo(
+    () => kalshiStrike(candles, strikeNowSec, currentPrice),
+    [candles, strikeNowSec, currentPrice],
+  )
+  const kalshiSettled = useMemo(
+    () => kalshiStrike(settledCandles, strikeNowSec, currentPrice),
+    [settledCandles, strikeNowSec, currentPrice],
+  )
   const marketAnalysis = useMemo<MarketAnalysis | null>(() => {
     if (candles.length < 30) return null
     try {
       return analyzeMarket(
-        { candles, timeframe, book: bookView ?? undefined, context: contextSignals },
+        {
+          candles,
+          timeframe,
+          book: bookView ?? undefined,
+          context: contextSignals,
+          whale: whaleSignal ?? undefined,
+          strike: kalshiLive ?? undefined,
+        },
         safeAgentLearning,
       )
     } catch {
       return null
     }
-  }, [candles, timeframe, bookView, contextSignals, safeAgentLearning])
+  }, [candles, timeframe, bookView, contextSignals, whaleSignal, kalshiLive, safeAgentLearning])
   const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
     if (settledCandles.length < 30) return null
     try {
@@ -551,13 +579,24 @@ export default function App() {
           timeframe,
           book: replayIndex === null ? (bookView ?? undefined) : undefined,
           context: contextSignals,
+          whale: replayIndex === null ? (live.whaleFlow ?? undefined) : undefined,
+          strike: kalshiSettled ?? undefined,
         },
         safeAgentLearning,
       )
     } catch {
       return null
     }
-  }, [settledCandles, timeframe, replayIndex, bookView, contextSignals, safeAgentLearning])
+  }, [
+    settledCandles,
+    timeframe,
+    replayIndex,
+    bookView,
+    contextSignals,
+    live.whaleFlow,
+    kalshiSettled,
+    safeAgentLearning,
+  ])
   const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
 
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
@@ -687,6 +726,12 @@ export default function App() {
     return () => clearInterval(interval)
   }, [source, feedActive, replayIndex])
   useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden) setNowMs(Date.now())
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+  useEffect(() => {
     if (!replayPlaying) return
     const interval = setInterval(
       () =>
@@ -810,6 +855,16 @@ export default function App() {
             candles: settledCandles,
             analysis: settledMarketAnalysis,
             horizonBars: agentHorizonBars,
+            // Window-mode entries settle on the strike itself, so only a defended
+            // (non-provisional) strike may seed them.
+            strike:
+              kalshiSettled && !kalshiSettled.provisional
+                ? {
+                    price: kalshiSettled.price,
+                    windowStart: kalshiSettled.windowStart,
+                    windowEnd: kalshiSettled.windowEnd,
+                  }
+                : undefined,
           })
         : resolved.journal
     if (resolved.learning !== safeAgentLearning) setAgentLearning(resolved.learning)
@@ -820,6 +875,7 @@ export default function App() {
     safeAgentLearning,
     settledMarketAnalysis,
     agentHorizonBars,
+    kalshiSettled,
     source,
     symbol,
     timeframe,

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Bot, ChevronRight, GripVertical, Info, Minus, Plus, RotateCcw, X } from 'lucide-react'
 import type { ConnectionState } from '../../shared/coinbase'
+import { formatCountdown, kalshiClockLabel } from '../lib/kalshi-window'
 import { formatPrice } from '../lib/market'
 import type { ContextAnalysis, MarketAnalysis } from '../lib/market-agents'
 import { useLocalState } from '../lib/storage'
@@ -14,6 +15,16 @@ type Bias = NonNullable<MarketAnalysis>['bias']
 const BIAS_LABEL: Record<Bias, string> = {
   bullish: 'Bullish',
   bearish: 'Bearish',
+  neutral: 'No trade',
+}
+
+/**
+ * The window call: when a live strike frames the verdict, every agent answers UP or
+ * DOWN from the strike at the cut — the binary the ensemble exists to play.
+ */
+const CALL_LABEL: Record<Bias, string> = {
+  bullish: 'UP',
+  bearish: 'DOWN',
   neutral: 'No trade',
 }
 
@@ -98,6 +109,12 @@ export function AgentDecisionBox({
     for (const agent of specialists) count[agent.bias] += 1
     return count
   }, [specialists])
+  const strike = analysis?.summary.strike ?? null
+  const callLabel = (bias: Bias) => (strike ? CALL_LABEL[bias] : BIAS_LABEL[bias])
+  const strikeDelta =
+    strike == null
+      ? null
+      : `${strike.delta >= 0 ? '+' : '\u2212'}${formatPrice(Math.abs(strike.delta), false, 2)}`
   const tone = analysis ? BIAS_CLASS[analysis.bias] : 'is-waiting'
   const stale = STALE_STATES.includes(feedState)
   const counted = specialists.length || 1
@@ -126,7 +143,7 @@ export function AgentDecisionBox({
           <small>ensemble</small>
         </span>
         <span className={`ai-decision-badge ${tone}`}>
-          {analysis ? BIAS_LABEL[analysis.bias] : 'Waiting'}
+          {analysis ? callLabel(analysis.bias) : 'Waiting'}
         </span>
         {position ? (
           <button
@@ -175,8 +192,16 @@ export function AgentDecisionBox({
             }
           }}
         >
-          <strong>{analysis ? BIAS_LABEL[analysis.bias] : 'Waiting for candles'}</strong>
+          <strong>{analysis ? callLabel(analysis.bias) : 'Waiting for candles'}</strong>
           <span className="mono">{analysis ? formatPercent(analysis.confidence) : '30 bars'}</span>
+          {strike ? (
+            <span
+              className="mono"
+              title={`Settles at the ${kalshiClockLabel(strike.windowEnd)} cut`}
+            >
+              {formatCountdown(strike.secondsLeft)}
+            </span>
+          ) : null}
           {analysis ? <span className="mono">{formatSigned(analysis.score)} score</span> : null}
           <button
             type="button"
@@ -218,7 +243,7 @@ export function AgentDecisionBox({
       ) : (
         <div className="ai-decision-body" title={`${assetLabel} · ${timeframe}`}>
           <div className={`ai-decision-verdict ${tone}`}>
-            <span className="ai-decision-call">{BIAS_LABEL[analysis.bias]}</span>
+            <span className="ai-decision-call">{callLabel(analysis.bias)}</span>
             <span className="ai-decision-meter">
               <span className="ai-decision-track">
                 <i style={{ width: `${Math.min(100, analysis.confidence * 100)}%` }} />
@@ -233,6 +258,34 @@ export function AgentDecisionBox({
           >
             {analysis.reasons[0] ?? 'No primary explanation recorded.'}
           </p>
+
+          {strike ? (
+            <div
+              className="ai-decision-strike"
+              title={
+                strike.provisional
+                  ? 'Strike is still setting — provisional print from the live tape.'
+                  : `Price is ${strike.side} the strike by ${Math.abs(strike.deltaAtr).toFixed(2)} ATR · settles at the ${kalshiClockLabel(strike.windowEnd)} cut.`
+              }
+            >
+              <span className="ai-decision-strike-price">
+                STRIKE {strike.provisional ? '~' : ''}
+                {formatPrice(strike.price, true)}
+              </span>
+              <span
+                className={
+                  strike.delta >= 0
+                    ? 'ai-decision-strike-side is-up'
+                    : 'ai-decision-strike-side is-down'
+                }
+              >
+                {strike.delta >= 0 ? '\u25B2' : '\u25BC'} {strikeDelta} {strike.side}
+              </span>
+              <span className="mono ai-decision-strike-clock">
+                {formatCountdown(strike.secondsLeft)} \u2192 {kalshiClockLabel(strike.windowEnd)}
+              </span>
+            </div>
+          ) : null}
 
           <div className="ai-decision-grid">
             <div>
@@ -313,10 +366,13 @@ export function AgentDecisionBox({
 
           {showInfo ? (
             <p className="ai-decision-note">
-              Six specialists — regime, trend, momentum, levels, structure and higher-timeframe
-              context — vote, and the ensemble weights them with what this browser has learned from
-              past outcomes. {agreement ? `${agreement}. ` : ''}Only their trust weights adapt; the
-              reasons stay visible.{' '}
+              Up to eight specialists — regime, trend, momentum, MACD, levels, structure, whale flow
+              and higher-timeframe context — vote, and the ensemble weights them with what this
+              browser has learned from past outcomes. {agreement ? `${agreement}. ` : ''}
+              {strike
+                ? `The game is UP or DOWN from the ${formatPrice(strike.price, true)} strike at the ${kalshiClockLabel(strike.windowEnd)} cut. `
+                : ''}
+              Only their trust weights adapt; the reasons stay visible.{' '}
               {stale
                 ? `The feed is ${feedState}, so this is the last decision the data supported rather than a live one. `
                 : ''}

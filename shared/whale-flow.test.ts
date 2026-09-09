@@ -119,25 +119,25 @@ describe('WhaleFlowTracker: ephemerality', () => {
     const tracker = new WhaleFlowTracker('BTC-USD')
     const now = 1_000_000
     calibrate(tracker, now)
-    // Threshold floors at $25k; two $6k buys reach 48% of it.
-    tracker.apply(trade(5201, now, 6_000, 1, 'buy'), now)
-    tracker.apply(trade(5202, now, 6_000, 1, 'buy'), now)
+    // Threshold floors at $50k; two $10k buys reach 40% of it.
+    tracker.apply(trade(5201, now, 10_000, 1, 'buy'), now)
+    tracker.apply(trade(5202, now, 10_000, 1, 'buy'), now)
     const snap = tracker.snapshot(now)
     expect(snap?.phase).toBe('building')
-    expect(snap?.net).toBe(12_000)
+    expect(snap?.net).toBe(20_000)
   })
 
   it('escalates from building to active as the sweep grows', () => {
     const tracker = new WhaleFlowTracker('BTC-USD')
     const now = 1_000_000
     calibrate(tracker, now)
-    tracker.apply(trade(5301, now, 6_000, 1, 'buy'), now)
-    tracker.apply(trade(5302, now, 6_000, 1, 'buy'), now)
+    tracker.apply(trade(5301, now, 10_000, 1, 'buy'), now)
+    tracker.apply(trade(5302, now, 10_000, 1, 'buy'), now)
     expect(tracker.snapshot(now)?.phase).toBe('building')
     tracker.apply(trade(5303, now + 1, 100_000, 4, 'buy'), now + 1)
     const snap = tracker.snapshot(now + 1)
     expect(snap?.phase).toBe('active')
-    expect(snap?.net).toBe(412_000)
+    expect(snap?.net).toBe(420_000)
   })
 
   it('reports the peak of the sweep while it fades, not a partially evicted remnant', () => {

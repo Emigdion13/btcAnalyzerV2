@@ -6,6 +6,7 @@ import {
   type AgentLearningState,
   type MarketAnalysis,
 } from './market-agents'
+import { uid } from './storage'
 import type { Candle, Timeframe } from './types'
 
 export interface AgentPredictionJournalEntry {
@@ -148,7 +149,7 @@ export function recordAgentPrediction(
   )
   if (duplicate) return journal
   const nextEntry: AgentPredictionJournalEntry = {
-    id: crypto.randomUUID(),
+    id: uid(),
     source: params.source,
     symbol: params.symbol,
     timeframe: params.timeframe,

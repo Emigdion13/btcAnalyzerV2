@@ -81,7 +81,11 @@ export function AgentDecisionBox({
     null,
   )
   const minimized =
-    minPreference ?? agentDecisionDefaultMinimized(window.innerWidth, window.innerHeight)
+    minPreference ??
+    agentDecisionDefaultMinimized(
+      typeof window !== 'undefined' ? window.innerWidth : 1200,
+      typeof window !== 'undefined' ? window.innerHeight : 800,
+    )
   const [showInfo, setShowInfo] = useState(false)
   const { boxRef, position, dragging, startDrag, reset } = useFloatingWindow(POSITION_KEY, 8)
 
@@ -158,10 +162,36 @@ export function AgentDecisionBox({
       </header>
 
       {minimized ? (
-        <div className="ai-decision-min-row">
+        <div
+          className="ai-decision-min-row"
+          onClick={onOpenPanel}
+          role="button"
+          tabIndex={0}
+          title="Open full agent panel"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onOpenPanel()
+            }
+          }}
+        >
           <strong>{analysis ? BIAS_LABEL[analysis.bias] : 'Waiting for candles'}</strong>
           <span className="mono">{analysis ? formatPercent(analysis.confidence) : '30 bars'}</span>
           {analysis ? <span className="mono">{formatSigned(analysis.score)} score</span> : null}
+          <button
+            type="button"
+            className="ai-decision-open"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenPanel()
+            }}
+            title="Open full agent panel"
+            aria-label="Open full agent panel"
+          >
+            <Bot size={11} />
+            Open full agents
+            <ChevronRight size={12} />
+          </button>
         </div>
       ) : !analysis ? (
         <div className="ai-decision-body">
@@ -172,7 +202,14 @@ export function AgentDecisionBox({
             <span className="ai-decision-source">
               {source === 'coinbase' ? 'Coinbase' : 'Demo'}
             </span>
-            <button type="button" className="ai-decision-open" onClick={onOpenPanel}>
+            <button
+              type="button"
+              className="ai-decision-open"
+              onClick={onOpenPanel}
+              title="Open full agent panel"
+              aria-label="Open full agent panel"
+            >
+              <Bot size={11} />
               Open full agents
               <ChevronRight size={12} />
             </button>
@@ -261,9 +298,15 @@ export function AgentDecisionBox({
                 <small>{item.analysis ? BIAS_SHORT[item.analysis.bias] : 'wait'}</small>
               </span>
             ))}
-            <button type="button" className="ai-decision-open" onClick={onOpenPanel}>
+            <button
+              type="button"
+              className="ai-decision-open"
+              onClick={onOpenPanel}
+              title="Open full agent panel"
+              aria-label="Open full agent panel"
+            >
               <Bot size={11} />
-              Agents
+              Open full agents
               <ChevronRight size={12} />
             </button>
           </div>

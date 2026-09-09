@@ -1891,7 +1891,10 @@ export default function App() {
                     analysis={marketAnalysis}
                     context={contextAnalyses}
                     feedState={feedState}
-                    onOpenPanel={() => setSidePanel('agents')}
+                    onOpenPanel={() => {
+                      setFocusMode(false)
+                      setSidePanel('agents')
+                    }}
                     onClose={() => setAgentDecisionVisible(false)}
                   />
                 )}

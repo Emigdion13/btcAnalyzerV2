@@ -41,5 +41,8 @@ export function downloadFile(name: string, content: Blob | string, type = 'appli
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 export function uid() {
-  return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'u_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36)
 }

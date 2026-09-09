@@ -1,4 +1,5 @@
 import { createTa } from './indicator-runtime'
+import { uid } from './storage'
 import type { Candle, ScriptResult } from './types'
 
 const MAX_SOURCE_LENGTH = 40000
@@ -116,7 +117,7 @@ export function runIndicator(
     frame.setAttribute('sandbox', 'allow-scripts')
     frame.setAttribute('aria-hidden', 'true')
     frame.style.display = 'none'
-    const token = crypto.randomUUID()
+    const token = uid()
     const channel = new MessageChannel()
     let done = false
     const cleanup = () => {

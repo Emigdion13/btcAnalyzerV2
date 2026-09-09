@@ -8094,6 +8094,12 @@ input[type='color']::-webkit-color-swatch {
   align-items: center;
   gap: 7px;
   padding: 4px 9px 6px;
+  cursor: pointer;
+  border-radius: 0 0 8px 8px;
+  transition: background 150ms ease;
+}
+.ai-decision-min-row:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 .ai-decision-min-row strong {
   font-size: 10px;
@@ -8102,6 +8108,9 @@ input[type='color']::-webkit-color-swatch {
 .ai-decision-min-row span {
   font-size: 8px;
   color: var(--dim);
+}
+.ai-decision-min-row .ai-decision-open {
+  margin-left: auto;
 }
 .ai-decision-empty {
   margin: 0;

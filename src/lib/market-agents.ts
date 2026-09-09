@@ -1,5 +1,5 @@
 import { scoreZone, type BookStrengthBucket } from '../../shared/order-book'
-import type { OrderBookView } from '../../shared/coinbase'
+import type { ConnectionState, OrderBookView } from '../../shared/coinbase'
 import { ta } from './indicator-runtime'
 import {
   SR_BREAKS_RETESTS_DEFAULTS,
@@ -100,6 +100,13 @@ export interface LearningRecord {
   regime: MarketRegime
   ensemble: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>
   agents: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>[]
+}
+
+/** One higher timeframe feeding the ensemble, with the state of its own feed. */
+export interface ContextAnalysis {
+  timeframe: Timeframe
+  state?: ConnectionState | 'paused'
+  analysis: MarketAnalysis | null
 }
 
 interface PerformanceCell {

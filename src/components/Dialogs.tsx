@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
+  Bot,
   Braces,
   ChartNoAxesCombined,
   Check,
@@ -1083,6 +1084,7 @@ const SHORTCUTS = [
   ['Trend line', 'Alt T'],
   ['Horizontal line', 'Alt H'],
   ['Timeframe peek window', 'Alt P'],
+  ['AI decision window', 'Alt A'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],
@@ -1157,6 +1159,11 @@ export function DocsDialog({
                   icon: PictureInPicture2,
                   title: '05 · Keep another timeframe in view',
                   text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar.',
+                },
+                {
+                  icon: Bot,
+                  title: '06 · Read the AI call without leaving the chart',
+                  text: 'The floating AI decision window carries the ensemble verdict — bias, confidence, levels and the reason behind it. Drag it anywhere, or press Alt A to show and hide it.',
                 },
               ].map((item) => (
                 <div key={item.title}>

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, GripVertical, Info, Minus, Plus, RotateCcw, Timer, X } from 'lucide-react'
 import type { Candle, ConnectionState, DataSource, Timeframe } from '../lib/types'
 import { compactNumber, formatPrice, INTERVAL } from '../lib/market'
-import { readStored, useLocalState, writeStored } from '../lib/storage'
+import { useFloatingWindow } from '../lib/floating-window'
+import { useLocalState } from '../lib/storage'
 import {
   clampPeekBars,
   formatPeekCountdown,
@@ -23,7 +24,6 @@ import {
 import type { TimeframePeekSettings } from '../lib/timeframe-peek'
 
 const POSITION_KEY = 'timeframe-peek-pos'
-type Position = { x: number; y: number }
 
 export interface TimeframePeekFeed {
   /** Resolution the panel is showing, after `auto` has been resolved against the chart. */
@@ -69,15 +69,8 @@ export function TimeframePeekBox({
 }: Props) {
   const [minimized, setMinimized] = useLocalState('timeframe-peek-min', false)
   const [showInfo, setShowInfo] = useState(false)
-  const [position, setPosition] = useState<Position | null>(() =>
-    readStored<Position | null>(POSITION_KEY, null),
-  )
-  const [dragging, setDragging] = useState(false)
   const [now, setNow] = useState(() => Date.now() / 1000)
-  const boxRef = useRef<HTMLElement>(null)
-  const dragRef = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null)
-  const positionRef = useRef<Position | null>(position)
-  positionRef.current = position
+  const { boxRef, position, dragging, startDrag, reset } = useFloatingWindow(POSITION_KEY, 6)
 
   // A one-second clock is all the countdown and the forming-bar test need; the candles themselves
   // arrive over the existing market stream.
@@ -87,76 +80,6 @@ export function TimeframePeekBox({
     }, 1000)
     return () => clearInterval(interval)
   }, [])
-
-  const clampToStage = useCallback((next: Position): Position => {
-    const box = boxRef.current
-    const stage = box?.parentElement
-    if (!box || !stage) return next
-    const { width, height } = box.getBoundingClientRect()
-    const area = stage.getBoundingClientRect()
-    return {
-      x: Math.min(Math.max(6, next.x), Math.max(6, area.width - width - 6)),
-      y: Math.min(Math.max(6, next.y), Math.max(6, area.height - height - 6)),
-    }
-  }, [])
-
-  // The chart box changes size without a window resize event whenever the editor, a side panel,
-  // or focus mode moves — and a dragged panel must not end up clipped out of sight by that.
-  useEffect(() => {
-    const stage = boxRef.current?.parentElement
-    if (!stage) return
-    const reflow = () => setPosition((p) => (p ? clampToStage(p) : p))
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', reflow)
-      return () => window.removeEventListener('resize', reflow)
-    }
-    const observer = new ResizeObserver(reflow)
-    observer.observe(stage)
-    return () => observer.disconnect()
-  }, [clampToStage])
-
-  const startDrag = (event: React.PointerEvent) => {
-    if ((event.target as HTMLElement).closest('button, select, label, a')) return
-    const box = boxRef.current
-    const stage = box?.parentElement
-    if (!box || !stage) return
-    const rect = box.getBoundingClientRect()
-    const area = stage.getBoundingClientRect()
-    dragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      x: rect.left - area.left,
-      y: rect.top - area.top,
-    }
-    setDragging(true)
-    const move = (moveEvent: PointerEvent) => {
-      const drag = dragRef.current
-      if (!drag) return
-      const next = clampToStage({
-        x: drag.x + (moveEvent.clientX - drag.startX),
-        y: drag.y + (moveEvent.clientY - drag.startY),
-      })
-      positionRef.current = next
-      setPosition(next)
-    }
-    const stop = () => {
-      dragRef.current = null
-      setDragging(false)
-      writeStored(POSITION_KEY, positionRef.current)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stop)
-      window.removeEventListener('pointercancel', stop)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop)
-    window.addEventListener('pointercancel', stop)
-  }
-
-  const resetPosition = () => {
-    positionRef.current = null
-    setPosition(null)
-    writeStored(POSITION_KEY, null)
-  }
 
   const { resolution, chartTimeframe, candles, state, message, retry } = feed
   const bars = useMemo(() => peekWindow(candles, settings.bars), [candles, settings.bars])
@@ -225,7 +148,7 @@ export function TimeframePeekBox({
             className="peek-button"
             aria-label="Snap the peek window back to its docked spot"
             title="Reset position"
-            onClick={resetPosition}
+            onClick={reset}
           >
             <RotateCcw size={10} />
           </button>

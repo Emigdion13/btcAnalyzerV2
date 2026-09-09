@@ -7738,235 +7738,409 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
-.ai-outcome-toggle.active {
+.ai-decision-toggle.active {
   background: #1d2a26;
   color: #8fd9c4;
 }
-.ai-outcome-toggle.active svg {
+.ai-decision-toggle.active svg {
   color: #8fd9c4;
 }
 
-/* Floating AI outcome card: current ensemble result in chart context, always visible when enabled. */
-.agent-outcome-card {
+/* Floating AI decision window: the ensemble's general call, kept in chart context. */
+.ai-decision-box {
   position: absolute;
-  z-index: 8;
+  /* Below the peek window's z-index: the peek keeps its corner when a short chart squeezes them. */
+  z-index: 6;
+  /* The corner opposite the indicator legends and above the peek window. */
+  right: 12px;
   top: 12px;
-  left: 12px;
-  width: 284px;
-  background: rgba(14, 19, 28, 0.92);
+  width: 264px;
+  background: rgba(14, 19, 28, 0.9);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 9px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
   backdrop-filter: blur(10px);
+  font-size: 10px;
   color: var(--muted);
-  overflow: hidden;
   user-select: none;
-  transition: border-color 180ms ease;
+  transition:
+    border-color 180ms ease,
+    opacity 180ms ease;
 }
-.agent-outcome-card.is-bullish {
-  border-color: rgba(43, 185, 155, 0.4);
+.ai-decision-box.is-bullish {
+  border-color: rgba(43, 185, 155, 0.36);
 }
-.agent-outcome-card.is-bearish {
-  border-color: rgba(237, 103, 115, 0.42);
+.ai-decision-box.is-bearish {
+  border-color: rgba(237, 103, 115, 0.38);
 }
-.agent-outcome-card.is-neutral,
-.agent-outcome-card.is-waiting {
+.ai-decision-box.is-neutral,
+.ai-decision-box.is-waiting {
   border-color: rgba(120, 138, 159, 0.34);
 }
-.agent-outcome-card.is-dragging {
-  border-color: #48617e;
+.ai-decision-box.is-dragging {
+  border-color: #3d4a5c;
+  cursor: grabbing;
 }
-.agent-outcome-head {
+/* The feed is not current: the call stays readable, but never as a live one. */
+.ai-decision-box.is-stale {
+  opacity: 0.8;
+}
+.ai-decision-box.is-min .ai-decision-head {
+  border-bottom: 0;
+  padding-bottom: 6px;
+}
+.ai-decision-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 7px 7px 8px;
+  gap: 5px;
+  padding: 5px 5px 5px 8px;
   border-bottom: 1px solid var(--line-soft);
   cursor: grab;
   touch-action: none;
 }
-.agent-outcome-grip {
+.ai-decision-grip {
   color: #3f4a58;
+  flex-shrink: 0;
 }
-.agent-outcome-title {
+.ai-decision-label {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-.agent-outcome-title strong {
+  align-items: baseline;
+  gap: 4px;
   font-size: 11px;
+  font-weight: 600;
   color: var(--text);
-  line-height: 1.1;
 }
-.agent-outcome-title span {
-  font-size: 8px;
-  color: var(--dim);
-  line-height: 1.2;
-}
-.agent-outcome-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 6px;
-  border-radius: 999px;
+.ai-decision-label small {
   font-family: var(--mono);
-  font-size: 8px;
-  line-height: 1;
+  font-size: 6.5px;
+  letter-spacing: 0.8px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.ai-decision-badge {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 7px;
   letter-spacing: 0.5px;
-  border: 1px solid #334050;
-  background: #18202a;
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.agent-outcome-badge.is-bullish {
-  color: #9fe0c2;
-  background: rgba(43, 185, 155, 0.12);
-  border-color: rgba(43, 185, 155, 0.26);
+.ai-decision-badge.is-bullish {
+  color: var(--green);
+  border-color: rgba(43, 185, 155, 0.4);
+  background: rgba(43, 185, 155, 0.1);
 }
-.agent-outcome-badge.is-bearish {
-  color: #e9a9b3;
-  background: rgba(237, 103, 115, 0.12);
-  border-color: rgba(237, 103, 115, 0.26);
+.ai-decision-badge.is-bearish {
+  color: var(--red);
+  border-color: rgba(237, 103, 115, 0.42);
+  background: rgba(237, 103, 115, 0.1);
 }
-.agent-outcome-badge.is-neutral,
-.agent-outcome-badge.is-waiting {
-  color: #bdc7d3;
+.ai-decision-badge.is-neutral,
+.ai-decision-badge.is-waiting {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
 }
-.agent-outcome-icon {
+.ai-decision-button {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 21px;
-  height: 21px;
-  border-radius: 5px;
+  padding: 2px;
+  border-radius: 4px;
   color: var(--dim);
+  flex-shrink: 0;
 }
-.agent-outcome-icon:hover {
+.ai-decision-button:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.06);
 }
-.agent-outcome-body {
-  padding: 10px;
-}
-.agent-outcome-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.agent-outcome-summary > div {
+.ai-decision-body {
   display: flex;
   flex-direction: column;
+}
+.ai-decision-verdict {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 9px 3px;
+}
+.ai-decision-call {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  line-height: 1.1;
+  color: var(--text);
+}
+.ai-decision-verdict.is-bullish .ai-decision-call {
+  color: var(--green);
+}
+.ai-decision-verdict.is-bearish .ai-decision-call {
+  color: var(--red);
+}
+.ai-decision-meter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.ai-decision-track {
+  position: relative;
+  width: 52px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+}
+.ai-decision-track i {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 220ms ease;
+}
+.ai-decision-verdict.is-bullish .ai-decision-track i {
+  background: var(--green);
+}
+.ai-decision-verdict.is-bearish .ai-decision-track i {
+  background: var(--red);
+}
+.ai-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 3px;
+  padding: 4px 9px 5px;
+  border-top: 1px solid var(--line-soft);
+}
+.ai-decision-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
-.agent-outcome-summary span {
-  font-size: 7px;
-  letter-spacing: 0.7px;
+.ai-decision-grid span {
+  font-family: var(--mono);
+  font-size: 6px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--dim);
 }
-.agent-outcome-summary strong {
-  font-family: var(--mono);
-  font-size: 11px;
+.ai-decision-grid strong {
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.agent-outcome-strip {
+.ai-decision-levels {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 9px;
-}
-.agent-outcome-strip > span {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 8px;
-  color: #91a2b5;
-}
-.agent-outcome-copy {
-  margin-top: 9px;
-}
-.agent-outcome-copy > p,
-.agent-outcome-waiting {
-  margin: 0;
-  font-size: 10px;
-  line-height: 1.45;
-  color: #afbcc9;
-}
-.agent-outcome-risk {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 7px 8px;
-  border-radius: 7px;
-  background: rgba(237, 103, 115, 0.07);
-  border: 1px solid rgba(237, 103, 115, 0.14);
-  font-size: 9px;
-  line-height: 1.45;
-  color: #d7b4b9;
-}
-.agent-outcome-risk > svg {
-  color: #d89aa4;
-  margin-top: 1px;
-}
-.agent-outcome-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  margin-top: 10px;
-  padding-top: 9px;
-  border-top: 1px solid var(--line-soft);
+  padding: 0 9px 4px;
 }
-.agent-outcome-source {
-  font-size: 8px;
+.ai-decision-levels > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
   font-family: var(--mono);
-  color: var(--dim);
+  font-size: 8px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-decision-levels small {
+  font-size: 6px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
+  color: var(--dim);
 }
-.agent-outcome-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.ai-decision-split {
+  display: flex;
+  height: 3px;
+  margin: 0 9px 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ai-decision-split i {
+  display: block;
+  height: 100%;
+  transition: width 220ms ease;
+}
+.ai-decision-split i.is-bullish {
+  background: var(--green);
+}
+.ai-decision-split i.is-bearish {
+  background: var(--red);
+}
+.ai-decision-split i.is-neutral {
+  background: #57687c;
+}
+.ai-decision-tally {
+  margin: 3px 0 0;
+  padding: 0 9px 4px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  color: var(--dim);
+}
+/* The reason is one clamped line in the docked window; the full text is a tooltip away. */
+.ai-decision-reason {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  margin: 0;
+  padding: 0 9px 4px;
+  overflow: hidden;
   font-size: 9px;
-  color: #cfe6b0;
+  line-height: 1.35;
+  color: var(--muted);
 }
-.agent-outcome-open:hover {
-  color: #e1f5c7;
+.ai-decision-context-chip {
+  display: inline-flex;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  align-items: baseline;
+  gap: 3px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  color: var(--muted);
+  white-space: nowrap;
 }
-.agent-outcome-min-row {
+.ai-decision-context-chip small {
+  font-size: 6.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.ai-decision-context-chip.is-bullish {
+  color: var(--green);
+  border-color: rgba(43, 185, 155, 0.32);
+}
+.ai-decision-context-chip.is-bearish {
+  color: var(--red);
+  border-color: rgba(237, 103, 115, 0.32);
+}
+.ai-decision-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 5px;
+  margin-top: auto;
+  padding: 4px 8px 5px;
+  border-top: 1px solid var(--line-soft);
+  overflow: hidden;
 }
-.agent-outcome-min-row strong {
+.ai-decision-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.ai-decision-chip:hover {
+  color: var(--text);
+}
+.ai-decision-chip.is-on {
+  color: var(--accent);
+  border-color: rgba(185, 238, 130, 0.32);
+}
+.ai-decision-source {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.ai-decision-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 8.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ai-decision-open:hover {
+  border-color: #3c5271;
+  background: rgba(255, 255, 255, 0.05);
+}
+.ai-decision-note {
+  margin: 0;
+  padding: 6px 9px 7px;
+  border-top: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 9px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.ai-decision-min-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px 6px;
+}
+.ai-decision-min-row strong {
   font-size: 10px;
   color: var(--text);
 }
-.agent-outcome-min-row span {
-  font-family: var(--mono);
+.ai-decision-min-row span {
+  font-size: 8px;
+  color: var(--dim);
+}
+.ai-decision-empty {
+  margin: 0;
+  padding: 9px 9px 11px;
   font-size: 9px;
+  line-height: 1.4;
   color: var(--muted);
 }
-
-@media (max-width: 640px) {
-  .agent-outcome-card {
-    width: min(284px, calc(100% - 16px));
-    left: 8px;
-    top: 8px;
+.ai-decision-toggle.active {
+  background: #1d2a26;
+  color: #8fd9c4;
+}
+.ai-decision-toggle.active svg {
+  color: #8fd9c4;
+}
+@media (max-width: 1180px) {
+  .ai-decision-box {
+    width: 236px;
+  }
+  .ai-decision-call {
+    font-size: 15px;
   }
 }
-
+@media (max-width: 640px) {
+  .ai-decision-box {
+    left: 6px;
+    bottom: 40px;
+    width: 202px;
+  }
+  .ai-decision-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-decision-track i,
+  .ai-decision-split i {
+    transition: none;
+  }
+}
 /* Floating timeframe peek: the last bars of another resolution, forming bar included. */
 .peek-box {
   position: absolute;

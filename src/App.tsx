@@ -62,7 +62,7 @@ import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { AgentPanel } from './components/AgentPanel'
-import { AgentOutcomeCard } from './components/AgentOutcomeCard'
+import { AgentDecisionBox } from './components/AgentDecisionBox'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -101,6 +101,7 @@ import {
   type AgentLearningState,
   type MarketAnalysis,
 } from './lib/market-agents'
+import { agentDecisionDefaultVisible } from './lib/floating-window'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
@@ -287,10 +288,15 @@ export default function App() {
     'agent-journal',
     defaultAgentPredictionJournal(),
   )
-  const [agentOutcomeCardVisible, setAgentOutcomeCardVisible] = useLocalState(
-    'agent-outcome-card-visible',
-    true,
+  // The AI's general decision, as a floating window on the chart rather than a panel to open.
+  // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
+  const [agentDecisionPreference, setAgentDecisionPreference] = useLocalState<boolean | null>(
+    'agent-decision-visible',
+    null,
   )
+  const agentDecisionVisible =
+    agentDecisionPreference ?? agentDecisionDefaultVisible(window.innerWidth)
+  const setAgentDecisionVisible = (next: boolean) => setAgentDecisionPreference(next)
   const [agentHorizons, setAgentHorizons] = useLocalState<Record<Timeframe, number>>(
     'agent-horizons',
     DEFAULT_AGENT_HORIZONS,
@@ -488,7 +494,10 @@ export default function App() {
         let analysis: MarketAnalysis | null = null
         if (contextCandles.length >= 30) {
           try {
-            analysis = analyzeMarket({ candles: contextCandles, timeframe: interval }, safeAgentLearning)
+            analysis = analyzeMarket(
+              { candles: contextCandles, timeframe: interval },
+              safeAgentLearning,
+            )
           } catch {
             analysis = null
           }
@@ -1329,6 +1338,7 @@ export default function App() {
     }
   }
   const togglePeek = () => setPeekPreference(!peekVisible)
+  const toggleDecision = () => setAgentDecisionVisible(!agentDecisionVisible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1338,6 +1348,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    toggleDecision,
     draft,
     modal,
     confirmation,
@@ -1351,6 +1362,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    toggleDecision,
     draft,
     modal,
     confirmation,
@@ -1400,6 +1412,10 @@ export default function App() {
       if (event.altKey && !mod && (event.key.toLowerCase() === 'p' || event.code === 'KeyP')) {
         event.preventDefault()
         cmd.togglePeek()
+      }
+      if (event.altKey && !mod && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')) {
+        event.preventDefault()
+        cmd.toggleDecision()
       }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
@@ -1498,6 +1514,16 @@ export default function App() {
                   {peekVisible ? 'Hide timeframe peek window' : 'Show timeframe peek window'}
                 </MenuItem>
                 <MenuItem
+                  icon={Bot}
+                  selected={agentDecisionVisible}
+                  onClick={() => {
+                    setAgentDecisionVisible(!agentDecisionVisible)
+                    close()
+                  }}
+                >
+                  {agentDecisionVisible ? 'Hide AI decision window' : 'Show AI decision window'}
+                </MenuItem>
+                <MenuItem
                   icon={Layers}
                   selected={bookBoxVisible}
                   onClick={() => {
@@ -1517,6 +1543,7 @@ export default function App() {
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
                     setPeekPreference(null)
+                    setAgentDecisionVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1716,10 +1743,10 @@ export default function App() {
               <span>Peek</span>
             </button>
             <button
-              className={`toolbar-button ai-outcome-toggle ${agentOutcomeCardVisible ? 'active' : ''}`}
-              onClick={() => setAgentOutcomeCardVisible(!agentOutcomeCardVisible)}
-              title="Floating AI outcome card"
-              aria-pressed={agentOutcomeCardVisible}
+              className={`toolbar-button ai-decision-toggle ${agentDecisionVisible ? 'active' : ''}`}
+              onClick={() => setAgentDecisionVisible(!agentDecisionVisible)}
+              title="Floating AI decision window (Alt A)"
+              aria-pressed={agentDecisionVisible}
             >
               <Bot size={17} strokeWidth={1.5} />
               <span>AI</span>
@@ -1856,14 +1883,16 @@ export default function App() {
                   replay={replayIndex !== null}
                   book={bookView}
                 />
-                {agentOutcomeCardVisible && (
-                  <AgentOutcomeCard
+                {agentDecisionVisible && hasData && replayIndex === null && (
+                  <AgentDecisionBox
                     assetLabel={asset.symbol}
                     source={source}
                     timeframe={timeframe}
                     analysis={marketAnalysis}
+                    context={contextAnalyses}
+                    feedState={feedState}
                     onOpenPanel={() => setSidePanel('agents')}
-                    onClose={() => setAgentOutcomeCardVisible(false)}
+                    onClose={() => setAgentDecisionVisible(false)}
                   />
                 )}
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
@@ -2116,7 +2145,11 @@ export default function App() {
             horizonBars={agentHorizonBars}
             onClose={() => setSidePanel(null)}
             onToggleAutoJournal={(autoJournal) =>
-              setAgentJournal((previous) => ({ ...previous, autoJournal, updatedAt: new Date().toISOString() }))
+              setAgentJournal((previous) => ({
+                ...previous,
+                autoJournal,
+                updatedAt: new Date().toISOString(),
+              }))
             }
             onHorizonBarsChange={(bars) =>
               setAgentHorizons((previous) => ({

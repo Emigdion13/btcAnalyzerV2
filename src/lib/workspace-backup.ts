@@ -13,6 +13,14 @@ import {
   type AgentPredictionJournal,
 } from './agent-journal'
 import { defaultAgentLearningState, type AgentLearningState } from './market-agents'
+import {
+  defaultMacdForecastJournal,
+  normalizeMacdAiLearningState,
+  normalizeMacdForecastJournal,
+  pretrainedMacdAiLearningState,
+  type MacdAiLearningState,
+  type MacdForecastJournal,
+} from './macd-forecast'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -44,6 +52,8 @@ export interface WorkspaceBackup {
   agentLearning?: AgentLearningState
   agentJournal?: AgentPredictionJournal
   agentHorizons?: Partial<Record<Timeframe, number>>
+  macdAiLearning?: MacdAiLearningState
+  macdAiJournal?: MacdForecastJournal
 }
 const symbols = ASSETS.map((a) => a.symbol)
 function validSymbol(value: unknown): value is string {
@@ -393,6 +403,12 @@ export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
       ? {}
       : { agentJournal: normalizeAgentPredictionJournal(b.agentJournal) }),
     ...(b.agentHorizons === undefined ? {} : { agentHorizons: agentHorizons(b.agentHorizons) }),
+    ...(b.macdAiLearning === undefined
+      ? {}
+      : { macdAiLearning: normalizeMacdAiLearningState(b.macdAiLearning) }),
+    ...(b.macdAiJournal === undefined
+      ? {}
+      : { macdAiJournal: normalizeMacdForecastJournal(b.macdAiJournal) }),
   }
 }
 
@@ -416,6 +432,8 @@ export function persistWorkspaceBackup(backup: WorkspaceBackup): void {
     ['agent-learning', normalizeAgentLearningState(backup.agentLearning ?? defaultAgentLearningState())],
     ['agent-journal', normalizeAgentPredictionJournal(backup.agentJournal ?? defaultAgentPredictionJournal())],
     ['agent-horizons', backup.agentHorizons ?? {}],
+    ['macd-ai-learning', normalizeMacdAiLearningState(backup.macdAiLearning ?? pretrainedMacdAiLearningState())],
+    ['macd-ai-journal', normalizeMacdForecastJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())],
   ]
   const previous = entries.map(([key]) => [key, localStorage.getItem(`atlas.v1.${key}`)] as const)
   try {

@@ -7766,6 +7766,13 @@ input[type='color']::-webkit-color-swatch {
   color: #8fd9c4;
 }
 
+.macd-ai-toggle.active {
+  background: #221d33;
+  border-color: #4c3f7a;
+}
+.macd-ai-toggle.active svg {
+  color: #c4b1fd;
+}
 /* Floating AI decision window: the ensemble's general call, kept in chart context. */
 .ai-decision-box {
   position: absolute;
@@ -8181,6 +8188,13 @@ input[type='color']::-webkit-color-swatch {
     font-size: 15px;
   }
 }
+@media (max-width: 1280px) {
+  .macd-ai-box {
+    right: 12px;
+    top: auto;
+    bottom: 54px;
+  }
+}
 @media (max-width: 640px) {
   .ai-decision-box {
     left: 6px;
@@ -8190,12 +8204,96 @@ input[type='color']::-webkit-color-swatch {
   .ai-decision-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .macd-ai-box {
+    bottom: auto;
+    top: 44px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .ai-decision-track i,
   .ai-decision-split i {
     transition: none;
   }
+}
+/* MACD AI: the same floating-window language, docked left of the AI window. */
+.macd-ai-box {
+  right: 288px;
+  border-color: #4c3f7a;
+}
+.macd-ai-box .ai-decision-badge {
+  white-space: nowrap;
+}
+.macd-ai-call {
+  font-size: 13px;
+  white-space: normal;
+  line-height: 1.2;
+}
+.ai-decision-reason.macd-ai-then {
+  margin-top: -2px;
+  color: var(--dim);
+}
+.macd-ai-zero {
+  border-top: 1px dashed #4c3f7a;
+  border-bottom: 1px dashed #4c3f7a;
+  background: rgba(124, 106, 227, 0.08);
+}
+.macd-ai-zero .ai-decision-strike-side.is-up {
+  color: #7cffb2;
+}
+.macd-ai-zero .ai-decision-strike-side.is-down {
+  color: #ff9d9d;
+}
+.macd-ai-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* MACD AI timeline: what happens next, numbered in order. */
+.macd-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.macd-timeline li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 8px 9px;
+  border: 1px solid #232b36;
+  border-radius: 9px;
+  background: #161c25;
+}
+.macd-timeline-step {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #c4b1fd;
+  background: #221d33;
+  border: 1px solid #4c3f7a;
+  margin-top: 1px;
+}
+.macd-timeline strong {
+  display: block;
+  font-size: 11px;
+  line-height: 15px;
+  color: #e6edf5;
+}
+.macd-timeline p {
+  margin: 3px 0 0;
+  font-size: 10px;
+  line-height: 14px;
+  color: #8ba0b5;
+}
+.macd-ai-headline {
+  font-size: 13px;
+  line-height: 17px;
 }
 /* Floating timeframe peek: the last bars of another resolution, forming bar included. */
 .peek-box {

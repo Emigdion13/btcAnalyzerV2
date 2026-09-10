@@ -1170,7 +1170,7 @@ export function DocsDialog({
                 {
                   icon: Zap,
                   title: '07 · Watch the MACD future, not the MACD now',
-                  text: 'MACD AI forecasts the CM_Ult_MacD_MTF pane after this bar — the touch, the signal cross, the mid-line flip and the follow-through, in order — and learns from settled forecasts. Press Alt M or use the toolbar.',
+                  text: 'MACD AI forecasts the CM_Ult_MacD_MTF pane after this bar — the touch, the signal cross, the mid-line flip and the follow-through, in order — and learns from settled forecasts. It arrives pre-trained on 1,334 real BTC forecasts; resetting learning restores those weights. Press Alt M or use the toolbar.',
                 },
               ].map((item) => (
                 <div key={item.title}>

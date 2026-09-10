@@ -14,10 +14,10 @@ import {
 } from './agent-journal'
 import { defaultAgentLearningState, type AgentLearningState } from './market-agents'
 import {
-  defaultMacdAiLearningState,
   defaultMacdForecastJournal,
   normalizeMacdAiLearningState,
   normalizeMacdForecastJournal,
+  pretrainedMacdAiLearningState,
   type MacdAiLearningState,
   type MacdForecastJournal,
 } from './macd-forecast'
@@ -432,7 +432,7 @@ export function persistWorkspaceBackup(backup: WorkspaceBackup): void {
     ['agent-learning', normalizeAgentLearningState(backup.agentLearning ?? defaultAgentLearningState())],
     ['agent-journal', normalizeAgentPredictionJournal(backup.agentJournal ?? defaultAgentPredictionJournal())],
     ['agent-horizons', backup.agentHorizons ?? {}],
-    ['macd-ai-learning', normalizeMacdAiLearningState(backup.macdAiLearning ?? defaultMacdAiLearningState())],
+    ['macd-ai-learning', normalizeMacdAiLearningState(backup.macdAiLearning ?? pretrainedMacdAiLearningState())],
     ['macd-ai-journal', normalizeMacdForecastJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())],
   ]
   const previous = entries.map(([key]) => [key, localStorage.getItem(`atlas.v1.${key}`)] as const)

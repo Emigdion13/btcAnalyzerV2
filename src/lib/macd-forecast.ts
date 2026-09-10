@@ -23,6 +23,7 @@
  */
 import { INTERVAL_SECONDS } from '../../shared/coinbase'
 import { cmHistogramColor, type CmMacdValues } from './cm-ult-macd'
+import { MACD_PRETRAINED_LEARNING } from './macd-pretrained'
 import { uid } from './storage'
 import type { Candle, DataSource, Timeframe } from './types'
 
@@ -858,6 +859,21 @@ export function defaultMacdAiLearningState(): MacdAiLearningState {
     updatedAt: new Date(0).toISOString(),
     agents: {},
     calibration: { crossBarsBias: 0, zeroBarsBias: 0, samples: 0 },
+  }
+}
+
+/**
+ * Pre-trained starting weights: the same blank structure, seeded with the
+ * trust + timing calibration learned from 1334 causal BTC-USD forecasts
+ * (see macd-training.test.ts). Fresh installs start here; live outcomes keep
+ * adapting every cell from this prior. Always returns a fresh clone.
+ */
+export function pretrainedMacdAiLearningState(): MacdAiLearningState {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    agents: structuredClone(MACD_PRETRAINED_LEARNING.agents),
+    calibration: { ...MACD_PRETRAINED_LEARNING.calibration },
   }
 }
 

@@ -106,11 +106,11 @@ import {
 } from './lib/market-agents'
 import {
   analyzeMacdForecast,
-  defaultMacdAiLearningState,
   defaultMacdForecastJournal,
   macdMemoryStats,
   normalizeMacdAiLearningState,
   normalizeMacdForecastJournal,
+  pretrainedMacdAiLearningState,
   recordMacdForecast,
   resolveMacdJournal,
   type MacdAiLearningState,
@@ -327,7 +327,7 @@ export default function App() {
   )
   const [macdAiLearning, setMacdAiLearning] = useLocalState<MacdAiLearningState>(
     'macd-ai-learning',
-    defaultMacdAiLearningState(),
+    pretrainedMacdAiLearningState(),
   )
   const [macdAiJournal, setMacdAiJournal] = useLocalState<MacdForecastJournal>(
     'macd-ai-journal',
@@ -1526,7 +1526,7 @@ export default function App() {
       setAlerts(backup.alerts)
       setAgentLearning(backup.agentLearning ?? defaultAgentLearningState())
       setAgentJournal(backup.agentJournal ?? defaultAgentPredictionJournal())
-      setMacdAiLearning(backup.macdAiLearning ?? defaultMacdAiLearningState())
+      setMacdAiLearning(backup.macdAiLearning ?? pretrainedMacdAiLearningState())
       setMacdAiJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())
       setAgentHorizons({
         ...DEFAULT_AGENT_HORIZONS,
@@ -2483,8 +2483,8 @@ export default function App() {
               notify('MACD forecast journal cleared.', 'info')
             }}
             onResetLearning={() => {
-              setMacdAiLearning(defaultMacdAiLearningState())
-              notify('MACD AI learning reset to neutral weights.', 'info')
+              setMacdAiLearning(pretrainedMacdAiLearningState())
+              notify('MACD AI learning reset to pre-trained weights.', 'info')
             }}
           />
         )}

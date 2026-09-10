@@ -9246,3 +9246,49 @@ input[type='color']::-webkit-color-swatch {
     text-align: left;
   }
 }
+
+/* The whole-app crash net: shown instead of the workspace when an error escapes. */
+.crash-panel {
+  margin: 0 auto;
+  max-width: 520px;
+  padding: 40px 28px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+}
+.crash-panel h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.crash-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.crash-panel pre {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+.crash-panel button {
+  align-self: center;
+  padding: 9px 18px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #10170b;
+  font-weight: 600;
+  font-size: 13px;
+}

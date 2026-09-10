@@ -161,10 +161,17 @@ export interface LearningRecord {
   strike: number | null
   ensemble: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>
   agents: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>[]
-  /** Director projection, graded exactly like a specialist's. */
-  forecast: ForecastLearningEntry
+  /**
+   * Director projection, graded exactly like a specialist's.
+   *
+   * Optional because these records outlive the build that wrote them: the journal
+   * is persisted to localStorage, so records saved before the horizon forecast
+   * existed are still sitting there waiting to be graded. A record with no
+   * projection has nothing to grade beyond its directional read.
+   */
+  forecast?: ForecastLearningEntry
   /** Per-specialist projections, in the specialists' own order. */
-  agentForecasts: ForecastLearningEntry[]
+  agentForecasts?: ForecastLearningEntry[]
 }
 
 /** One higher timeframe feeding the ensemble, with the state of its own feed. */
@@ -1652,7 +1659,7 @@ function forecastUtility(
 ): number | null {
   const components: { score: number; weight: number }[] = []
   if (outcome.driftAtr != null && Number.isFinite(outcome.driftAtr)) {
-    const scale = Math.max(1.5, record.sigmaAtr)
+    const scale = Math.max(1.5, Number.isFinite(record.sigmaAtr) ? record.sigmaAtr : 1.5)
     components.push({
       score: clamp(1 - Math.abs(entry.driftAtr - outcome.driftAtr) / scale, 0, 1),
       weight: 0.45,
@@ -1736,8 +1743,10 @@ export function learnFromOutcome(
     agents: structuredClone(previous.agents),
   }
   const actual = actualBiasFromOutcome(outcome)
+  // Records persisted by an older build carry no projections at all; those entries
+  // fall through to the directional score they were graded on when written.
   const projections = new Map<AgentId, ForecastLearningEntry>(
-    record.agentForecasts.map((entry) => [entry.id, entry]),
+    (record.agentForecasts ?? []).map((entry) => [entry.id, entry]),
   )
   for (const opinion of [...record.agents, record.ensemble]) {
     const projection = opinion.id === 'ensemble' ? record.forecast : projections.get(opinion.id)

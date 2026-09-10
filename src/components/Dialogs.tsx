@@ -31,6 +31,7 @@ import {
   Terminal,
   Trash2,
   Upload,
+  Zap,
 } from 'lucide-react'
 import type {
   Asset,
@@ -1085,6 +1086,7 @@ const SHORTCUTS = [
   ['Horizontal line', 'Alt H'],
   ['Timeframe peek window', 'Alt P'],
   ['AI decision window', 'Alt A'],
+  ['MACD AI forecast window', 'Alt M'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],
@@ -1164,6 +1166,11 @@ export function DocsDialog({
                   icon: Bot,
                   title: '06 · Read the AI call without leaving the chart',
                   text: 'The floating AI decision window carries the ensemble verdict — bias, confidence, levels and the reason behind it. Drag it anywhere, or press Alt A to show and hide it.',
+                },
+                {
+                  icon: Zap,
+                  title: '07 · Watch the MACD future, not the MACD now',
+                  text: 'MACD AI forecasts the CM_Ult_MacD_MTF pane after this bar — the touch, the signal cross, the mid-line flip and the follow-through, in order — and learns from settled forecasts. Press Alt M or use the toolbar.',
                 },
               ].map((item) => (
                 <div key={item.title}>

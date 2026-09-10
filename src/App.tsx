@@ -56,6 +56,7 @@ import {
   RefreshCw,
   Loader2,
   WifiOff,
+  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ChartView } from './components/ChartView'
@@ -63,6 +64,8 @@ import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { AgentPanel } from './components/AgentPanel'
 import { AgentDecisionBox } from './components/AgentDecisionBox'
+import { MacdAiDecisionBox } from './components/MacdAiDecisionBox'
+import { MacdAiPanel } from './components/MacdAiPanel'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -101,13 +104,33 @@ import {
   type AgentLearningState,
   type MarketAnalysis,
 } from './lib/market-agents'
+import {
+  analyzeMacdForecast,
+  defaultMacdAiLearningState,
+  defaultMacdForecastJournal,
+  macdMemoryStats,
+  normalizeMacdAiLearningState,
+  normalizeMacdForecastJournal,
+  recordMacdForecast,
+  resolveMacdJournal,
+  type MacdAiLearningState,
+  type MacdForecast,
+  type MacdForecastJournal,
+} from './lib/macd-forecast'
 import { agentDecisionDefaultVisible } from './lib/floating-window'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { INTERVAL_SECONDS, isProductId, candleFingerprint } from '../shared/coinbase'
 import { kalshiStrike } from './lib/kalshi-window'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
-import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
+import {
+  calculateCmMacd,
+  CM_MACD_DEFAULTS,
+  cmMacdResolution,
+  cmMacdSettings,
+  indicatorLabel,
+  requestedIndicatorTimeframes,
+} from './lib/cm-ult-macd'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
   TIMEFRAME_PEEK_DEFAULTS,
@@ -302,6 +325,22 @@ export default function App() {
     'agent-horizons',
     DEFAULT_AGENT_HORIZONS,
   )
+  const [macdAiLearning, setMacdAiLearning] = useLocalState<MacdAiLearningState>(
+    'macd-ai-learning',
+    defaultMacdAiLearningState(),
+  )
+  const [macdAiJournal, setMacdAiJournal] = useLocalState<MacdForecastJournal>(
+    'macd-ai-journal',
+    defaultMacdForecastJournal(),
+  )
+  // The MACD AI forecast, as a floating window on the chart rather than a panel to open.
+  // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
+  const [macdAiPreference, setMacdAiPreference] = useLocalState<boolean | null>(
+    'macd-ai-visible',
+    null,
+  )
+  const macdAiVisible = macdAiPreference ?? agentDecisionDefaultVisible(window.innerWidth)
+  const setMacdAiVisible = (next: boolean) => setMacdAiPreference(next)
   // The floating timeframe-peek window: a second resolution, forming bar included.
   // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
   const [peekPreference, setPeekPreference] = useLocalState<boolean | null>(
@@ -314,7 +353,9 @@ export default function App() {
     TIMEFRAME_PEEK_DEFAULTS,
   )
   const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
-  const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | 'agents' | null>(
+  const [sidePanel, setSidePanel] = useState<
+    'watchlist' | 'alerts' | 'notes' | 'agents' | 'macd-ai' | null
+  >(
     () => (window.innerWidth >= 1050 ? 'watchlist' : null),
   )
   const [modal, setModal] = useState<ModalName>(null)
@@ -373,6 +414,14 @@ export default function App() {
   const safeAgentJournal = useMemo(
     () => normalizeAgentPredictionJournal(agentJournal),
     [agentJournal],
+  )
+  const safeMacdAiLearning = useMemo(
+    () => normalizeMacdAiLearningState(macdAiLearning),
+    [macdAiLearning],
+  )
+  const safeMacdAiJournal = useMemo(
+    () => normalizeMacdForecastJournal(macdAiJournal),
+    [macdAiJournal],
   )
   const agentHorizonBars = useMemo(() => {
     const fallback = suggestedHorizonBars(timeframe)
@@ -598,6 +647,114 @@ export default function App() {
     safeAgentLearning,
   ])
   const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
+  // MACD AI reads the chart's own CM_Ult_MacD_MTF pane — its settings, its
+  // resolution, its projection — so the forecast matches the lines on screen.
+  const cmIndicator = useMemo(
+    () => indicators.find((indicator) => indicator.kind === 'cm-ult-macd') ?? null,
+    [indicators],
+  )
+  const cmSettings = useMemo(
+    () => (cmIndicator ? cmMacdSettings(cmIndicator) : { ...CM_MACD_DEFAULTS }),
+    [cmIndicator],
+  )
+  const cmResolution = cmMacdResolution(cmSettings, timeframe)
+  const cmSettingsLabel = cmIndicator ? indicatorLabel(cmIndicator) : 'CM_Ult_MacD_MTF'
+  const macdSettingsKey = useMemo(
+    () =>
+      JSON.stringify({
+        fast: cmSettings.fastLength,
+        slow: cmSettings.slowLength,
+        signal: cmSettings.signalLength,
+        resolution: cmResolution,
+      }),
+    [cmSettings, cmResolution],
+  )
+  const macdLiveValues = useMemo(() => {
+    if (!cmIndicator) return null
+    try {
+      return calculateCmMacd(candles, cmSettings, {
+        timeframe,
+        timeframes: analysisTimeframes,
+        replay: replayIndex !== null,
+      })
+    } catch {
+      return null
+    }
+  }, [cmIndicator, candles, cmSettings, timeframe, analysisTimeframes, replayIndex])
+  const settledMacdValues = useMemo(() => {
+    if (!cmIndicator) return null
+    try {
+      return calculateCmMacd(settledCandles, cmSettings, {
+        timeframe,
+        timeframes: analysisTimeframes,
+        replay: replayIndex !== null,
+      })
+    } catch {
+      return null
+    }
+  }, [cmIndicator, settledCandles, cmSettings, timeframe, analysisTimeframes, replayIndex])
+  const macdMemory = useMemo(
+    () => macdMemoryStats(safeMacdAiJournal, symbol, timeframe),
+    [safeMacdAiJournal, symbol, timeframe],
+  )
+  const macdForecast = useMemo<MacdForecast | null>(() => {
+    if (!cmIndicator || !macdLiveValues) return null
+    try {
+      return analyzeMacdForecast(
+        {
+          candles,
+          timeframe,
+          values: macdLiveValues,
+          resolution: cmResolution,
+          settingsLabel: cmSettingsLabel,
+          symbol,
+          memory: macdMemory,
+        },
+        safeMacdAiLearning,
+      )
+    } catch {
+      return null
+    }
+  }, [
+    cmIndicator,
+    candles,
+    macdLiveValues,
+    cmResolution,
+    cmSettingsLabel,
+    symbol,
+    timeframe,
+    macdMemory,
+    safeMacdAiLearning,
+  ])
+  const settledMacdForecast = useMemo<MacdForecast | null>(() => {
+    if (!cmIndicator || !settledMacdValues) return null
+    try {
+      return analyzeMacdForecast(
+        {
+          candles: settledCandles,
+          timeframe,
+          values: settledMacdValues,
+          resolution: cmResolution,
+          settingsLabel: cmSettingsLabel,
+          symbol,
+          memory: macdMemory,
+        },
+        safeMacdAiLearning,
+      )
+    } catch {
+      return null
+    }
+  }, [
+    cmIndicator,
+    settledCandles,
+    settledMacdValues,
+    cmResolution,
+    cmSettingsLabel,
+    symbol,
+    timeframe,
+    macdMemory,
+    safeMacdAiLearning,
+  ])
 
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
     if (!peekActive) return null
@@ -883,6 +1040,47 @@ export default function App() {
     settledFingerprint,
     setAgentJournal,
     setAgentLearning,
+  ])
+
+  useEffect(() => {
+    if (replayIndex !== null || settledCandles.length < 30 || !cmIndicator || !settledMacdValues)
+      return
+    const resolved = resolveMacdJournal(safeMacdAiJournal, safeMacdAiLearning, {
+      source,
+      symbol,
+      timeframe,
+      candles: settledCandles,
+      values: settledMacdValues,
+      settingsKey: macdSettingsKey,
+    })
+    const journalWithPrediction =
+      settledMacdForecast && safeMacdAiJournal.autoJournal
+        ? recordMacdForecast(resolved.journal, {
+            source,
+            symbol,
+            timeframe,
+            candles: settledCandles,
+            forecast: settledMacdForecast,
+            settingsKey: macdSettingsKey,
+          })
+        : resolved.journal
+    if (resolved.learning !== safeMacdAiLearning) setMacdAiLearning(resolved.learning)
+    if (journalWithPrediction !== safeMacdAiJournal) setMacdAiJournal(journalWithPrediction)
+  }, [
+    replayIndex,
+    safeMacdAiJournal,
+    safeMacdAiLearning,
+    settledMacdForecast,
+    settledMacdValues,
+    macdSettingsKey,
+    cmIndicator,
+    source,
+    symbol,
+    timeframe,
+    settledCandles,
+    settledFingerprint,
+    setMacdAiJournal,
+    setMacdAiLearning,
   ])
 
   const openSearch = (adding = false) => {
@@ -1301,6 +1499,8 @@ export default function App() {
       agentLearning: safeAgentLearning,
       agentJournal: safeAgentJournal,
       agentHorizons,
+      macdAiLearning: safeMacdAiLearning,
+      macdAiJournal: safeMacdAiJournal,
     }
     downloadFile('atlas-workspace.json', JSON.stringify(backup, null, 2))
     notify('Workspace backup downloaded.')
@@ -1326,6 +1526,8 @@ export default function App() {
       setAlerts(backup.alerts)
       setAgentLearning(backup.agentLearning ?? defaultAgentLearningState())
       setAgentJournal(backup.agentJournal ?? defaultAgentPredictionJournal())
+      setMacdAiLearning(backup.macdAiLearning ?? defaultMacdAiLearningState())
+      setMacdAiJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())
       setAgentHorizons({
         ...DEFAULT_AGENT_HORIZONS,
         ...(backup.agentHorizons ?? {}),
@@ -1395,6 +1597,7 @@ export default function App() {
   }
   const togglePeek = () => setPeekPreference(!peekVisible)
   const toggleDecision = () => setAgentDecisionVisible(!agentDecisionVisible)
+  const toggleMacdAi = () => setMacdAiVisible(!macdAiVisible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1405,6 +1608,7 @@ export default function App() {
     openDocs,
     togglePeek,
     toggleDecision,
+    toggleMacdAi,
     draft,
     modal,
     confirmation,
@@ -1419,6 +1623,7 @@ export default function App() {
     openDocs,
     togglePeek,
     toggleDecision,
+    toggleMacdAi,
     draft,
     modal,
     confirmation,
@@ -1472,6 +1677,10 @@ export default function App() {
       if (event.altKey && !mod && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')) {
         event.preventDefault()
         cmd.toggleDecision()
+      }
+      if (event.altKey && !mod && (event.key.toLowerCase() === 'm' || event.code === 'KeyM')) {
+        event.preventDefault()
+        cmd.toggleMacdAi()
       }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
@@ -1600,6 +1809,7 @@ export default function App() {
                     setBookBoxVisible(true)
                     setPeekPreference(null)
                     setAgentDecisionVisible(true)
+                    setMacdAiVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1807,6 +2017,15 @@ export default function App() {
               <Bot size={17} strokeWidth={1.5} />
               <span>AI</span>
             </button>
+            <button
+              className={`toolbar-button macd-ai-toggle ${macdAiVisible ? 'active' : ''}`}
+              onClick={() => setMacdAiVisible(!macdAiVisible)}
+              title="Floating MACD AI forecast window (Alt M)"
+              aria-pressed={macdAiVisible}
+            >
+              <Zap size={17} strokeWidth={1.5} />
+              <span>MACD AI</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1952,6 +2171,21 @@ export default function App() {
                       setSidePanel('agents')
                     }}
                     onClose={() => setAgentDecisionVisible(false)}
+                  />
+                )}
+                {macdAiVisible && hasData && replayIndex === null && (
+                  <MacdAiDecisionBox
+                    assetLabel={asset.symbol}
+                    source={source}
+                    timeframe={timeframe}
+                    forecast={macdForecast}
+                    cmActive={cmIndicator !== null}
+                    feedState={feedState}
+                    onOpenPanel={() => {
+                      setFocusMode(false)
+                      setSidePanel('macd-ai')
+                    }}
+                    onClose={() => setMacdAiVisible(false)}
                   />
                 )}
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
@@ -2226,6 +2460,34 @@ export default function App() {
             }}
           />
         )}
+        {sidePanel === 'macd-ai' && (
+          <MacdAiPanel
+            assetLabel={asset.symbol}
+            source={source}
+            timeframe={timeframe}
+            forecast={macdForecast}
+            cmActive={cmIndicator !== null}
+            settingsLabel={cmSettingsLabel}
+            learning={safeMacdAiLearning}
+            journal={safeMacdAiJournal}
+            onClose={() => setSidePanel(null)}
+            onToggleAutoJournal={(autoJournal) =>
+              setMacdAiJournal((previous) => ({
+                ...previous,
+                autoJournal,
+                updatedAt: new Date().toISOString(),
+              }))
+            }
+            onClearJournal={() => {
+              setMacdAiJournal(defaultMacdForecastJournal())
+              notify('MACD forecast journal cleared.', 'info')
+            }}
+            onResetLearning={() => {
+              setMacdAiLearning(defaultMacdAiLearningState())
+              notify('MACD AI learning reset to neutral weights.', 'info')
+            }}
+          />
+        )}
         <aside className="activity-rail" aria-label="Workspace sidebar">
           <div>
             <IconButton
@@ -2248,6 +2510,12 @@ export default function App() {
               label="Toggle agent panel"
               active={sidePanel === 'agents'}
               onClick={() => setSidePanel(sidePanel === 'agents' ? null : 'agents')}
+            />
+            <IconButton
+              icon={Zap}
+              label="Toggle MACD AI panel"
+              active={sidePanel === 'macd-ai'}
+              onClick={() => setSidePanel(sidePanel === 'macd-ai' ? null : 'macd-ai')}
             />
             <IconButton
               icon={Code2}

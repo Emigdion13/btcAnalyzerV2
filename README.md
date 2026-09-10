@@ -360,15 +360,27 @@ fake one). When a strike is live:
   outcome — on 1m/3m/5m/15m charts, so the trust weights learn from the game being played.
   Coarser timeframes keep the legacy bars-later directional read.
 
-### MACD and whale-flow specialists
+### MACD, level-strength, and whale-flow specialists
 
-Two of the eight votes belong to the readings traders watch closest:
+Three of the eight votes belong to the readings traders watch closest:
 
 - **MACD Agent** — a dedicated conventional 12/26/9 read, separate from the RSI-blended
   momentum vote. It scores the line-vs-signal trigger, histogram thrust (widening or fading),
   the freshness of the last cross, and the zero-line regime — all measured against the MACD
   line's own recent swing, so a wiggle never reads as a quake. A cross against a strong
-  zero-line regime is scored as a pause, not a reversal, and says so in its warnings.
+  zero-line regime is scored as a pause, not a reversal, and says so in its warnings. Before
+  it commits, the read has to clear RSI: a promising call facing an RSI that sits on the other
+  side of the 50 midline and/or rolls the other way runs into wall material — the RSI's
+  strength and aim shave conviction out of the score (up to half, never flipping the MACD's
+  own direction) and the agent warns that RSI will put up resistance. A weak RSI, or one
+  aiming the same side, leaves the read intact and says so in its reasons.
+- **Level Strength Agent** — the nearby-level watch. It pins the nearest confirmed support
+  and resistance (SR zones first, pivots as the fallback), measures each one's strength from
+  fill density, touches, volume, and the resting order book on that side, and always says
+  whether the level is going to be a problem: *a real problem*, *worth watching*, or *not a
+  problem from this distance* — with the distance in ATR attached. When one side has no
+  confirmed level, it says the path is clear (or that a drop has no cushion in sight). The
+  structure agent then scores the odds from inside the range it found.
 - **Whale Flow Agent** — the live sweep, as a vote. While the whale box shows a figure, this
   agent pushes the ensemble toward the push: taker buying (lifting the offer) leans bullish,
   taker selling (hitting the bid) leans bearish. Conviction scales with absolute size —

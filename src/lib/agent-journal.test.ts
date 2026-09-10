@@ -11,6 +11,25 @@ import {
 import { analyzeMarket, defaultAgentLearningState } from './market-agents'
 import type { Candle } from './types'
 
+function decliningCandles(count = 260): Candle[] {
+  const candles: Candle[] = []
+  let price = 100
+  for (let i = 0; i < count; i++) {
+    const open = price
+    const close = price - (0.35 + (i % 7) * 0.03) + Math.sin(i / 6) * 0.18
+    candles.push({
+      time: i * 60,
+      open,
+      high: open + 0.18,
+      low: close - 0.22,
+      close,
+      volume: 900,
+    })
+    price = close
+  }
+  return candles
+}
+
 function bullishTrendCandles(count = 260): Candle[] {
   const candles: Candle[] = []
   let price = 100
@@ -57,9 +76,11 @@ describe('agent journal', () => {
     expect(agentContextTimeframes('1m')).toEqual(['5m', '15m'])
     expect(agentContextTimeframes('15m')).toEqual(['1h', '4h'])
     expect(agentContextTimeframes('1W')).toEqual([])
-    expect(suggestedHorizonBars('1m')).toBe(8)
-    expect(suggestedHorizonBars('4h')).toBe(3)
-    expect(horizonChoices('1m')).toEqual([4, 8, 16])
+    // The horizon matches the MACD AI's ten-bar question on intraday charts.
+    expect(suggestedHorizonBars('1m')).toBe(10)
+    expect(suggestedHorizonBars('15m')).toBe(10)
+    expect(suggestedHorizonBars('4h')).toBe(6)
+    expect(horizonChoices('1m')).toEqual([5, 10, 20])
   })
 
   it('records one prediction per closed candle and avoids duplicates', () => {
@@ -83,8 +104,9 @@ describe('agent journal', () => {
     })
     expect(duplicate.entries).toHaveLength(1)
     expect(duplicate.entries[0].targetTime).toBe(
-      candles[candles.length - 1].time + 8 * 60,
+      candles[candles.length - 1].time + 10 * 60,
     )
+    expect(duplicate.entries[0].horizonBars).toBe(10)
   })
 
   it('records the window call with the strike in and the cut as the target', () => {
@@ -96,6 +118,7 @@ describe('agent journal', () => {
       timeframe: '1m' as const,
       candles,
       analysis,
+      settle: 'cut' as const,
       strike: windowStrike,
     }
     const recorded = recordAgentPrediction(defaultAgentPredictionJournal(), params)
@@ -127,6 +150,7 @@ describe('agent journal', () => {
       timeframe: '1m',
       candles: entryCandles,
       analysis,
+      settle: 'cut',
       strike: windowStrike,
     })
     // Mid-window prints never settle the window.
@@ -169,6 +193,62 @@ describe('agent journal', () => {
     expect(recorded.entries[0].entryPrice).toBe(candles[candles.length - 1].close)
   })
 
+  it('pins the strike on a bars-mode forecast and grades the finish against it', () => {
+    const entryCandles = bullishTrendCandles(240)
+    const price = entryCandles[entryCandles.length - 1].close
+    const strike = price - 0.5
+    const analysis = analyzeMarket({
+      candles: entryCandles,
+      timeframe: '1m',
+      strike: {
+        price: strike,
+        windowStart: 0,
+        windowEnd: 900,
+        secondsLeft: 300,
+        expiryLabel: '9:15',
+        provisional: false,
+      },
+    })
+    const recorded = recordAgentPrediction(defaultAgentPredictionJournal(), {
+      source: 'demo',
+      symbol: 'BTCUSDT',
+      timeframe: '1m',
+      candles: entryCandles,
+      analysis,
+      strike: { price: strike, windowStart: 0, windowEnd: 900 },
+    })
+    const entry = recorded.entries[0]
+    // The horizon is the forecast's own: bars, not the strike window's close.
+    expect(entry.mode).toBe('bars')
+    expect(entry.entryPrice).toBe(price)
+    expect(entry.anchorPrice).toBe(price)
+    expect(entry.strike).toBe(strike)
+    expect(entry.horizonBars).toBe(10)
+    expect(entry.forecast?.strikeSide).toBeTruthy()
+    expect(entry.forecast?.finishAboveProbability).toBeGreaterThan(0.5)
+    expect(entry.atr).toBeGreaterThan(0)
+
+    const resolved = resolveAgentPredictionJournal(recorded, defaultAgentLearningState(), {
+      source: 'demo',
+      symbol: 'BTCUSDT',
+      timeframe: '1m',
+      candles: bullishTrendCandles(280),
+    })
+    expect(resolved.resolved).toHaveLength(1)
+    const settled = resolved.journal.entries[0]
+    // The tape rose off a strike below it: above is both the call and the fact.
+    expect(settled.actualStrikeSide).toBe('above')
+    expect(settled.strikeResult).toBe('correct')
+    expect(settled.actualDriftAtr).toBeGreaterThan(0)
+    expect(settled.touchedStrike).toBe(false)
+    expect(journalStats(resolved.journal)).toMatchObject({
+      resolved: 1,
+      strikeResolved: 1,
+      strikeCorrect: 1,
+    })
+    expect(journalStats(resolved.journal).strikeAccuracy).toBe(1)
+  })
+
   it('settles predictions and updates learning from the realized move', () => {
     const entryCandles = bullishTrendCandles(240)
     const analysis = analyzeMarket({ candles: entryCandles, timeframe: '1m' })
@@ -191,7 +271,16 @@ describe('agent journal', () => {
     expect(resolved.journal.entries[0].actualBias).toBe('bullish')
     expect(resolved.journal.entries[0].result).toBe('correct')
     expect(resolved.learning.agents.ensemble?.overall.samples).toBe(1)
-    expect((resolved.learning.agents.ensemble?.overall.skill ?? 0)).toBeGreaterThan(0.5)
+    // A correct call has to leave the learner better than a wrong one on the same tape.
+    const wrong = resolveAgentPredictionJournal(recorded, defaultAgentLearningState(), {
+      source: 'demo',
+      symbol: 'BTCUSDT',
+      timeframe: '1m',
+      candles: decliningCandles(260),
+    })
+    expect(resolved.learning.agents.ensemble?.overall.skill ?? 0).toBeGreaterThan(
+      wrong.learning.agents.ensemble?.overall.skill ?? 1,
+    )
     expect(journalStats(resolved.journal)).toMatchObject({
       total: 1,
       pending: 0,

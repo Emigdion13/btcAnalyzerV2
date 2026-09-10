@@ -9029,6 +9029,31 @@ input[type='color']::-webkit-color-swatch {
 .agent-context-chip.is-empty {
   opacity: 0.72;
 }
+.agent-card-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+  padding: 5px 7px;
+  border: 1px dashed #35455a;
+  border-radius: 6px;
+  background: #10161d;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: #8ea2b7;
+}
+.agent-card-forecast span:first-child {
+  color: #cfe0f0;
+}
+.agent-forecast-headline {
+  margin: 8px 0 2px;
+  font-size: 10px;
+  line-height: 15px;
+  color: #d7e0ea;
+}
+.agent-then-line {
+  color: #8ea2b7;
+}
 .agent-card-list {
   display: flex;
   flex-direction: column;

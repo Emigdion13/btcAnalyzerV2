@@ -416,6 +416,113 @@ describe('market agents', () => {
     expect(small.score).toBeLessThan(notable.score)
   })
 
+  it('projects the horizon and answers the strike question with a probability', () => {
+    const candles = bullishTrendCandles()
+    const close = candles[candles.length - 1].close
+    const held = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      horizonBars: 10,
+      strike: strikeInput({ price: close - 2 }),
+    })
+    expect(held.forecast.horizonBars).toBe(10)
+    expect(held.forecast.expectedMoveAtr).toBeGreaterThan(0)
+    expect(held.forecast.expectedPrice).toBeGreaterThan(close)
+    expect(held.forecast.finishAboveProbability).toBeGreaterThan(0.5)
+    expect(held.forecast.strikeCall).toBe('above')
+    expect(held.forecast.headline).toContain('Above')
+    expect(held.forecast.timeline).toHaveLength(3)
+    expect(held.forecast.agents).toHaveLength(
+      held.agents.filter((agent) => agent.id !== 'ensemble').length,
+    )
+    expect(held.learningRecord.horizonBars).toBe(10)
+    expect(held.learningRecord.strike).toBe(close - 2)
+    expect(held.learningRecord.forecast.driftAtr).toBeCloseTo(held.forecast.expectedMoveAtr, 9)
+
+    // A strike above price asks the opposite question of the same tape.
+    const crossed = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      horizonBars: 10,
+      strike: strikeInput({ price: close + 3 }),
+    })
+    expect(crossed.forecast.finishAboveProbability!).toBeLessThan(0.5)
+    expect(crossed.forecast.strikeCall).toBe('below')
+    expect(crossed.forecast.snapshot.strikeDeltaAtr!).toBeLessThan(0)
+    // Horizon is a caller decision: fewer bars is a smaller expected move.
+    const short = analyzeMarket({ candles, timeframe: '5m', horizonBars: 3 })
+    expect(Math.abs(short.forecast.expectedMoveAtr)).toBeLessThan(
+      Math.abs(analyzeMarket({ candles, timeframe: '5m', horizonBars: 20 }).forecast.expectedMoveAtr),
+    )
+    expect(short.forecast.targetHigh - short.forecast.targetLow).toBeLessThan(
+      held.forecast.targetHigh - held.forecast.targetLow + 1e-9,
+    )
+  })
+
+  it('grades the projection itself when an outcome settles, not only the direction', () => {
+    const candles = bullishTrendCandles()
+    const result = analyzeMarket({ candles, timeframe: '1m' })
+    const record = result.learningRecord
+    expect(record.forecast.driftAtr).toBeCloseTo(record.forecast.driftAtr, 9)
+    // Same read, two tapes: the one that matched the projection has to score higher.
+    const matched = learnFromOutcome(defaultAgentLearningState(), record, {
+      move: 0.01,
+      driftAtr: record.forecast.driftAtr,
+      strikeDeltaAtr: 1,
+      touched: false,
+    })
+    const missed = learnFromOutcome(defaultAgentLearningState(), record, {
+      move: -0.01,
+      driftAtr: -record.forecast.driftAtr,
+      strikeDeltaAtr: -1,
+      touched: true,
+    })
+    expect(matched.agents.ensemble?.overall.skill ?? 0).toBeGreaterThan(
+      missed.agents.ensemble?.overall.skill ?? 1,
+    )
+    expect(matched.agents.momentum?.overall.samples).toBe(1)
+  })
+
+  it('keeps every forecast number finite across the chart timeframes', () => {
+    // The window renders whatever the engine returns, so nothing here may be NaN —
+    // a cold chart with no levels, no book and no strike included.
+    for (const timeframe of ['1m', '5m', '15m', '1h', '4h', '1D'] as const) {
+      const result = analyzeMarket({ candles: bullishTrendCandles(200), timeframe })
+      const forecast = result.forecast
+      for (const value of [
+        forecast.expectedPrice,
+        forecast.targetLow,
+        forecast.targetHigh,
+        forecast.expectedMoveAtr,
+        forecast.confidence,
+        forecast.score,
+        forecast.snapshot.sigmaAtr,
+        forecast.snapshot.driftAtr,
+      ])
+        expect(Number.isFinite(value)).toBe(true)
+      expect(forecast.timeline).toHaveLength(3)
+      expect(forecast.headline.length).toBeGreaterThan(10)
+      expect(forecast.targetLow).toBeLessThan(forecast.targetHigh)
+      expect(forecast.confidence).toBeGreaterThanOrEqual(0.2)
+      expect(forecast.confidence).toBeLessThanOrEqual(0.97)
+      expect(forecast.agents.length).toBe(
+        result.agents.filter((agent) => agent.id !== 'ensemble').length,
+      )
+    }
+  })
+
+  it('warns when the strike window is narrower than the chart it is drawn on', () => {
+    const candles = bullishTrendCandles()
+    const close = candles[candles.length - 1].close
+    // A 15-minute strike on hourly candles resets every bar.
+    const onHourly = analyzeMarket({
+      candles,
+      timeframe: '1h',
+      strike: strikeInput({ price: close - 5, windowStart: 0, windowEnd: 900 }),
+    })
+    expect(onHourly.forecast.risks.join(' ')).toContain('narrower than one candle')
+  })
+
   it('updates agent learning conservatively from resolved outcomes', () => {
     const candles = bullishTrendCandles()
     const result = analyzeMarket({ candles, timeframe: '1m' })

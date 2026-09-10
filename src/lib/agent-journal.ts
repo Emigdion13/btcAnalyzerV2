@@ -4,11 +4,29 @@ import {
   actualBiasFromOutcome,
   defaultAgentLearningState,
   learnFromOutcome,
+  suggestedForecastHorizon,
   type AgentLearningState,
   type MarketAnalysis,
 } from './market-agents'
+import type { ForecastPath, ForecastThrust, TouchVerdict } from './price-forecast'
 import { uid } from './storage'
 import type { Candle, Timeframe } from './types'
+
+/** The forward call behind an entry, kept so the journal can grade the projection itself. */
+export interface JournalForecast {
+  expectedPrice: number
+  driftAtr: number
+  finishAboveProbability: number | null
+  /** Which side of the pinned strike the forecast called, null for a coin flip. */
+  strikeSide: 'above' | 'below' | null
+  strikeProbability: number | null
+  strikeTouch: boolean
+  strikeBars: number | null
+  touchVerdict: TouchVerdict
+  path: ForecastPath
+  thrust: ForecastThrust
+  confidence: number
+}
 
 export interface AgentPredictionJournalEntry {
   id: string
@@ -31,6 +49,12 @@ export interface AgentPredictionJournalEntry {
   windowStart?: number
   horizonBars: number
   targetTime: number
+  /** Price when the forecast was made — the base every realized move is measured from. */
+  anchorPrice?: number
+  /** ATR at forecast time, so the realized move can be graded in the forecast's own units. */
+  atr?: number
+  /** The forward call: what the AI said would happen over the horizon. */
+  forecast?: JournalForecast
   regime: MarketAnalysis['regime']
   bias: MarketAnalysis['bias']
   confidence: number
@@ -42,6 +66,14 @@ export interface AgentPredictionJournalEntry {
   move?: number
   actualBias?: MarketAnalysis['bias']
   result?: 'correct' | 'wrong' | 'flat'
+  /** Where price actually finished relative to the pinned strike. */
+  actualStrikeSide?: 'above' | 'below'
+  /** Whether the entry's strike call was right. */
+  strikeResult?: 'correct' | 'wrong' | 'flat'
+  /** Whether the pinned strike was traded through before the horizon closed. */
+  touchedStrike?: boolean
+  /** Realized move from the anchor, in ATR units. */
+  actualDriftAtr?: number
 }
 
 export interface AgentPredictionJournal {
@@ -59,19 +91,15 @@ export interface JournalStats {
   wrong: number
   flat: number
   winRate: number | null
+  /** Entries pinned to a strike, and how the strike calls themselves went. */
+  strikeResolved: number
+  strikeCorrect: number
+  strikeAccuracy: number | null
 }
 
 const MAX_JOURNAL_ENTRIES = 500
-const HORIZON_BARS: Record<Timeframe, number> = {
-  '1m': 8,
-  '3m': 8,
-  '5m': 6,
-  '15m': 6,
-  '1h': 4,
-  '4h': 3,
-  '1D': 3,
-  '1W': 2,
-}
+/** Bars within this distance of the strike count as a flat finish, in ATR units. */
+const STRIKE_FLAT_ATR = 0.1
 
 const CONTEXT_TIMEFRAMES: Record<Timeframe, Timeframe[]> = {
   '1m': ['5m', '15m'],
@@ -97,7 +125,7 @@ export function defaultAgentPredictionJournal(): AgentPredictionJournal {
 }
 
 export function suggestedHorizonBars(timeframe: Timeframe): number {
-  return HORIZON_BARS[timeframe]
+  return suggestedForecastHorizon(timeframe)
 }
 
 export function horizonChoices(timeframe: Timeframe): number[] {
@@ -120,6 +148,9 @@ export function journalStats(journal: AgentPredictionJournal): JournalStats {
     wrong: 0,
     flat: 0,
     winRate: null,
+    strikeResolved: 0,
+    strikeCorrect: 0,
+    strikeAccuracy: null,
   }
   for (const entry of journal.entries) {
     if (!entry.resolvedAt) {
@@ -130,9 +161,15 @@ export function journalStats(journal: AgentPredictionJournal): JournalStats {
     if (entry.result === 'correct') stats.correct++
     else if (entry.result === 'wrong') stats.wrong++
     else stats.flat++
+    if (entry.strikeResult) {
+      stats.strikeResolved++
+      if (entry.strikeResult === 'correct') stats.strikeCorrect++
+    }
   }
   const decisive = stats.correct + stats.wrong
   stats.winRate = decisive > 0 ? stats.correct / decisive : null
+  stats.strikeAccuracy =
+    stats.strikeResolved > 0 ? stats.strikeCorrect / stats.strikeResolved : null
   return stats
 }
 
@@ -146,10 +183,19 @@ export function recordAgentPrediction(
     analysis: MarketAnalysis
     horizonBars?: number
     /**
-     * Live strike window. When present on a short timeframe the forecast is
-     * recorded as the window call it is — strike in, cut as the target — so the
-     * agents learn from the binary outcome instead of a bars-later drift.
-     * Callers must only pass defended (non-provisional) strikes.
+     * How this forecast settles. `bars` (the default) grades it where the AI said it
+     * would land: the forecast's own horizon. `cut` keeps the 15-minute game and grades
+     * at the strike window's close instead, which only short timeframes can defend.
+     */
+    settle?: 'bars' | 'cut'
+    /**
+     * The strike line the forecast is pinned to — a defended (non-provisional) level
+     * from the strike indicator or the live window. Callers must not pass a provisional
+     * print: entries settle against the level they recorded, so it has to be real.
+     *
+     * Pass the same strike the analysis was computed with, so the recorded forecast is
+     * the one that was actually on screen. When the analysis carries no strike, the entry
+     * records no strike call and settles on direction alone.
      */
     strike?: { price: number; windowStart: number; windowEnd: number } | null
   },
@@ -157,10 +203,21 @@ export function recordAgentPrediction(
   if (!journal.autoJournal || params.candles.length < 2) return journal
   const anchor = last(params.candles)
   const windowMode =
-    !!params.strike && params.strike.price > 0 && canSettleAtWindow(params.timeframe)
+    params.settle === 'cut' &&
+    !!params.strike &&
+    params.strike.price > 0 &&
+    canSettleAtWindow(params.timeframe)
+  const forecast = params.analysis.forecast
+  // The forecast carries its own horizon; the caller's setting is only a fallback for
+  // analytics built before the forward call existed.
   const horizonBars = windowMode
     ? 0
-    : Math.max(1, Math.round(params.horizonBars ?? suggestedHorizonBars(params.timeframe)))
+    : Math.max(
+        1,
+        Math.round(
+          params.horizonBars ?? forecast?.horizonBars ?? suggestedHorizonBars(params.timeframe),
+        ),
+      )
   const targetTime = windowMode
     ? params.strike!.windowEnd
     : anchor.time + horizonBars * INTERVAL_SECONDS[params.timeframe]
@@ -174,6 +231,7 @@ export function recordAgentPrediction(
         : entry.candleTime === anchor.time && entry.horizonBars === horizonBars),
   )
   if (duplicate) return journal
+  const pinnedStrike = params.strike && params.strike.price > 0 ? params.strike.price : null
   const nextEntry: AgentPredictionJournalEntry = {
     id: uid(),
     source: params.source,
@@ -183,8 +241,30 @@ export function recordAgentPrediction(
     candleTime: anchor.time,
     mode: windowMode ? 'window' : 'bars',
     entryPrice: windowMode ? params.strike!.price : anchor.close,
+    anchorPrice: anchor.close,
+    atr: forecast?.snapshot.atr,
     ...(windowMode
       ? { strike: params.strike!.price, windowStart: params.strike!.windowStart }
+      : pinnedStrike !== null
+        ? { strike: pinnedStrike }
+        : {}),
+    ...(forecast
+      ? {
+          forecast: {
+            expectedPrice: forecast.expectedPrice,
+            driftAtr: forecast.expectedMoveAtr,
+            finishAboveProbability: forecast.finishAboveProbability,
+            strikeSide:
+              pinnedStrike !== null && forecast.strikeCall !== 'none' ? forecast.strikeCall : null,
+            strikeProbability: pinnedStrike !== null ? forecast.strikeCallProbability : null,
+            strikeTouch: forecast.strikeTouch,
+            strikeBars: forecast.strikeBars,
+            touchVerdict: forecast.touchVerdict,
+            path: forecast.path,
+            thrust: forecast.thrust,
+            confidence: forecast.confidence,
+          },
+        }
       : {}),
     horizonBars,
     targetTime,
@@ -228,6 +308,29 @@ function classifyResult(predicted: MarketAnalysis['bias'], actual: MarketAnalysi
   return 'wrong' as const
 }
 
+/** Did the pinned strike get traded through at some point before the horizon closed? */
+function strikeWasTouched(candles: Candle[], fromTime: number, toTime: number, strike: number) {
+  return candles.some(
+    (candle) =>
+      candle.time > fromTime &&
+      candle.time <= toTime &&
+      candle.low <= strike &&
+      candle.high >= strike,
+  )
+}
+
+/** Where price finished relative to the strike, or null inside the flat band. */
+function finishSide(
+  close: number,
+  strike: number,
+  atr: number | undefined,
+): 'above' | 'below' | null {
+  const band = Math.max((atr ?? 0) * STRIKE_FLAT_ATR, Math.abs(strike) * 1e-5)
+  const delta = close - strike
+  if (Math.abs(delta) <= band) return null
+  return delta > 0 ? 'above' : 'below'
+}
+
 export function resolveAgentPredictionJournal(
   journal: AgentPredictionJournal,
   learning: AgentLearningState,
@@ -263,17 +366,44 @@ export function resolveAgentPredictionJournal(
     if (!resolutionCandle) return entry
     const move = (resolutionCandle.close - entry.entryPrice) / Math.max(entry.entryPrice, 1e-9)
     const actualBias = actualBiasFromOutcome({ move, flatThreshold })
+    const anchorPrice = entry.anchorPrice ?? entry.entryPrice
+    const atrValue = entry.atr && entry.atr > 0 ? entry.atr : undefined
+    const pinnedStrike = entry.strike != null ? entry.strike : null
+    const actualStrikeSide =
+      pinnedStrike !== null ? finishSide(resolutionCandle.close, pinnedStrike, atrValue) : null
+    // A strike call is graded only when the forecast actually chose a side: an explicit
+    // coin flip settles on the directional read instead of being scored as a miss.
+    const strikeResult: 'correct' | 'wrong' | null =
+      pinnedStrike === null || !entry.forecast?.strikeSide || !actualStrikeSide
+        ? null
+        : entry.forecast.strikeSide === actualStrikeSide
+          ? 'correct'
+          : 'wrong'
+    const touchedStrike =
+      pinnedStrike !== null
+        ? strikeWasTouched(params.candles, entry.candleTime, resolutionCandle.time, pinnedStrike)
+        : null
     const resolvedEntry: AgentPredictionJournalEntry = {
       ...entry,
       resolvedAt: new Date(resolutionCandle.time * 1000).toISOString(),
       resolvedPrice: resolutionCandle.close,
       move,
       actualBias,
-      result: classifyResult(entry.bias, actualBias),
+      result: strikeResult ?? classifyResult(entry.bias, actualBias),
+      ...(actualStrikeSide ? { actualStrikeSide } : {}),
+      ...(strikeResult ? { strikeResult } : {}),
+      ...(touchedStrike === null ? {} : { touchedStrike }),
+      ...(atrValue ? { actualDriftAtr: (resolutionCandle.close - anchorPrice) / atrValue } : {}),
     }
     nextLearning = learnFromOutcome(nextLearning, entry.learningRecord, {
       move,
       flatThreshold: params.flatThreshold,
+      driftAtr: atrValue ? (resolutionCandle.close - anchorPrice) / atrValue : null,
+      strikeDeltaAtr:
+        pinnedStrike !== null && atrValue
+          ? (resolutionCandle.close - pinnedStrike) / atrValue
+          : null,
+      touched: touchedStrike,
     })
     resolved.push(resolvedEntry)
     changed = true
@@ -297,9 +427,11 @@ export function journalPreview(entry: AgentPredictionJournalEntry): string {
 }
 
 export function normalizeAgentLearningState(value: unknown): AgentLearningState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return defaultAgentLearningState()
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return defaultAgentLearningState()
   const raw = value as Partial<AgentLearningState>
-  if (raw.version !== 1 || !raw.agents || typeof raw.agents !== 'object') return defaultAgentLearningState()
+  if (raw.version !== 1 || !raw.agents || typeof raw.agents !== 'object')
+    return defaultAgentLearningState()
   return {
     version: 1,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
@@ -308,7 +440,8 @@ export function normalizeAgentLearningState(value: unknown): AgentLearningState 
 }
 
 export function normalizeAgentPredictionJournal(value: unknown): AgentPredictionJournal {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return defaultAgentPredictionJournal()
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return defaultAgentPredictionJournal()
   const raw = value as Partial<AgentPredictionJournal>
   const entries = Array.isArray(raw.entries)
     ? raw.entries.filter(
@@ -334,7 +467,10 @@ export function normalizeAgentPredictionJournal(value: unknown): AgentPrediction
   }
 }
 
-export function learningHeadline(learning: AgentLearningState, agentId: keyof AgentLearningState['agents']) {
+export function learningHeadline(
+  learning: AgentLearningState,
+  agentId: keyof AgentLearningState['agents'],
+) {
   const entry = learning.agents[agentId]
   if (!entry) return 'No settled outcomes yet.'
   const skill = clamp(entry.overall.skill, 0, 1)

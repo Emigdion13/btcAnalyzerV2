@@ -80,6 +80,27 @@ function bearishTrendCandles(count = 260): Candle[] {
   return candles
 }
 
+/** A short sharp bounce off the end of a downtrend — fresh bullish MACD cross, RSI still weak. */
+function bearishTrendWithBounce(bounceBars: number, bounceSize: number): Candle[] {
+  const base = bearishTrendCandles()
+  const candles = base.slice(0, -bounceBars)
+  let price = candles[candles.length - 1].close
+  for (let i = 0; i < bounceBars; i++) {
+    const open = price
+    const close = price + bounceSize
+    candles.push({
+      time: (base.length + i) * 60,
+      open,
+      high: Math.max(open, close) + 0.1,
+      low: Math.min(open, close) - 0.1,
+      close,
+      volume: 1500,
+    })
+    price = close
+  }
+  return candles
+}
+
 function whaleFlow(overrides: Partial<WhaleFlow> = {}): WhaleFlow {
   return {
     product: 'BTC-USD',
@@ -193,6 +214,52 @@ describe('market agents', () => {
     expect(Number(bullishMacd.metrics.zeroRegime ?? 0)).toBeGreaterThan(0.5)
     expect(Math.abs(bullishMacd.score)).toBeLessThan(0.45)
     expect(bullishMacd.warnings.join(' ')).toContain('pause, not a reversal')
+  })
+
+  it('puts RSI in the way of a promising MACD call when RSI runs strongly against it', () => {
+    // Fresh bullish MACD cross off a downtrend — the read looks promising — but RSI is still
+    // pinned below the midline, so the MACD expert has to treat RSI as resistance.
+    const bounced = analyzeMarket({ candles: bearishTrendWithBounce(2, 1.5), timeframe: '1m' })
+    const macd = opinion(bounced, 'macd')
+    expect(macd.metrics.rsi).not.toBeNull()
+    expect(Number(macd.metrics.rsi)).toBeLessThan(50)
+    expect(Number(macd.metrics.rsiResistance ?? 0)).toBeGreaterThan(0.4)
+    expect(macd.reasons[0]).toContain('put up resistance')
+    expect(macd.warnings.join(' ')).toContain('strongly against the MACD direction')
+    // RSI resists the move without flipping the MACD's own read: conviction, not direction.
+    expect(macd.score).toBeGreaterThan(0)
+    expect(macd.score).toBeLessThan(0.2)
+    expect(macd.bias).toBe('neutral')
+  })
+
+  it('leaves the MACD read intact when RSI aims the same side', () => {
+    const result = analyzeMarket({ candles: bearishTrendCandles(), timeframe: '1m' })
+    const macd = opinion(result, 'macd')
+    expect(Number(macd.metrics.rsiResistance ?? 1)).toBe(0)
+    expect(macd.score).toBeCloseTo(-0.559, 2)
+    expect(macd.bias).toBe('bearish')
+    expect(macd.reasons.join(' ')).toContain('no RSI resistance')
+  })
+
+  it('notes mild RSI drift against a soft MACD read', () => {
+    const result = analyzeMarket({ candles: rangeNearResistanceCandles(), timeframe: '5m' })
+    const macd = opinion(result, 'macd')
+    expect(Number(macd.metrics.rsiResistance ?? 0)).toBeGreaterThan(0.1)
+    expect(macd.reasons.join(' ')).toContain('leans against')
+  })
+
+  it('always says whether nearby resistance is going to be a problem', () => {
+    const candles = rangeNearResistanceCandles()
+    const result = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      book: buildBook(candles[candles.length - 1].close, { strongResistance: true }),
+    })
+    const level = opinion(result, 'level-strength')
+    expect(level.reasons.join(' ')).toContain('a real problem')
+    expect(level.reasons.join(' ')).toContain('not a problem from this distance')
+    expect(Number(level.metrics.resistanceThreat ?? 0)).toBeGreaterThan(0.5)
+    expect(Number(level.metrics.supportThreat ?? 1)).toBe(0)
   })
 
   it('keeps the MACD specialist honest while its EMAs warm up', () => {

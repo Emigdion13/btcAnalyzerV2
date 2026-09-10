@@ -369,6 +369,17 @@ function chooseLevel(primary: LevelReference | null, fallback: LevelReference | 
   return fallback
 }
 
+/**
+ * Plain-language verdict on whether a nearby level is going to be a problem.
+ * The threat is the level's pressure — strength weighted by how close it sits — so a
+ * strong level far away and a weak level right overhead land where traders expect them.
+ */
+function threatLabel(threat: number): string {
+  if (threat >= 0.55) return 'a real problem'
+  if (threat >= 0.25) return 'worth watching'
+  return 'not a problem from this distance'
+}
+
 function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]): SpecializedOpinion<'regime'> & {
   regime: MarketRegime
 } {
@@ -585,6 +596,12 @@ function analyzeMomentum(
  * MACD-native units (fractions of the line's own recent swing), so a wiggle never reads as a
  * quake. A cross against a strong zero-line regime is a pause, not a reversal, and is scored
  * that way: the trigger leans near-term, the regime anchors the call.
+ *
+ * Before it commits, the MACD read has to clear RSI. A promising call facing an RSI that
+ * sits on the other side of the 50 midline and/or rolls the other way runs into wall
+ * material: the RSI's strength (distance from midline) plus its aim (slope against the call)
+ * shave conviction out of the read — up to half the score, never flipping the MACD's own
+ * direction. A weak RSI, or one aiming the same side, leaves the read intact and says so.
  */
 function analyzeMacd(
   currentPrice: number,
@@ -650,6 +667,26 @@ function analyzeMacd(
   if (freshCross) score += crossDir * 0.1
   score = clamp(score, -1, 1)
 
+  // RSI cross-check: is the read facing a wall? The "call" is the direction the MACD
+  // read is actually voting. RSI resistance = how far RSI sits on the other side of the
+  // 50 midline (position) plus how hard it is rolling against the call (aim). Both are
+  // zero when RSI is weak or aiming the same side — the common, harmless case.
+  const rsiSeries = ta.rsi(close, 14)
+  const lastRsi = nonNullTail(rsiSeries)
+  const previousRsi = lastRsi !== null ? numberOrNull(rsiSeries[rsiSeries.length - 4]) ?? lastRsi : null
+  const rsiSlope = lastRsi !== null && previousRsi !== null ? clamp((lastRsi - previousRsi) / 8, -1, 1) : 0
+  const rsiSignal = lastRsi !== null ? clamp((lastRsi - 50) / 30, -1, 1) : 0
+  const callDir = score >= 0.1 ? 1 : score <= -0.1 ? -1 : 0
+  let rsiResistance = 0
+  if (lastRsi !== null && callDir !== 0) {
+    const positionAgainst = Math.max(0, -callDir * rsiSignal)
+    const aimAgainst = Math.max(0, -callDir * rsiSlope)
+    rsiResistance = clamp(0.8 * positionAgainst + 0.5 * aimAgainst, 0, 1)
+    // Resistance takes conviction out of the read; it never flips the MACD's own direction.
+    score -= callDir * Math.min(Math.abs(score), 0.5) * rsiResistance
+    score = clamp(score, -1, 1)
+  }
+
   const widening = Math.abs(lastHist) >= Math.abs(prevHist)
   const reasons = [
     `MACD ${lastLine.toFixed(3)} is ${above >= 0 ? 'above' : 'below'} signal ${lastSignal.toFixed(3)} with histogram ${lastHist >= 0 ? '+' : ''}${lastHist.toFixed(3)} (${widening ? 'widening' : 'fading'}).`,
@@ -668,9 +705,29 @@ function analyzeMacd(
     )
   else reasons.push('MACD line is hugging the zero line — no momentum regime either way.')
 
+  if (lastRsi !== null && callDir !== 0) {
+    const call = callDir > 0 ? 'bullish' : 'bearish'
+    if (rsiResistance >= 0.4) {
+      // Material conflict: lead with it, because it is the fact that matters most on the card.
+      reasons.unshift(
+        rsiSignal * callDir < 0
+          ? `RSI ${lastRsi.toFixed(1)} sits ${callDir > 0 ? 'below' : 'above'} the 50 midline against the ${call} MACD read — it will put up resistance to the move.`
+          : `RSI ${lastRsi.toFixed(1)} is rolling ${callDir > 0 ? 'over' : 'under'} against the ${call} MACD read — the move is running into resistance.`,
+      )
+    } else if (rsiResistance >= 0.1) {
+      reasons.push(`RSI ${lastRsi.toFixed(1)} leans against the ${call} MACD read but is not strong enough to stand in the way.`)
+    } else {
+      reasons.push(`RSI ${lastRsi.toFixed(1)} is aiming the same side as the ${call} MACD read — no RSI resistance to this move.`)
+    }
+  }
+
   const againstRegime =
     Math.sign(trigger) !== 0 && Math.sign(regime) !== 0 && Math.sign(trigger) !== Math.sign(regime)
   const warnings: string[] = []
+  if (rsiResistance >= 0.4)
+    warnings.unshift(
+      `RSI ${lastRsi!.toFixed(1)} is strongly against the MACD direction — expect it to put up resistance to the move.`,
+    )
   if (fading && Math.abs(lastHist) > 1e-12)
     warnings.push('Histogram is fading toward zero — momentum is stalling.')
   if (Math.abs(trigger) > 0.8)
@@ -687,7 +744,7 @@ function analyzeMacd(
     label: 'MACD Agent',
     bias: biasFromScore(score, 0.15),
     score,
-    confidence: clamp(0.38 + Math.abs(score) * 0.45 + (freshCross ? 0.08 : 0), 0.3, 0.92),
+    confidence: clamp(0.38 + Math.abs(score) * 0.45 + (freshCross ? 0.08 : 0) - rsiResistance * 0.12, 0.3, 0.92),
     reasons,
     warnings,
     metrics: {
@@ -700,6 +757,10 @@ function analyzeMacd(
       lineSwing: swing,
       crossAge,
       crossDir,
+      rsi: lastRsi,
+      rsiSlope,
+      rsiSignal,
+      rsiResistance,
     },
   }
 }
@@ -723,13 +784,17 @@ function analyzeLevelStrength(
   const reasons: string[] = []
   if (support)
     reasons.push(
-      `Nearest support is ${support.source} at ${support.price.toFixed(2)} with strength ${support.strength.toFixed(2)}${support.bookBucket ? ` and book bucket ${support.bookBucket}` : ''}.`,
+      `Nearest support is ${support.source} at ${support.price.toFixed(2)} with strength ${support.strength.toFixed(2)}${support.bookBucket ? ` and book bucket ${support.bookBucket}` : ''} — ${support.distanceAtr.toFixed(2)} ATR below, ${threatLabel(supportPressure)}.`,
     )
   if (resistance)
     reasons.push(
-      `Nearest resistance is ${resistance.source} at ${resistance.price.toFixed(2)} with strength ${resistance.strength.toFixed(2)}${resistance.bookBucket ? ` and book bucket ${resistance.bookBucket}` : ''}.`,
+      `Nearest resistance is ${resistance.source} at ${resistance.price.toFixed(2)} with strength ${resistance.strength.toFixed(2)}${resistance.bookBucket ? ` and book bucket ${resistance.bookBucket}` : ''} — ${resistance.distanceAtr.toFixed(2)} ATR above, ${threatLabel(resistancePressure)}.`,
     )
   if (!support && !resistance) reasons.push('No nearby structure level could be confirmed from SR zones or pivots.')
+  else {
+    if (!resistance) reasons.push('No confirmed resistance nearby — the path above price is clear of levels.')
+    if (!support) reasons.push('No confirmed support nearby — a drop has no cushion in sight.')
+  }
   if (book) reasons.push(`Near-mid book imbalance is ${imbalance.toFixed(2)}.`)
   const warnings: string[] = []
   if (resistance && resistance.distanceAtr <= 0.8 && resistance.strength >= 0.7)
@@ -751,6 +816,8 @@ function analyzeLevelStrength(
       resistancePrice: resistance?.price ?? null,
       resistanceStrength: resistance?.strength ?? null,
       resistanceDistanceAtr: resistance?.distanceAtr ?? null,
+      supportThreat: supportPressure,
+      resistanceThreat: resistancePressure,
       imbalance,
     },
     summary: {

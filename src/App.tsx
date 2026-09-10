@@ -100,9 +100,10 @@ import {
 } from './lib/agent-journal'
 import {
   analyzeMarket,
-  defaultAgentLearningState,
+  pretrainedAgentLearningState,
   type AgentLearningState,
   type MarketAnalysis,
+  type StrikeInput,
 } from './lib/market-agents'
 import {
   analyzeMacdForecast,
@@ -121,7 +122,9 @@ import { agentDecisionDefaultVisible } from './lib/floating-window'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { INTERVAL_SECONDS, isProductId, candleFingerprint } from '../shared/coinbase'
-import { kalshiStrike } from './lib/kalshi-window'
+import { kalshiClockLabel, kalshiStrike } from './lib/kalshi-window'
+import { calculateCoinbaseStrike, coinbaseStrikeSettings } from './lib/coinbase-strike'
+import type { CoinbaseStrikeSettings } from './lib/coinbase-strike'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import {
   calculateCmMacd,
@@ -220,6 +223,37 @@ const DRAW_TOOLS: { id: Tool; label: string; icon: LucideIcon; shortcut?: string
   { id: 'text', label: 'Text note', icon: TextCursorInput },
   { id: 'measure', label: 'Measure', icon: Ruler },
 ]
+/**
+ * The strike line the chart is actually drawing, as a forecast input.
+ *
+ * The strike indicator's own level wins when it is on the chart — that is the line the
+ * user is asking about, whether it is the interval open or a custom price. The live
+ * window's strike stands in when the indicator is not loaded.
+ */
+function pinnedStrikeFromIndicator(
+  candles: Candle[],
+  settings: CoinbaseStrikeSettings,
+  nowSec: number,
+): StrikeInput | null {
+  if (candles.length < 2) return null
+  try {
+    const result = calculateCoinbaseStrike(candles, settings)
+    if (result.currentStrike === null || !Number.isFinite(result.currentStrike)) return null
+    if (result.currentStrike <= 0) return null
+    return {
+      price: result.currentStrike,
+      windowStart: result.intervalStart,
+      windowEnd: result.intervalEnd,
+      secondsLeft: Math.max(0, result.intervalEnd - nowSec),
+      expiryLabel: kalshiClockLabel(result.intervalEnd),
+      provisional: false,
+      label: settings.customStrike > 0 ? 'custom strike' : `${settings.intervalMinutes}m strike`,
+    }
+  } catch {
+    return null
+  }
+}
+
 const DEFAULT_AGENT_HORIZONS = Object.fromEntries(
   TIMEFRAMES.map((interval) => [interval, suggestedHorizonBars(interval)]),
 ) as Record<Timeframe, number>
@@ -306,7 +340,7 @@ export default function App() {
   const [feedActive, setFeedActive] = useLocalState('feed-active', true)
   const [agentLearning, setAgentLearning] = useLocalState<AgentLearningState>(
     'agent-learning',
-    defaultAgentLearningState(),
+    pretrainedAgentLearningState(),
   )
   const [agentJournal, setAgentJournal] = useLocalState(
     'agent-journal',
@@ -325,6 +359,8 @@ export default function App() {
     'agent-horizons',
     DEFAULT_AGENT_HORIZONS,
   )
+  // Where a forecast settles: its own horizon (the default) or the strike window's cut.
+  const [agentSettle, setAgentSettle] = useLocalState<'bars' | 'cut'>('agent-settle', 'bars')
   const [macdAiLearning, setMacdAiLearning] = useLocalState<MacdAiLearningState>(
     'macd-ai-learning',
     pretrainedMacdAiLearningState(),
@@ -355,9 +391,7 @@ export default function App() {
   const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
   const [sidePanel, setSidePanel] = useState<
     'watchlist' | 'alerts' | 'notes' | 'agents' | 'macd-ai' | null
-  >(
-    () => (window.innerWidth >= 1050 ? 'watchlist' : null),
-  )
+  >(() => (window.innerWidth >= 1050 ? 'watchlist' : null))
   const [modal, setModal] = useState<ModalName>(null)
   const [searchAdding, setSearchAdding] = useState(false)
   const [libraryTab, setLibraryTab] = useState<'built-in' | 'scripts'>('built-in')
@@ -601,6 +635,32 @@ export default function App() {
     () => kalshiStrike(settledCandles, strikeNowSec, currentPrice),
     [settledCandles, strikeNowSec, currentPrice],
   )
+  // The strike line on the chart, when the strike indicator is loaded: the level the
+  // forecast is asked about, in preference to the plain window strike.
+  const strikeIndicator = useMemo(
+    () =>
+      indicators.find((indicator) => indicator.visible && indicator.kind === 'coinbase-strike') ??
+      null,
+    [indicators],
+  )
+  const strikeSettings = useMemo(
+    () => (strikeIndicator ? coinbaseStrikeSettings(strikeIndicator) : null),
+    [strikeIndicator],
+  )
+  const indicatorStrikeLive = useMemo(
+    () =>
+      strikeSettings ? pinnedStrikeFromIndicator(candles, strikeSettings, strikeNowSec) : null,
+    [strikeSettings, candles, strikeNowSec],
+  )
+  const indicatorStrikeSettled = useMemo(
+    () =>
+      strikeSettings
+        ? pinnedStrikeFromIndicator(settledCandles, strikeSettings, strikeNowSec)
+        : null,
+    [strikeSettings, settledCandles, strikeNowSec],
+  )
+  const liveStrike = indicatorStrikeLive ?? kalshiLive ?? null
+  const settledStrike = indicatorStrikeSettled ?? kalshiSettled ?? null
   const marketAnalysis = useMemo<MarketAnalysis | null>(() => {
     if (candles.length < 30) return null
     try {
@@ -611,14 +671,24 @@ export default function App() {
           book: bookView ?? undefined,
           context: contextSignals,
           whale: whaleSignal ?? undefined,
-          strike: kalshiLive ?? undefined,
+          strike: liveStrike ?? undefined,
+          horizonBars: agentHorizonBars,
         },
         safeAgentLearning,
       )
     } catch {
       return null
     }
-  }, [candles, timeframe, bookView, contextSignals, whaleSignal, kalshiLive, safeAgentLearning])
+  }, [
+    candles,
+    timeframe,
+    bookView,
+    contextSignals,
+    whaleSignal,
+    liveStrike,
+    agentHorizonBars,
+    safeAgentLearning,
+  ])
   const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
     if (settledCandles.length < 30) return null
     try {
@@ -629,7 +699,8 @@ export default function App() {
           book: replayIndex === null ? (bookView ?? undefined) : undefined,
           context: contextSignals,
           whale: replayIndex === null ? (live.whaleFlow ?? undefined) : undefined,
-          strike: kalshiSettled ?? undefined,
+          strike: settledStrike ?? undefined,
+          horizonBars: agentHorizonBars,
         },
         safeAgentLearning,
       )
@@ -643,7 +714,8 @@ export default function App() {
     bookView,
     contextSignals,
     live.whaleFlow,
-    kalshiSettled,
+    settledStrike,
+    agentHorizonBars,
     safeAgentLearning,
   ])
   const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
@@ -1012,14 +1084,15 @@ export default function App() {
             candles: settledCandles,
             analysis: settledMarketAnalysis,
             horizonBars: agentHorizonBars,
-            // Window-mode entries settle on the strike itself, so only a defended
-            // (non-provisional) strike may seed them.
+            settle: agentSettle,
+            // The entry is pinned to the strike the chart is drawing, so only a defended
+            // (non-provisional) level may seed it — a live print is not a settled level.
             strike:
-              kalshiSettled && !kalshiSettled.provisional
+              settledStrike && !settledStrike.provisional
                 ? {
-                    price: kalshiSettled.price,
-                    windowStart: kalshiSettled.windowStart,
-                    windowEnd: kalshiSettled.windowEnd,
+                    price: settledStrike.price,
+                    windowStart: settledStrike.windowStart,
+                    windowEnd: settledStrike.windowEnd,
                   }
                 : undefined,
           })
@@ -1032,7 +1105,8 @@ export default function App() {
     safeAgentLearning,
     settledMarketAnalysis,
     agentHorizonBars,
-    kalshiSettled,
+    agentSettle,
+    settledStrike,
     source,
     symbol,
     timeframe,
@@ -1524,7 +1598,7 @@ export default function App() {
       setScripts(backup.scripts)
       setDraft(backup.draft)
       setAlerts(backup.alerts)
-      setAgentLearning(backup.agentLearning ?? defaultAgentLearningState())
+      setAgentLearning(backup.agentLearning ?? pretrainedAgentLearningState())
       setAgentJournal(backup.agentJournal ?? defaultAgentPredictionJournal())
       setMacdAiLearning(backup.macdAiLearning ?? pretrainedMacdAiLearningState())
       setMacdAiJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())
@@ -2436,6 +2510,7 @@ export default function App() {
             learning={safeAgentLearning}
             journal={safeAgentJournal}
             horizonBars={agentHorizonBars}
+            settleMode={agentSettle}
             onClose={() => setSidePanel(null)}
             onToggleAutoJournal={(autoJournal) =>
               setAgentJournal((previous) => ({
@@ -2444,6 +2519,7 @@ export default function App() {
                 updatedAt: new Date().toISOString(),
               }))
             }
+            onSettleModeChange={setAgentSettle}
             onHorizonBarsChange={(bars) =>
               setAgentHorizons((previous) => ({
                 ...previous,
@@ -2455,8 +2531,8 @@ export default function App() {
               notify('Agent journal cleared.', 'info')
             }}
             onResetLearning={() => {
-              setAgentLearning(defaultAgentLearningState())
-              notify('Agent learning reset to neutral weights.', 'info')
+              setAgentLearning(pretrainedAgentLearningState())
+              notify('Agent learning reset to pre-trained weights.', 'info')
             }}
           />
         )}

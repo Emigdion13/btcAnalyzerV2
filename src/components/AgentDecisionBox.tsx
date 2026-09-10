@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Bot, ChevronRight, GripVertical, Info, Minus, Plus, RotateCcw, X } from 'lucide-react'
 import type { ConnectionState } from '../../shared/coinbase'
-import { formatCountdown, kalshiClockLabel } from '../lib/kalshi-window'
+import { formatCountdown } from '../lib/kalshi-window'
 import { formatPrice } from '../lib/market'
 import type { ContextAnalysis, MarketAnalysis } from '../lib/market-agents'
 import { useLocalState } from '../lib/storage'
@@ -11,21 +11,12 @@ import type { DataSource, Timeframe } from '../lib/types'
 const POSITION_KEY = 'agent-decision-pos'
 
 type Bias = NonNullable<MarketAnalysis>['bias']
+type Forecast = NonNullable<MarketAnalysis>['forecast']
 
-const BIAS_LABEL: Record<Bias, string> = {
-  bullish: 'Bullish',
-  bearish: 'Bearish',
-  neutral: 'No trade',
-}
-
-/**
- * The window call: when a live strike frames the verdict, every agent answers UP or
- * DOWN from the strike at the cut — the binary the ensemble exists to play.
- */
-const CALL_LABEL: Record<Bias, string> = {
-  bullish: 'UP',
-  bearish: 'DOWN',
-  neutral: 'No trade',
+const BIAS_CLASS: Record<Bias, string> = {
+  bullish: 'is-bullish',
+  bearish: 'is-bearish',
+  neutral: 'is-neutral',
 }
 
 /** Short form for the footer chips, where every character of width counts. */
@@ -35,37 +26,59 @@ const BIAS_SHORT: Record<Bias, string> = {
   neutral: 'flat',
 }
 
-const BIAS_CLASS: Record<Bias, string> = {
-  bullish: 'is-bullish',
-  bearish: 'is-bearish',
-  neutral: 'is-neutral',
-}
-
-/** Feeds that are not current: the call stays on screen but is flagged as last known. */
+/** Feeds that are not current: the forecast stays on screen but is flagged as last known. */
 const STALE_STATES = ['offline', 'stale', 'reconnecting', 'paused']
 
 const formatPercent = (value: number | null | undefined, digits = 0) =>
   value == null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(digits)}%`
 
-const formatSigned = (value: number | null | undefined, digits = 2) =>
+const formatAtr = (value: number | null | undefined, digits = 2) =>
   value == null || !Number.isFinite(value)
     ? '—'
-    : `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
-
-const formatLevel = (level: MarketAnalysis['summary']['nearestSupport']) =>
-  level ? `${formatPrice(level.price)} · ${level.distanceAtr.toFixed(1)} ATR` : '—'
+    : `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(digits)}`
 
 /**
- * The AI's general decision as a picture-in-picture window over the chart.
+ * What the horizon call says in one phrase: the strike side when the chart has a
+ * strike line, the drift lean when it does not.
+ */
+function callLabel(forecast: Forecast): string {
+  if (forecast.strikeCall === 'above') return 'Above strike'
+  if (forecast.strikeCall === 'below') return 'Below strike'
+  if (forecast.finishAboveProbability !== null) return 'Coin flip'
+  return forecast.bias === 'bullish' ? 'Higher' : forecast.bias === 'bearish' ? 'Lower' : 'Sideways'
+}
+
+/** The badge: the number that goes with the call, not a mood. */
+function badgeText(forecast: Forecast): string {
+  if (forecast.strikeCall === 'above')
+    return `↑ ${Math.round((forecast.strikeCallProbability ?? 0) * 100)}%`
+  if (forecast.strikeCall === 'below')
+    return `↓ ${Math.round((forecast.strikeCallProbability ?? 0) * 100)}%`
+  if (forecast.finishAboveProbability !== null)
+    return `↔ ${Math.round(forecast.finishAboveProbability * 100)}% above`
+  return `${formatAtr(forecast.expectedMoveAtr)} ATR`
+}
+
+function pathLabel(forecast: Forecast): string {
+  return forecast.path === 'continuation'
+    ? `continuation · ${forecast.thrust}`
+    : forecast.path === 'squeeze'
+      ? 'squeeze'
+      : forecast.path
+}
+
+/**
+ * The main-chart AI as a picture-in-picture window over the chart.
  *
- * It carries the same ensemble verdict the agent panel leads with — bias, confidence, score,
- * regime, the levels the call leans on and the reason behind it — so the decision can be read
- * without opening a side panel. Like the timeframe peek window it is draggable, minimizable, and
- * remembers where it was left; the deep specialist breakdown stays in the agent panel, which it
- * opens on request.
+ * It carries what MACD AI carries — a forward call, the numbers behind it, the
+ * order things are expected to happen in — for the chart itself rather than for an
+ * indicator pane: where price is expected to finish over the horizon, and whether
+ * that finish sits above or below the strike line. The "now" verdict the specialists
+ * describe stays one click away in the agent panel, which this opens on request.
  *
- * A decision is only as fresh as the candles behind it, so a feed that is not live dims the
- * window instead of presenting a stale call as current, and bar replay steps aside entirely.
+ * A forecast is only as fresh as the candles behind it, so a feed that is not live
+ * dims the window instead of presenting a stale call as current, and bar replay
+ * steps aside entirely.
  */
 export function AgentDecisionBox({
   assetLabel,
@@ -100,29 +113,30 @@ export function AgentDecisionBox({
   const [showInfo, setShowInfo] = useState(false)
   const { boxRef, position, dragging, startDrag, reset } = useFloatingWindow(POSITION_KEY, 8)
 
-  const specialists = useMemo(
-    () => (analysis ? analysis.agents.filter((agent) => agent.id !== 'ensemble') : []),
-    [analysis],
-  )
+  const forecast = analysis?.forecast ?? null
+  // The split bar reads the horizon votes, not the present-tense ones: each specialist's
+  // projected drift is what it is voting for over the next N bars.
   const tally = useMemo(() => {
     const count: Record<Bias, number> = { bullish: 0, bearish: 0, neutral: 0 }
-    for (const agent of specialists) count[agent.bias] += 1
+    for (const agent of forecast?.agents ?? []) {
+      count[agent.driftAtr >= 0.22 ? 'bullish' : agent.driftAtr <= -0.22 ? 'bearish' : 'neutral'] +=
+        1
+    }
     return count
-  }, [specialists])
-  const strike = analysis?.summary.strike ?? null
-  const callLabel = (bias: Bias) => (strike ? CALL_LABEL[bias] : BIAS_LABEL[bias])
+  }, [forecast])
+  const counted = forecast?.agents.length || 1
+  const lead = Math.max(tally.bullish, tally.bearish, tally.neutral)
+  const agreement = forecast ? `${lead} of ${forecast.agents.length} agents lean that way` : ''
+  const strike = forecast?.snapshot.strike ?? null
   const strikeDelta =
-    strike == null
-      ? null
-      : `${strike.delta >= 0 ? '+' : '\u2212'}${formatPrice(Math.abs(strike.delta), false, 2)}`
-  const tone = analysis ? BIAS_CLASS[analysis.bias] : 'is-waiting'
+    strike === null || forecast === null ? null : formatAtr(forecast.snapshot.strikeDeltaAtr)
+  const tone = forecast ? BIAS_CLASS[forecast.bias] : 'is-waiting'
   const stale = STALE_STATES.includes(feedState)
-  const counted = specialists.length || 1
-  // Disagreement is the useful part of the headline: it says how much of the ensemble agrees.
-  const leadCount = Math.max(tally.bullish, tally.bearish, tally.neutral)
-  const agreement = analysis
-    ? `${leadCount} of ${specialists.length} specialists ${BIAS_SHORT[analysis.bias]}`
-    : ''
+  const finishSide = forecast?.snapshot.strikeSide ?? null
+  const band =
+    forecast === null
+      ? null
+      : `${formatPrice(forecast.targetLow)} – ${formatPrice(forecast.targetHigh)}`
 
   return (
     <section
@@ -131,7 +145,7 @@ export function AgentDecisionBox({
         minimized ? ' is-min' : ''
       }${stale ? ' is-stale' : ''}`}
       data-testid="agent-decision"
-      aria-label="AI decision window"
+      aria-label="AI forecast window"
       style={
         position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined
       }
@@ -139,11 +153,11 @@ export function AgentDecisionBox({
       <header className="ai-decision-head" onPointerDown={startDrag}>
         <GripVertical size={12} className="ai-decision-grip" aria-hidden="true" />
         <span className="ai-decision-label">
-          AI decision
-          <small>ensemble</small>
+          AI forecast
+          <small>price action</small>
         </span>
         <span className={`ai-decision-badge ${tone}`}>
-          {analysis ? callLabel(analysis.bias) : 'Waiting'}
+          {forecast ? badgeText(forecast) : 'Waiting'}
         </span>
         {position ? (
           <button
@@ -184,7 +198,7 @@ export function AgentDecisionBox({
           onClick={onOpenPanel}
           role="button"
           tabIndex={0}
-          title="Open full agent panel"
+          title={forecast ? forecast.headline : 'Open the agent panel'}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
@@ -192,17 +206,26 @@ export function AgentDecisionBox({
             }
           }}
         >
-          <strong>{analysis ? callLabel(analysis.bias) : 'Waiting for candles'}</strong>
-          <span className="mono">{analysis ? formatPercent(analysis.confidence) : '30 bars'}</span>
-          {strike ? (
+          <strong>{forecast ? callLabel(forecast) : 'Waiting for candles'}</strong>
+          <span className="mono">
+            {forecast
+              ? forecast.strikeCallProbability !== null
+                ? formatPercent(forecast.strikeCallProbability)
+                : `${formatAtr(forecast.expectedMoveAtr)} ATR`
+              : `30 bars`}
+          </span>
+          {forecast ? <span className="mono">{formatPercent(forecast.confidence)}</span> : null}
+          {forecast?.snapshot.secondsLeft !== null &&
+          forecast?.snapshot.secondsLeft !== undefined &&
+          forecast.snapshot.strikeExpiryLabel ? (
             <span
               className="mono"
-              title={`Settles at the ${kalshiClockLabel(strike.windowEnd)} cut`}
+              title={`Strike window closes at ${forecast.snapshot.strikeExpiryLabel}`}
             >
-              {formatCountdown(strike.secondsLeft)}
+              {formatCountdown(forecast.snapshot.secondsLeft)} →{' '}
+              {forecast.snapshot.strikeExpiryLabel}
             </span>
           ) : null}
-          {analysis ? <span className="mono">{formatSigned(analysis.score)} score</span> : null}
           <button
             type="button"
             className="ai-decision-open"
@@ -210,18 +233,19 @@ export function AgentDecisionBox({
               e.stopPropagation()
               onOpenPanel()
             }}
-            title="Open full agent panel"
-            aria-label="Open full agent panel"
+            title="Open the agent panel"
+            aria-label="Open the agent panel"
           >
             <Bot size={11} />
-            Open full agents
+            Agents
             <ChevronRight size={12} />
           </button>
         </div>
-      ) : !analysis ? (
+      ) : !forecast ? (
         <div className="ai-decision-body">
           <p className="ai-decision-empty">
-            The ensemble speaks once at least 30 candles are loaded on this timeframe.
+            The AI speaks once at least 30 candles are loaded on this timeframe — then it forecasts
+            the horizon instead of describing the present.
           </p>
           <div className="ai-decision-foot">
             <span className="ai-decision-source">
@@ -231,11 +255,11 @@ export function AgentDecisionBox({
               type="button"
               className="ai-decision-open"
               onClick={onOpenPanel}
-              title="Open full agent panel"
-              aria-label="Open full agent panel"
+              title="Open the agent panel"
+              aria-label="Open the agent panel"
             >
               <Bot size={11} />
-              Open full agents
+              Agents
               <ChevronRight size={12} />
             </button>
           </div>
@@ -243,73 +267,119 @@ export function AgentDecisionBox({
       ) : (
         <div className="ai-decision-body" title={`${assetLabel} · ${timeframe}`}>
           <div className={`ai-decision-verdict ${tone}`}>
-            <span className="ai-decision-call">{callLabel(analysis.bias)}</span>
+            <span className="ai-decision-call">{callLabel(forecast)}</span>
             <span className="ai-decision-meter">
               <span className="ai-decision-track">
-                <i style={{ width: `${Math.min(100, analysis.confidence * 100)}%` }} />
+                <i
+                  style={{
+                    width: `${
+                      forecast.strikeCallProbability !== null
+                        ? Math.min(100, forecast.strikeCallProbability * 100)
+                        : Math.min(100, forecast.confidence * 100)
+                    }%`,
+                  }}
+                />
               </span>
-              <span className="mono">{formatPercent(analysis.confidence)}</span>
+              <span className="mono">
+                {forecast.strikeCallProbability !== null
+                  ? formatPercent(forecast.strikeCallProbability)
+                  : `${formatAtr(forecast.expectedMoveAtr)} ATR`}
+              </span>
             </span>
           </div>
 
-          <p
-            className="ai-decision-reason"
-            title={[analysis.reasons[0], analysis.risks[0]].filter(Boolean).join(' · ')}
-          >
-            {analysis.reasons[0] ?? 'No primary explanation recorded.'}
+          <p className="ai-decision-reason" title={forecast.headline}>
+            {forecast.headline}
           </p>
 
-          {strike ? (
+          {strike !== null && forecast.snapshot.strikeDeltaAtr !== null ? (
             <div
               className="ai-decision-strike"
-              title={
-                strike.provisional
-                  ? 'Strike is still setting — provisional print from the live tape.'
-                  : `Price is ${strike.side} the strike by ${Math.abs(strike.deltaAtr).toFixed(2)} ATR · settles at the ${kalshiClockLabel(strike.windowEnd)} cut.`
-              }
+              title={`${forecast.reasons[0] ?? forecast.headline}`}
             >
               <span className="ai-decision-strike-price">
-                STRIKE {strike.provisional ? '~' : ''}
-                {formatPrice(strike.price, true)}
+                STRIKE {forecast.snapshot.strikeProvisional ? '~' : ''}
+                {formatPrice(strike, true)}
               </span>
               <span
                 className={
-                  strike.delta >= 0
+                  forecast.snapshot.strikeSide === 'above'
                     ? 'ai-decision-strike-side is-up'
                     : 'ai-decision-strike-side is-down'
                 }
               >
-                {strike.delta >= 0 ? '\u25B2' : '\u25BC'} {strikeDelta} {strike.side}
+                {forecast.snapshot.strikeSide === 'above' ? '\u25B2' : '\u25BC'} {strikeDelta}{' '}
+                {forecast.snapshot.strikeSide}
               </span>
               <span className="mono ai-decision-strike-clock">
-                {formatCountdown(strike.secondsLeft)} \u2192 {kalshiClockLabel(strike.windowEnd)}
+                {forecast.strikeTouchProbability === null
+                  ? ''
+                  : `touch ${formatPercent(forecast.strikeTouchProbability)}`}
+                {forecast.snapshot.secondsLeft !== null
+                  ? ` · ${formatCountdown(forecast.snapshot.secondsLeft)}`
+                  : ''}
               </span>
             </div>
           ) : null}
 
+          <p className="ai-decision-reason agent-then-line">
+            Next: {forecast.timeline[0]?.title ?? 'stand by'}
+            {forecast.timeline[1] ? ` → ${forecast.timeline[1].title}` : ''}
+          </p>
+
           <div className="ai-decision-grid">
-            <div>
-              <span>Score</span>
-              <strong>{formatSigned(analysis.score)}</strong>
+            <div title={`Expected close over ${forecast.horizonBars} bars`}>
+              <span>Finish</span>
+              <strong>{formatPrice(forecast.expectedPrice)}</strong>
             </div>
-            <div>
-              <span>Regime</span>
-              <strong>{analysis.regime}</strong>
+            <div title={band ? `One-scale band: ${band}` : 'Expected finish'}>
+              <span>Band</span>
+              <strong>{band}</strong>
             </div>
-            <div title={`ATR ${analysis.summary.atr.toFixed(2)}`}>
-              <span>Price</span>
-              <strong>{formatPrice(analysis.summary.currentPrice)}</strong>
+            <div title={`Expected drift over ${forecast.horizonBars} bars`}>
+              <span>Drift</span>
+              <strong>{formatAtr(forecast.expectedMoveAtr)} ATR</strong>
+            </div>
+            <div title={`${forecast.horizonBars} bars ahead`}>
+              <span>Horizon</span>
+              <strong>
+                {forecast.horizonBars} bars
+                {forecast.snapshot.strikeExpiryLabel
+                  ? ` → ${forecast.snapshot.strikeExpiryLabel}`
+                  : ''}
+              </strong>
             </div>
           </div>
 
           <div className="ai-decision-levels">
             <span>
-              <small>support</small>
-              {formatLevel(analysis.summary.nearestSupport)}
+              <small>touch</small>
+              {forecast.strikeTouch
+                ? `${forecast.touchVerdict === 'break' ? 'break' : 'hold'}${forecast.strikeBars ? ` ~${forecast.strikeBars} ${forecast.strikeBars === 1 ? 'bar' : 'bars'}` : ''}`
+                : forecast.strikeTouchProbability !== null
+                  ? `no touch · ${formatPercent(1 - forecast.strikeTouchProbability)}`
+                  : 'no strike'}
             </span>
             <span>
-              <small>resistance</small>
-              {formatLevel(analysis.summary.nearestResistance)}
+              <small>path</small>
+              {pathLabel(forecast)}
+            </span>
+          </div>
+
+          <div className="ai-decision-levels">
+            <span>
+              <small>support reach</small>
+              {formatPercent(forecast.supportReachProbability)}
+            </span>
+            <span>
+              <small>resistance reach</small>
+              {formatPercent(forecast.resistanceReachProbability)}
+            </span>
+            <span>
+              <small>{finishSide ? 'finish above' : 'confidence'}</small>
+              {finishSide
+                ? formatPercent(forecast.finishAboveProbability)
+                : formatPercent(forecast.confidence)}
             </span>
           </div>
 
@@ -323,7 +393,7 @@ export function AgentDecisionBox({
             <button
               type="button"
               className={`ai-decision-chip${showInfo ? ' is-on' : ''}`}
-              aria-label="How this decision is reached"
+              aria-label="How this forecast is reached"
               aria-expanded={showInfo}
               onClick={() => setShowInfo((open) => !open)}
             >
@@ -341,9 +411,9 @@ export function AgentDecisionBox({
                 }`}
                 title={
                   item.analysis
-                    ? `${item.timeframe} · ${BIAS_LABEL[item.analysis.bias]} · ${formatPercent(
-                        item.analysis.confidence,
-                      )} confidence`
+                    ? `${item.timeframe} context · ${item.analysis.bias} · ${formatPercent(
+                        item.analysis.forecast.confidence,
+                      )} on its own horizon`
                     : `${item.timeframe} · waiting for candles`
                 }
               >
@@ -355,26 +425,24 @@ export function AgentDecisionBox({
               type="button"
               className="ai-decision-open"
               onClick={onOpenPanel}
-              title="Open full agent panel"
-              aria-label="Open full agent panel"
+              title="Open the agent panel"
+              aria-label="Open the agent panel"
             >
               <Bot size={11} />
-              Open full agents
+              Agents
               <ChevronRight size={12} />
             </button>
           </div>
 
           {showInfo ? (
             <p className="ai-decision-note">
-              Up to eight specialists — regime, trend, momentum, MACD, levels, structure, whale flow
-              and higher-timeframe context — vote, and the ensemble weights them with what this
-              browser has learned from past outcomes. {agreement ? `${agreement}. ` : ''}
-              {strike
-                ? `The game is UP or DOWN from the ${formatPrice(strike.price, true)} strike at the ${kalshiClockLabel(strike.windowEnd)} cut. `
-                : ''}
-              Only their trust weights adapt; the reasons stay visible.{' '}
+              Eight specialists — regime, trend, momentum, MACD, levels, structure, whale flow and
+              higher-timeframe context — each project their read across the next{' '}
+              {forecast.horizonBars} bars, and the director weighs those projections with what has
+              been learned from settled forecasts. {agreement ? `${agreement}. ` : ''}
+              {forecast.modelNote}{' '}
               {stale
-                ? `The feed is ${feedState}, so this is the last decision the data supported rather than a live one. `
+                ? `The feed is ${feedState}, so this is the last forecast the data supported rather than a live one. `
                 : ''}
               Nothing here places trades.
             </p>

@@ -5,9 +5,9 @@ import type { Page } from '@playwright/test'
 test.use({ viewport: { width: 1512, height: 982 } })
 
 /**
- * The floating AI decision window: the ensemble's general call, kept in chart context.
- * Demo mode is deliberate — its candles are generated locally, so the verdict and the window's
- * chrome stay deterministic without touching the exchange.
+ * The floating AI forecast window: the ensemble's horizon call, kept in chart context.
+ * Demo mode is deliberate — its candles are generated locally, so the forecast and the
+ * window's chrome stay deterministic without touching the exchange.
  */
 async function openDemoChart(page: Page, timeframe = '1m') {
   await page.goto(`/?source=demo&interval=${timeframe}`)
@@ -17,29 +17,37 @@ async function openDemoChart(page: Page, timeframe = '1m') {
   return decision
 }
 
-test('shows the ensemble call with its levels, reason and higher frames', async ({ page }) => {
+test('shows the horizon forecast with its finish, drift and next steps', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const decision = await openDemoChart(page)
 
-  // The window is the ensemble's verdict, not a specialist's: one call, one confidence.
-  await expect(decision.locator('.ai-decision-badge')).toContainText(
-    /Bullish|Bearish|No trade|Waiting/,
+  // The window is a forward call, not a mood: a side or a drift, a number, a horizon.
+  await expect(decision.locator('.ai-decision-badge')).toContainText(/\d+%|ATR/)
+  await expect(decision.locator('.ai-decision-call')).toContainText(
+    /Above strike|Below strike|Coin flip|Higher|Lower|Sideways/,
   )
-  await expect(decision.locator('.ai-decision-call')).toBeVisible()
-  await expect(decision).toContainText(/score/i)
-  await expect(decision).toContainText(/regime/i)
-  await expect(decision).toContainText(/support/i)
-  await expect(decision).toContainText(/resistance/i)
-  // The split bar carries how much of the ensemble agrees, as a hover away from the headline.
-  await expect(decision.locator('.ai-decision-split')).toHaveAttribute('title', /specialists/)
-  await expect(decision.locator('.ai-decision-reason')).not.toBeEmpty()
+  await expect(decision).toContainText(/finish/i)
+  await expect(decision).toContainText(/drift/i)
+  await expect(decision).toContainText(/horizon/i)
+  await expect(decision).toContainText(/path/i)
+  await expect(decision).toContainText(/support reach/i)
+  await expect(decision).toContainText(/resistance reach/i)
+  // What the model expects next, in order — the MACD AI idiom, for the chart itself.
+  await expect(decision.locator('.agent-then-line')).toContainText(/Next:/)
+  // The split bar carries how much of the ensemble leans the same way over the horizon.
+  await expect(decision.locator('.ai-decision-split')).toHaveAttribute('title', /agents/)
+  await expect(decision.locator('.ai-decision-reason').first()).not.toBeEmpty()
   // Higher frames feeding the context agent are shown, not hidden behind the panel.
   await expect(decision.locator('.ai-decision-context-chip').first()).toBeVisible()
 
   // The deep breakdown stays one click away rather than living in the window.
-  await decision.getByRole('button', { name: /Agents/ }).click()
+  await decision.getByRole('button', { name: /agent panel/i }).click()
   await expect(page.locator('.agent-panel')).toBeVisible()
+  // The panel leads with the same forward call, its timeline and the specialists behind it.
+  await expect(page.locator('.agent-panel')).toContainText(/Horizon call/i)
+  await expect(page.locator('.agent-panel')).toContainText(/What happens next/i)
+  await expect(page.locator('.agent-panel .agent-card-forecast').first()).toBeVisible()
   expect(errors).toEqual([])
 })
 

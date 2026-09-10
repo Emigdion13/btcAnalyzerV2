@@ -1,40 +1,35 @@
 import { scoreZone, type BookStrengthBucket } from '../../shared/order-book'
-import { INTERVAL_SECONDS, type ConnectionState, type OrderBookView, type WhaleFlow } from '../../shared/coinbase'
+import {
+  INTERVAL_SECONDS,
+  type ConnectionState,
+  type OrderBookView,
+  type WhaleFlow,
+} from '../../shared/coinbase'
 import { formatNotional } from '../../shared/whale-flow'
 import { ta } from './indicator-runtime'
 import {
   KALSHI_WINDOW_SECONDS,
   formatCountdown,
   strikePosition,
-  type StrikeContext,
   type StrikeSide,
 } from './kalshi-window'
 import { formatPrice } from './market'
-import {
-  SR_BREAKS_RETESTS_DEFAULTS,
-  type Candle,
-  type Timeframe,
-} from './types'
+import { SR_BREAKS_RETESTS_DEFAULTS, type Candle, type Timeframe } from './types'
 import { calculateSrBreaksRetests } from './sr-breaks-retests'
+import { AGENT_PRETRAINED_LEARNING } from './agent-pretrained'
+import {
+  buildPriceForecast,
+  type ForecastPath,
+  type ForecastThrust,
+  type PriceForecast,
+  type TouchVerdict,
+} from './price-forecast'
 
 export type AgentBias = 'bullish' | 'bearish' | 'neutral'
 export type SpecializedAgentId =
-  | 'regime'
-  | 'trend'
-  | 'momentum'
-  | 'macd'
-  | 'level-strength'
-  | 'structure'
-  | 'whale'
-  | 'context'
+  'regime' | 'trend' | 'momentum' | 'macd' | 'level-strength' | 'structure' | 'whale' | 'context'
 export type AgentId = SpecializedAgentId | 'ensemble'
-export type MarketRegime =
-  | 'trend-up'
-  | 'trend-down'
-  | 'range'
-  | 'breakout'
-  | 'breakdown'
-  | 'chop'
+export type MarketRegime = 'trend-up' | 'trend-down' | 'range' | 'breakout' | 'breakdown' | 'chop'
 
 export interface ContextSignal {
   timeframe: Timeframe
@@ -60,8 +55,16 @@ export interface AnalysisSnapshot {
    * every agent is playing — UP or DOWN from the strike at the next :00/:15/:30/:45.
    * Null when no chart timeframe can defend a strike (coarse grids, stale candles).
    */
-  strike?: StrikeContext | null
+  strike?: StrikeInput | null
+  /**
+   * Bars ahead the forecast answers for. Defaults to the timeframe's suggested horizon,
+   * so a caller that does not care about horizons still gets a forward call.
+   */
+  horizonBars?: number
 }
+
+/** The strike a forecast is pinned to, with where it came from. */
+export type StrikeInput = import('./kalshi-window').StrikeContext & { label?: string }
 
 export interface AgentOpinion {
   id: AgentId
@@ -119,6 +122,12 @@ export interface MarketAnalysis {
   reasons: string[]
   risks: string[]
   agents: AgentOpinion[]
+  /**
+   * The forward call: what price is expected to do over the horizon, and whether it
+   * finishes above or below the strike line. This is the half of the analysis that
+   * answers "what will it do", where `bias`/`score` describe what it is doing now.
+   */
+  forecast: PriceForecast
   learningRecord: LearningRecord
   summary: {
     currentPrice: number
@@ -129,11 +138,33 @@ export interface MarketAnalysis {
   }
 }
 
+/** One agent's horizon projection, in the form the learner grades. */
+export interface ForecastLearningEntry {
+  id: AgentId
+  driftAtr: number
+  finishAboveProbability: number | null
+  strikeTouchProbability: number | null
+  strikeTouch: boolean
+  touchVerdict: TouchVerdict
+  path: ForecastPath
+  thrust: ForecastThrust
+  confidence: number
+}
+
 export interface LearningRecord {
   timeframe: Timeframe
   regime: MarketRegime
+  /** Bars ahead the forecast answered for, and the scale it was measured against. */
+  horizonBars: number
+  sigmaAtr: number
+  /** The strike the forecast was pinned to, when the chart had one. */
+  strike: number | null
   ensemble: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>
   agents: Pick<AgentOpinion, 'id' | 'bias' | 'score' | 'confidence'>[]
+  /** Director projection, graded exactly like a specialist's. */
+  forecast: ForecastLearningEntry
+  /** Per-specialist projections, in the specialists' own order. */
+  agentForecasts: ForecastLearningEntry[]
 }
 
 /** One higher timeframe feeding the ensemble, with the state of its own feed. */
@@ -165,6 +196,28 @@ export interface LearningOutcome {
   move: number
   /** Moves inside ±threshold are treated as flat / no directional edge. Default 0.2%. */
   flatThreshold?: number
+  /** Realized move over the horizon in ATR units, when the caller can measure it. */
+  driftAtr?: number | null
+  /** Realized close minus the forecast's pinned strike, in ATR units. */
+  strikeDeltaAtr?: number | null
+  /** Whether the pinned strike was traded through before the horizon closed. */
+  touched?: boolean | null
+}
+
+/** Suggested forecast horizon per chart timeframe — long enough to matter, short enough to grade. */
+export const FORECAST_HORIZON_BARS: Record<Timeframe, number> = {
+  '1m': 10,
+  '3m': 10,
+  '5m': 10,
+  '15m': 10,
+  '1h': 8,
+  '4h': 6,
+  '1D': 5,
+  '1W': 4,
+}
+
+export function suggestedForecastHorizon(timeframe: Timeframe): number {
+  return FORECAST_HORIZON_BARS[timeframe] ?? 10
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -324,15 +377,21 @@ function levelFromSrZone(
     )
     .sort(
       (a, b) =>
-        Math.abs(a.level - currentPrice) - Math.abs(b.level - currentPrice) || b.fillOpacity - a.fillOpacity,
+        Math.abs(a.level - currentPrice) - Math.abs(b.level - currentPrice) ||
+        b.fillOpacity - a.fillOpacity,
     )[0]
   if (!zone) return null
   const fallbackHalfWidth = Math.max(atrValue * 0.4, currentPrice * 0.001)
-  const bottom = side === 'support' ? zone.boundary ?? zone.level - fallbackHalfWidth : zone.level
-  const top = side === 'support' ? zone.level : zone.boundary ?? zone.level + fallbackHalfWidth
+  const bottom = side === 'support' ? (zone.boundary ?? zone.level - fallbackHalfWidth) : zone.level
+  const top = side === 'support' ? zone.level : (zone.boundary ?? zone.level + fallbackHalfWidth)
   const touches = countTouches(candles, zone.level, atrValue * 0.25, side)
   const bookScore = book
-    ? scoreZone(book, Math.max(top, bottom), Math.min(top, bottom), side === 'support' ? 'bid' : 'ask')
+    ? scoreZone(
+        book,
+        Math.max(top, bottom),
+        Math.min(top, bottom),
+        side === 'support' ? 'bid' : 'ask',
+      )
     : null
   const volumeBaseline = average(candles.slice(-30).map((candle) => candle.volume)) || 1
   const volumeScore = clamp(Math.abs(zone.volume) / (volumeBaseline * 2.5), 0, 1)
@@ -380,7 +439,11 @@ function threatLabel(threat: number): string {
   return 'not a problem from this distance'
 }
 
-function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]): SpecializedOpinion<'regime'> & {
+function analyzeRegime(
+  currentPrice: number,
+  atrValue: number,
+  candles: Candle[],
+): SpecializedOpinion<'regime'> & {
   regime: MarketRegime
 } {
   const close = candles.map((candle) => candle.close)
@@ -394,7 +457,8 @@ function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]
   const efficiency = gross > 0 ? net / gross : 0
   const atrSeries = atr(candles, 14)
   const lastAtr = nonNullTail(atrSeries) ?? atrValue
-  const atrMean = average(atrSeries.slice(-10).filter((value): value is number => value !== null)) || lastAtr
+  const atrMean =
+    average(atrSeries.slice(-10).filter((value): value is number => value !== null)) || lastAtr
   const breakoutHigh = Math.max(...candles.slice(-21, -1).map((candle) => candle.high))
   const breakoutLow = Math.min(...candles.slice(-21, -1).map((candle) => candle.low))
   const ema50Slope = slopeScore(ema50, 10, lastAtr)
@@ -432,12 +496,20 @@ function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]
   const reasons = [
     `Efficiency ratio ${efficiency.toFixed(2)}${efficiency >= 0.48 ? ' suggests directional flow' : efficiency <= 0.28 ? ' suggests range conditions' : ' is indecisive'}.`,
   ]
-  if (regime === 'breakout') reasons.push(`Price cleared the recent 20-bar high by ${(currentPrice - breakoutHigh).toFixed(2)}.`)
-  if (regime === 'breakdown') reasons.push(`Price lost the recent 20-bar low by ${(breakoutLow - currentPrice).toFixed(2)}.`)
+  if (regime === 'breakout')
+    reasons.push(
+      `Price cleared the recent 20-bar high by ${(currentPrice - breakoutHigh).toFixed(2)}.`,
+    )
+  if (regime === 'breakdown')
+    reasons.push(`Price lost the recent 20-bar low by ${(breakoutLow - currentPrice).toFixed(2)}.`)
   if (regime === 'trend-up' || regime === 'trend-down')
-    reasons.push(`EMA 50 slope is ${ema50Slope > 0 ? 'rising' : 'falling'} (${ema50Slope.toFixed(2)} normalized).`)
-  if (regime === 'range') reasons.push('Price is staying close to the 20 EMA while directional efficiency remains low.')
-  if (regime === 'chop') reasons.push('Trend and range tests disagree, so the environment is being treated as chop.')
+    reasons.push(
+      `EMA 50 slope is ${ema50Slope > 0 ? 'rising' : 'falling'} (${ema50Slope.toFixed(2)} normalized).`,
+    )
+  if (regime === 'range')
+    reasons.push('Price is staying close to the 20 EMA while directional efficiency remains low.')
+  if (regime === 'chop')
+    reasons.push('Trend and range tests disagree, so the environment is being treated as chop.')
   return {
     id: 'regime',
     label: 'Regime Agent',
@@ -446,7 +518,8 @@ function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]
     score,
     confidence,
     reasons,
-    warnings: regime === 'chop' ? ['Choppy conditions reduce the reliability of directional signals.'] : [],
+    warnings:
+      regime === 'chop' ? ['Choppy conditions reduce the reliability of directional signals.'] : [],
     metrics: {
       regime,
       efficiency,
@@ -459,7 +532,11 @@ function analyzeRegime(currentPrice: number, atrValue: number, candles: Candle[]
   }
 }
 
-function analyzeTrend(currentPrice: number, atrValue: number, candles: Candle[]): SpecializedOpinion<'trend'> {
+function analyzeTrend(
+  currentPrice: number,
+  atrValue: number,
+  candles: Candle[],
+): SpecializedOpinion<'trend'> {
   const close = candles.map((candle) => candle.close)
   const ema20 = ta.ema(close, 20)
   const ema50 = ta.ema(close, 50)
@@ -503,7 +580,9 @@ function analyzeTrend(currentPrice: number, atrValue: number, candles: Candle[])
   ]
   const warnings =
     Math.abs(extensionAtr) > 2.4
-      ? [`Price is stretched ${extensionAtr.toFixed(2)} ATR from the 20 EMA; continuation may need a pullback.`]
+      ? [
+          `Price is stretched ${extensionAtr.toFixed(2)} ATR from the 20 EMA; continuation may need a pullback.`,
+        ]
       : []
   return {
     id: 'trend',
@@ -554,21 +633,30 @@ function analyzeMomentum(
   const rsiBase = clamp((lastRsi - 50) / 20, -1, 1)
   const rsiSlope = clamp((lastRsi - previousRsi) / 8, -1, 1)
   const histNorm = clamp((lastHist / Math.max(atrValue, currentPrice * 0.0005)) * 4, -1, 1)
-  const histDelta = clamp(((lastHist - previousHist) / Math.max(atrValue, currentPrice * 0.0005)) * 10, -1, 1)
+  const histDelta = clamp(
+    ((lastHist - previousHist) / Math.max(atrValue, currentPrice * 0.0005)) * 10,
+    -1,
+    1,
+  )
   const macdCross = lastLine > lastSignal ? 1 : -1
-  let score = 0.42 * rsiBase + 0.18 * rsiSlope + 0.25 * histNorm + 0.1 * histDelta + 0.05 * macdCross
+  let score =
+    0.42 * rsiBase + 0.18 * rsiSlope + 0.25 * histNorm + 0.1 * histDelta + 0.05 * macdCross
   if (regime === 'range' && lastRsi > 68) score -= 0.18
   if (regime === 'range' && lastRsi < 32) score += 0.18
-  if ((regime === 'trend-up' || regime === 'breakout') && lastRsi > 68 && rsiSlope >= 0) score += 0.07
-  if ((regime === 'trend-down' || regime === 'breakdown') && lastRsi < 32 && rsiSlope <= 0) score -= 0.07
+  if ((regime === 'trend-up' || regime === 'breakout') && lastRsi > 68 && rsiSlope >= 0)
+    score += 0.07
+  if ((regime === 'trend-down' || regime === 'breakdown') && lastRsi < 32 && rsiSlope <= 0)
+    score -= 0.07
   score = clamp(score, -1, 1)
   const reasons = [
     `RSI is ${lastRsi.toFixed(1)} and ${lastRsi >= previousRsi ? 'rising' : 'falling'} from ${previousRsi.toFixed(1)}.`,
     `MACD is ${lastLine > lastSignal ? 'above' : 'below'} signal with histogram ${lastHist >= 0 ? 'positive' : 'negative'} (${lastHist.toFixed(3)}).`,
   ]
   const warnings: string[] = []
-  if (lastRsi > 72) warnings.push('RSI is extended; upside momentum is strong but vulnerable to exhaustion.')
-  if (lastRsi < 28) warnings.push('RSI is stretched lower; downside momentum is strong but vulnerable to snapback.')
+  if (lastRsi > 72)
+    warnings.push('RSI is extended; upside momentum is strong but vulnerable to exhaustion.')
+  if (lastRsi < 28)
+    warnings.push('RSI is stretched lower; downside momentum is strong but vulnerable to snapback.')
   return {
     id: 'momentum',
     label: 'Momentum Agent',
@@ -673,8 +761,10 @@ function analyzeMacd(
   // zero when RSI is weak or aiming the same side — the common, harmless case.
   const rsiSeries = ta.rsi(close, 14)
   const lastRsi = nonNullTail(rsiSeries)
-  const previousRsi = lastRsi !== null ? numberOrNull(rsiSeries[rsiSeries.length - 4]) ?? lastRsi : null
-  const rsiSlope = lastRsi !== null && previousRsi !== null ? clamp((lastRsi - previousRsi) / 8, -1, 1) : 0
+  const previousRsi =
+    lastRsi !== null ? (numberOrNull(rsiSeries[rsiSeries.length - 4]) ?? lastRsi) : null
+  const rsiSlope =
+    lastRsi !== null && previousRsi !== null ? clamp((lastRsi - previousRsi) / 8, -1, 1) : 0
   const rsiSignal = lastRsi !== null ? clamp((lastRsi - 50) / 30, -1, 1) : 0
   const callDir = score >= 0.1 ? 1 : score <= -0.1 ? -1 : 0
   let rsiResistance = 0
@@ -715,9 +805,13 @@ function analyzeMacd(
           : `RSI ${lastRsi.toFixed(1)} is rolling ${callDir > 0 ? 'over' : 'under'} against the ${call} MACD read — the move is running into resistance.`,
       )
     } else if (rsiResistance >= 0.1) {
-      reasons.push(`RSI ${lastRsi.toFixed(1)} leans against the ${call} MACD read but is not strong enough to stand in the way.`)
+      reasons.push(
+        `RSI ${lastRsi.toFixed(1)} leans against the ${call} MACD read but is not strong enough to stand in the way.`,
+      )
     } else {
-      reasons.push(`RSI ${lastRsi.toFixed(1)} is aiming the same side as the ${call} MACD read — no RSI resistance to this move.`)
+      reasons.push(
+        `RSI ${lastRsi.toFixed(1)} is aiming the same side as the ${call} MACD read — no RSI resistance to this move.`,
+      )
     }
   }
 
@@ -744,7 +838,11 @@ function analyzeMacd(
     label: 'MACD Agent',
     bias: biasFromScore(score, 0.15),
     score,
-    confidence: clamp(0.38 + Math.abs(score) * 0.45 + (freshCross ? 0.08 : 0) - rsiResistance * 0.12, 0.3, 0.92),
+    confidence: clamp(
+      0.38 + Math.abs(score) * 0.45 + (freshCross ? 0.08 : 0) - rsiResistance * 0.12,
+      0.3,
+      0.92,
+    ),
     reasons,
     warnings,
     metrics: {
@@ -772,13 +870,18 @@ function analyzeLevelStrength(
   book: OrderBookView | null | undefined,
 ): SpecializedOpinion<'level-strength'> & { summary: LevelStrengthSummary } {
   const pivots = pivotLevels(candles, atrValue, currentPrice)
-  const support = chooseLevel(levelFromSrZone(candles, book, atrValue, currentPrice, 'support'), pivots.nearestSupport)
+  const support = chooseLevel(
+    levelFromSrZone(candles, book, atrValue, currentPrice, 'support'),
+    pivots.nearestSupport,
+  )
   const resistance = chooseLevel(
     levelFromSrZone(candles, book, atrValue, currentPrice, 'resistance'),
     pivots.nearestResistance,
   )
   const supportPressure = support ? support.strength * distanceWeight(support.distanceAtr) : 0
-  const resistancePressure = resistance ? resistance.strength * distanceWeight(resistance.distanceAtr) : 0
+  const resistancePressure = resistance
+    ? resistance.strength * distanceWeight(resistance.distanceAtr)
+    : 0
   const imbalance = clamp(book?.imbalance ?? 0, -1, 1)
   const score = clamp(supportPressure - resistancePressure + imbalance * 0.18, -1, 1)
   const reasons: string[] = []
@@ -790,9 +893,11 @@ function analyzeLevelStrength(
     reasons.push(
       `Nearest resistance is ${resistance.source} at ${resistance.price.toFixed(2)} with strength ${resistance.strength.toFixed(2)}${resistance.bookBucket ? ` and book bucket ${resistance.bookBucket}` : ''} — ${resistance.distanceAtr.toFixed(2)} ATR above, ${threatLabel(resistancePressure)}.`,
     )
-  if (!support && !resistance) reasons.push('No nearby structure level could be confirmed from SR zones or pivots.')
+  if (!support && !resistance)
+    reasons.push('No nearby structure level could be confirmed from SR zones or pivots.')
   else {
-    if (!resistance) reasons.push('No confirmed resistance nearby — the path above price is clear of levels.')
+    if (!resistance)
+      reasons.push('No confirmed resistance nearby — the path above price is clear of levels.')
     if (!support) reasons.push('No confirmed support nearby — a drop has no cushion in sight.')
   }
   if (book) reasons.push(`Near-mid book imbalance is ${imbalance.toFixed(2)}.`)
@@ -862,14 +967,20 @@ function analyzeStructure(
     reasons.push(
       `Price sits ${(position * 100).toFixed(0)}% of the way from support to resistance; room up is ${roomUpAtr.toFixed(2)} ATR, room down is ${roomDownAtr.toFixed(2)} ATR.`,
     )
-    if (position > 0.72) warnings.push('Price is trading in the upper portion of its nearest structure range.')
-    if (position < 0.28) warnings.push('Price is trading in the lower portion of its nearest structure range.')
+    if (position > 0.72)
+      warnings.push('Price is trading in the upper portion of its nearest structure range.')
+    if (position < 0.28)
+      warnings.push('Price is trading in the lower portion of its nearest structure range.')
   } else if (resistance) {
     score -= clamp(distanceWeight(resistance.distanceAtr) * 0.55, 0, 0.55)
-    reasons.push(`Nearest confirmed structure is resistance ${resistance.distanceAtr.toFixed(2)} ATR above.`)
+    reasons.push(
+      `Nearest confirmed structure is resistance ${resistance.distanceAtr.toFixed(2)} ATR above.`,
+    )
   } else if (support) {
     score += clamp(distanceWeight(support.distanceAtr) * 0.55, 0, 0.55)
-    reasons.push(`Nearest confirmed structure is support ${support.distanceAtr.toFixed(2)} ATR below.`)
+    reasons.push(
+      `Nearest confirmed structure is support ${support.distanceAtr.toFixed(2)} ATR below.`,
+    )
   }
   if (support && support.distanceAtr <= 0.8) score += support.strength * 0.22
   if (resistance && resistance.distanceAtr <= 0.8) score -= resistance.strength * 0.22
@@ -879,7 +990,11 @@ function analyzeStructure(
     label: 'Structure Agent',
     bias: biasFromScore(score, 0.12),
     score,
-    confidence: clamp(0.32 + Math.abs(score) * 0.42 + (support && resistance ? 0.1 : 0), 0.25, 0.88),
+    confidence: clamp(
+      0.32 + Math.abs(score) * 0.42 + (support && resistance ? 0.1 : 0),
+      0.25,
+      0.88,
+    ),
     reasons,
     warnings,
     metrics: {
@@ -925,8 +1040,12 @@ function analyzeContext(
     bullishWeight + bearishWeight > 0
       ? Math.abs(bullishWeight - bearishWeight) / (bullishWeight + bearishWeight)
       : 0
-  const bullish = usable.filter((context) => context.score >= 0.12).map((context) => context.timeframe)
-  const bearish = usable.filter((context) => context.score <= -0.12).map((context) => context.timeframe)
+  const bullish = usable
+    .filter((context) => context.score >= 0.12)
+    .map((context) => context.timeframe)
+  const bearish = usable
+    .filter((context) => context.score <= -0.12)
+    .map((context) => context.timeframe)
   const mixed = bullish.length > 0 && bearish.length > 0
   const reasons: string[] = []
   if (bullish.length && !bearish.length)
@@ -943,13 +1062,18 @@ function analyzeContext(
       .join(' · '),
   )
   const warnings: string[] = []
-  if (mixed) warnings.push('Higher-timeframe context is split, so chart-timeframe signals deserve caution.')
+  if (mixed)
+    warnings.push('Higher-timeframe context is split, so chart-timeframe signals deserve caution.')
   return {
     id: 'context',
     label: 'Context Agent',
     bias: biasFromScore(score, 0.1),
     score,
-    confidence: clamp(0.26 + confidenceBase * 0.42 + agreement * 0.22 + Math.abs(score) * 0.12, 0.24, 0.92),
+    confidence: clamp(
+      0.26 + confidenceBase * 0.42 + agreement * 0.22 + Math.abs(score) * 0.12,
+      0.24,
+      0.92,
+    ),
     reasons,
     warnings,
     metrics: {
@@ -1055,10 +1179,7 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
   }
 }
 
-const BASE_WEIGHTS: Record<
-  MarketRegime,
-  Record<SpecializedAgentId, number>
-> = {
+const BASE_WEIGHTS: Record<MarketRegime, Record<SpecializedAgentId, number>> = {
   'trend-up': {
     regime: 0.11,
     trend: 0.22,
@@ -1133,6 +1254,19 @@ export function defaultAgentLearningState(): AgentLearningState {
   }
 }
 
+/**
+ * What a fresh install starts from: the weights trained offline on real BTC-USD
+ * history by `agent-training.test.ts`. Reset-to-neutral is still available —
+ * this is the prior, not a claim.
+ */
+export function pretrainedAgentLearningState(): AgentLearningState {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    agents: structuredClone(AGENT_PRETRAINED_LEARNING.agents),
+  }
+}
+
 function readCell(cell?: PerformanceCell): PerformanceCell {
   return cell ? { skill: cell.skill, samples: cell.samples } : neutralCell()
 }
@@ -1153,6 +1287,34 @@ function effectiveAgentWeight(
 }
 
 /**
+ * Trust weights for the horizon forecast: the same regime table and learned skill the
+ * live ensemble uses, tilted by how far ahead the question is. A whale sweep says more
+ * about the next three bars than the next twenty; a daily structure says the opposite.
+ */
+function forecastWeights(
+  regime: MarketRegime,
+  timeframe: Timeframe,
+  learning: AgentLearningState,
+  specialists: SpecializedOpinion[],
+  horizonBars: number,
+): Map<SpecializedAgentId, number> {
+  const weights = BASE_WEIGHTS[regime]
+  const fastPace = clamp(Math.sqrt(6 / Math.max(horizonBars, 1)), 0.6, 1.4)
+  const slowPace = clamp(Math.sqrt(Math.max(horizonBars, 1) / 8), 0.7, 1.5)
+  const out = new Map<SpecializedAgentId, number>()
+  for (const opinion of specialists) {
+    const pace = FAST_AGENTS.has(opinion.id) ? fastPace : SLOW_AGENTS.has(opinion.id) ? slowPace : 1
+    out.set(
+      opinion.id,
+      (weights[opinion.id] ?? 0.1) *
+        effectiveAgentWeight(learning, opinion.id, regime, timeframe) *
+        pace,
+    )
+  }
+  return out
+}
+
+/**
  * Agents that read the next few minutes versus agents that read the next few hours.
  * As the 15-minute cut approaches, the window call belongs to the fast readers: a
  * whale sweep or a MACD trigger says more about the next 3 minutes than the daily
@@ -1163,7 +1325,7 @@ const FAST_AGENTS: ReadonlySet<SpecializedAgentId> = new Set(['whale', 'momentum
 const SLOW_AGENTS: ReadonlySet<SpecializedAgentId> = new Set(['context', 'regime', 'structure'])
 
 export interface StrikeFrame {
-  strike: StrikeContext
+  strike: StrikeInput
   currentPrice: number
   atrValue: number
 }
@@ -1192,7 +1354,8 @@ function frameStrikeCall(
     `Price sits ${signedDelta} ${position.side} the ${strikePrice} strike with ${countdown} to the ${strike.expiryLabel} cut — the call is ${call ?? 'whether UP or DOWN holds'}.`,
   )
   const holding = call !== null && Math.sign(score) === (position.delta >= 0 ? 1 : -1)
-  if (call && holding) reasons.push(`The ${call} call and the side agree — this is a hold-the-lead call.`)
+  if (call && holding)
+    reasons.push(`The ${call} call and the side agree — this is a hold-the-lead call.`)
   // Unshifted in reverse urgency so the finished order reads: the cut, the cross, the chart.
   if ((INTERVAL_SECONDS[timeframe] ?? 0) > KALSHI_WINDOW_SECONDS)
     warnings.unshift(
@@ -1272,14 +1435,19 @@ function buildEnsemble(
     0.97,
   )
   for (const opinion of aligned.slice(0, 3)) {
-    if (biasFromScore(score) === opinion.bias && opinion.bias !== 'neutral') reasons.push(opinion.reasons[0] ?? opinion.label)
+    if (biasFromScore(score) === opinion.bias && opinion.bias !== 'neutral')
+      reasons.push(opinion.reasons[0] ?? opinion.label)
     else if (opinion.bias !== 'neutral' && Math.abs(opinion.score) >= 0.2)
-      warnings.push(opinion.warnings[0] ?? `${opinion.label} disagrees with the current ensemble bias.`)
+      warnings.push(
+        opinion.warnings[0] ?? `${opinion.label} disagrees with the current ensemble bias.`,
+      )
   }
   if (contextAlignment < -0.08 && context)
     warnings.push('Higher-timeframe context is fighting the chart-timeframe impulse.')
-  if (contextAlignment > 0.08 && context) reasons.push('Higher-timeframe context agrees with the chart-timeframe setup.')
-  if (!reasons.length) reasons.push('Specialists are mixed, so the ensemble is favoring caution over conviction.')
+  if (contextAlignment > 0.08 && context)
+    reasons.push('Higher-timeframe context agrees with the chart-timeframe setup.')
+  if (!reasons.length)
+    reasons.push('Specialists are mixed, so the ensemble is favoring caution over conviction.')
   if (strikeFrame) frameStrikeCall(reasons, warnings, strikeFrame, score, timeframe)
   return {
     id: 'ensemble',
@@ -1313,7 +1481,8 @@ export function analyzeMarket(
       Number.isFinite(candle.close) &&
       candle.high >= candle.low,
   )
-  if (candles.length < 30) throw new Error('At least 30 candles are required for market-agent analysis.')
+  if (candles.length < 30)
+    throw new Error('At least 30 candles are required for market-agent analysis.')
   const currentPrice = last(candles).close
   const atrValue = nonNullTail(atr(candles, 14)) ?? Math.max(currentPrice * 0.003, 1)
   const regime = analyzeRegime(currentPrice, atrValue, candles)
@@ -1345,6 +1514,34 @@ export function analyzeMarket(
     specialists,
     strikeFrame,
   )
+  const horizonBars = Math.max(
+    1,
+    Math.round(snapshot.horizonBars ?? suggestedForecastHorizon(snapshot.timeframe)),
+  )
+  const forecast = buildPriceForecast({
+    candles,
+    timeframe: snapshot.timeframe,
+    horizonBars,
+    barSeconds: INTERVAL_SECONDS[snapshot.timeframe] ?? 60,
+    price: currentPrice,
+    atr: atrValue,
+    regime: regime.regime,
+    specialists,
+    levels: levelStrength.summary,
+    weights: forecastWeights(regime.regime, snapshot.timeframe, learning, specialists, horizonBars),
+    strike: strikeFrame
+      ? {
+          price: strikeFrame.strike.price,
+          windowStart: strikeFrame.strike.windowStart,
+          windowEnd: strikeFrame.strike.windowEnd,
+          secondsLeft: strikeFrame.strike.secondsLeft,
+          expiryLabel: strikeFrame.strike.expiryLabel,
+          provisional: strikeFrame.strike.provisional,
+          label: strikeFrame.strike.label ?? 'strike',
+        }
+      : null,
+    anchorTime: last(candles).time,
+  })
   const risks = [
     ...new Set(
       [...ensemble.warnings, ...specialists.flatMap((opinion) => opinion.warnings)]
@@ -1360,9 +1557,13 @@ export function analyzeMarket(
     reasons: ensemble.reasons,
     risks,
     agents: [...specialists, ensemble],
+    forecast,
     learningRecord: {
       timeframe: snapshot.timeframe,
       regime: regime.regime,
+      horizonBars: forecast.horizonBars,
+      sigmaAtr: forecast.snapshot.sigmaAtr,
+      strike: forecast.snapshot.strike,
       ensemble: {
         id: ensemble.id,
         bias: ensemble.bias,
@@ -1374,6 +1575,28 @@ export function analyzeMarket(
         bias: opinion.bias,
         score: opinion.score,
         confidence: opinion.confidence,
+      })),
+      forecast: {
+        id: 'ensemble',
+        driftAtr: forecast.expectedMoveAtr,
+        finishAboveProbability: forecast.finishAboveProbability,
+        strikeTouchProbability: forecast.strikeTouchProbability,
+        strikeTouch: forecast.strikeTouch,
+        touchVerdict: forecast.touchVerdict,
+        path: forecast.path,
+        thrust: forecast.thrust,
+        confidence: forecast.confidence,
+      },
+      agentForecasts: specialists.map((opinion, index) => ({
+        id: opinion.id,
+        driftAtr: forecast.agents[index].driftAtr,
+        finishAboveProbability: forecast.agents[index].finishAboveProbability,
+        strikeTouchProbability: forecast.agents[index].strikeTouchProbability,
+        strikeTouch: forecast.agents[index].strikeTouch,
+        touchVerdict: forecast.agents[index].touchVerdict,
+        path: forecast.agents[index].path,
+        thrust: forecast.agents[index].thrust,
+        confidence: forecast.agents[index].confidence,
       })),
     },
     summary: {
@@ -1402,6 +1625,77 @@ export function actualBiasFromOutcome(outcome: LearningOutcome): AgentBias {
 function utility(prediction: Pick<AgentOpinion, 'score'>, actual: AgentBias) {
   const actualValue = actual === 'bullish' ? 1 : actual === 'bearish' ? -1 : 0
   return clamp(1 - Math.abs(prediction.score - actualValue) / 2, 0, 1)
+}
+
+/**
+ * Turn a probability into a skill score on the same 0–1 footing as the others:
+ * a perfect call scores 1, a coin flip 0.5, a confident miss 0.
+ * Works for "finishes above" and for "the strike gets touched".
+ */
+function calibrationScore(probability: number, happened: boolean): number {
+  const brier = (probability - (happened ? 1 : 0)) ** 2
+  return clamp(0.5 + (0.75 - brier) * 2, 0, 1)
+}
+
+/**
+ * How good one agent's horizon projection was, blended with its live read.
+ *
+ * The directional read keeps its weight; the rest is the projection's own report
+ * card — drift error measured against the horizon's move scale, probability
+ * calibration against the strike outcome, and the touch call when it was genuinely
+ * uncertain (a strike five ATR away "not touched" is not evidence of skill).
+ */
+function forecastUtility(
+  entry: ForecastLearningEntry,
+  outcome: LearningOutcome,
+  record: LearningRecord,
+): number | null {
+  const components: { score: number; weight: number }[] = []
+  if (outcome.driftAtr != null && Number.isFinite(outcome.driftAtr)) {
+    const scale = Math.max(1.5, record.sigmaAtr)
+    components.push({
+      score: clamp(1 - Math.abs(entry.driftAtr - outcome.driftAtr) / scale, 0, 1),
+      weight: 0.45,
+    })
+  }
+  if (
+    outcome.strikeDeltaAtr != null &&
+    Number.isFinite(outcome.strikeDeltaAtr) &&
+    entry.finishAboveProbability != null
+  ) {
+    components.push({
+      score: calibrationScore(entry.finishAboveProbability, outcome.strikeDeltaAtr >= 0),
+      weight: 0.35,
+    })
+  }
+  if (
+    outcome.touched != null &&
+    entry.strikeTouchProbability != null &&
+    entry.strikeTouchProbability > 0.15 &&
+    entry.strikeTouchProbability < 0.85
+  ) {
+    components.push({
+      score: calibrationScore(entry.strikeTouchProbability, outcome.touched),
+      weight: 0.2,
+    })
+  }
+  if (!components.length) return null
+  const total = components.reduce((sum, component) => sum + component.weight, 0)
+  return components.reduce((sum, component) => sum + component.score * component.weight, 0) / total
+}
+
+/** What one agent's vote earned: its live read and its projection, half each when both exist. */
+export function agentOutcomeScore(
+  entry: ForecastLearningEntry,
+  actual: AgentBias,
+  read: Pick<AgentOpinion, 'score'>,
+  outcome: LearningOutcome,
+  record: LearningRecord,
+): number {
+  const direction = utility(read, actual)
+  const projection = forecastUtility(entry, outcome, record)
+  if (projection === null) return direction
+  return clamp(direction * 0.45 + projection * 0.55, 0, 1)
 }
 
 function updateCell(previous: PerformanceCell | undefined, score: number): PerformanceCell {
@@ -1442,8 +1736,15 @@ export function learnFromOutcome(
     agents: structuredClone(previous.agents),
   }
   const actual = actualBiasFromOutcome(outcome)
+  const projections = new Map<AgentId, ForecastLearningEntry>(
+    record.agentForecasts.map((entry) => [entry.id, entry]),
+  )
   for (const opinion of [...record.agents, record.ensemble]) {
-    upsertAgentEntry(next, opinion.id, record.regime, record.timeframe, utility(opinion, actual))
+    const projection = opinion.id === 'ensemble' ? record.forecast : projections.get(opinion.id)
+    const score = projection
+      ? agentOutcomeScore(projection, actual, opinion, outcome, record)
+      : utility(opinion, actual)
+    upsertAgentEntry(next, opinion.id, record.regime, record.timeframe, score)
   }
   return next
 }

@@ -175,6 +175,8 @@ interface MacdFeatures {
   macdVelN: number
   signalVelN: number
   histDeltaN: number
+  /** Mean |Δhistogram| per bar over the last five valid steps, in swing units. */
+  histStepN: number
   zeroSide: 'above' | 'below'
   signalZeroSide: 'above' | 'below'
   distZeroSwing: number
@@ -250,6 +252,15 @@ function extractFeatures(candles: Candle[], values: CmMacdValues): MacdFeatures 
   const prevBar = valid[valid.length - 2]
   const histDeltaN =
     (cur.hist - prevBar.hist) / Math.max(1, cur.index - prevBar.index) / swing
+  const stepWindow = valid.slice(-6)
+  let stepSum = 0
+  let stepCount = 0
+  for (let j = 1; j < stepWindow.length; j++) {
+    const barSpan = Math.max(1, stepWindow[j].index - stepWindow[j - 1].index)
+    stepSum += Math.abs(stepWindow[j].hist - stepWindow[j - 1].hist) / barSpan
+    stepCount++
+  }
+  const histStepN = stepCount ? stepSum / stepCount / swing : 0
 
   let barsSinceCross: number | null = null
   let lastCrossDir: MacdCrossDir | null = null
@@ -286,6 +297,7 @@ function extractFeatures(candles: Candle[], values: CmMacdValues): MacdFeatures 
     macdVelN,
     signalVelN,
     histDeltaN,
+    histStepN,
     zeroSide: cur.macd >= 0 ? 'above' : 'below',
     signalZeroSide: cur.signal >= 0 ? 'above' : 'below',
     distZeroSwing: Math.abs(cur.macd) / swing,
@@ -314,6 +326,7 @@ interface CrossTimerResult extends MacdAgentOpinion {
 function analyzeCrossTimer(
   features: MacdFeatures,
   calibration: MacdCalibration,
+  timeframe: Timeframe,
 ): CrossTimerResult {
   const base = {
     id: 'cross-timer' as const,
@@ -326,6 +339,47 @@ function analyzeCrossTimer(
 
   if (closureN <= STALL_SPEED) {
     const diverging = closureN < -STALL_SPEED
+    const stepSeconds = INTERVAL_SECONDS[timeframe] ?? 60
+    // Noise-flip path (fast charts only): a stalled gap inside histogram
+    // wiggle-reach still flips most of the time — 1m training shows 65–89%.
+    // Diffusion says the hitting time is ≈ (gap/step)² bars, which matches
+    // the observed 5–7 bar mean. The direction is deterministic: the first
+    // flip from a positive histogram can only be bearish, and vice versa.
+    const fleeing = closureN < -0.015
+    const wiggle = features.histStepN
+    const reach = wiggle > 1e-9 ? gapSwing / wiggle : Number.POSITIVE_INFINITY
+    const diffusionBars = Number.isFinite(reach) ? Math.round(reach * reach) : null
+    if (
+      stepSeconds <= 900 &&
+      !fleeing &&
+      diffusionBars !== null &&
+      diffusionBars >= 1 &&
+      diffusionBars <= MAX_BARS
+    ) {
+      const bars = clamp(Math.round(diffusionBars + calibration.crossBarsBias), 1, MAX_BARS)
+      const confidence = clamp(0.5 - gapSwing * 0.3, 0.3, 0.5)
+      return {
+        ...base,
+        dir: implied,
+        bars,
+        bias: biasFromDir(implied),
+        score: (implied === 'bullish' ? 1 : -1) * clamp(0.3 + confidence * 0.6, 0, 0.95),
+        confidence,
+        reasons: [
+          `MACD is stalled ${formatMacdValue(Math.abs(cur.hist))} from the signal — but at this chop that gap sits inside a few bars' wiggle, so expect the ${upDownWord(implied)} flip in ~${bars} bar${bars === 1 ? '' : 's'} when the noise resolves.`,
+        ],
+        warnings: ['A stalled-gap flip is noise, not drive — it can flip straight back.'],
+        metrics: {
+          gap: cur.hist,
+          gapSwing,
+          closurePerBar: closureN * swing,
+          noiseStep: wiggle * swing,
+          diffusionBars: bars,
+          diverging,
+          calibrationBias: calibration.crossBarsBias,
+        },
+      }
+    }
     return {
       ...base,
       dir: null,
@@ -512,6 +566,7 @@ function analyzeTouchJudge(
   crossDir: MacdCrossDir | null,
   crossBars: number | null,
   memory: MacdMemoryStats | undefined,
+  timeframe: Timeframe,
 ): TouchJudgeResult {
   const base = {
     id: 'touch-judge' as const,
@@ -520,18 +575,23 @@ function analyzeTouchJudge(
   }
   const { cur, gapSwing, closureN, decelN, zeroRegime, yellowLast5, macdVelN } = features
 
-  if (gapSwing > 0.25 || closureN <= STALL_SPEED) {
-    const far = gapSwing > 0.25
+  const stepSeconds = INTERVAL_SECONDS[timeframe] ?? 60
+  // Touch gate by chart speed. Training shows a stalled close gap still
+  // wanders into the signal on every timeframe (65–85% touch), so stalled
+  // gaps are judged, not dismissed. Only a genuinely far gap earns 'none' —
+  // and "far" stretches on fast charts, where a 10-bar touch from 0.45 out
+  // still lands most of the time. On 1m/3m the touch is near-certain, so
+  // the judge always calls break or bounce.
+  const gapLimit = stepSeconds <= 180 ? Number.POSITIVE_INFINITY : stepSeconds <= 14400 ? 0.45 : 0.25
+  if (gapSwing > gapLimit) {
     return {
       ...base,
       touch: 'none',
       bias: 'neutral',
       score: 0,
-      confidence: far ? 0.6 : 0.4,
+      confidence: 0.6,
       reasons: [
-        far
-          ? `MACD is still ${formatMacdValue(Math.abs(cur.hist))} from the signal — no touch is on the radar, so there is nothing to bounce or break yet.`
-          : 'MACD is not moving toward the signal — the touch question is moot until it turns.',
+        `MACD is still ${formatMacdValue(Math.abs(cur.hist))} from the signal — no touch is on the radar, so there is nothing to bounce or break yet.`,
       ],
       warnings: [],
       metrics: { gap: cur.hist, gapSwing, closurePerBar: closureN, touchZone: false },
@@ -570,7 +630,10 @@ function analyzeTouchJudge(
     bounceScore += 0.1
 
   const diff = breakScore - bounceScore
-  const touch: MacdTouchVerdict = diff > 0.05 ? 'break' : diff < -0.05 ? 'bounce' : crossDir ? 'break' : 'bounce'
+  // A tied judge with no closing speed has no business calling a
+  // slice-through: stalled ties are bounces, driven ties break.
+  const tieBreak = crossDir && closureN > STALL_SPEED ? 'break' : 'bounce'
+  const touch: MacdTouchVerdict = diff > 0.05 ? 'break' : diff < -0.05 ? 'bounce' : tieBreak
   const confidence = clamp(0.32 + Math.abs(diff) * 1.2, 0.25, 0.9)
   const regimeWord =
     regimeSign > 0
@@ -840,10 +903,23 @@ interface MacdAgentLearningEntry {
   byTimeframe: Partial<Record<Timeframe, PerformanceCell>>
 }
 
+export interface MacdCalibrationCell {
+  crossBarsBias: number
+  zeroBarsBias: number
+  samples: number
+}
+
 export interface MacdCalibration {
   crossBarsBias: number
   zeroBarsBias: number
   samples: number
+  /**
+   * Per-timeframe timing cells. Fast and slow charts err in opposite
+   * directions (1m lands early, 1D lands late), so each timeframe keeps its
+   * own bias once it has enough samples; the top-level fields stay as the
+   * global fallback for timeframes without a cell yet.
+   */
+  byTimeframe: Partial<Record<Timeframe, MacdCalibrationCell>>
 }
 
 export interface MacdAiLearningState {
@@ -858,22 +934,26 @@ export function defaultMacdAiLearningState(): MacdAiLearningState {
     version: 1,
     updatedAt: new Date(0).toISOString(),
     agents: {},
-    calibration: { crossBarsBias: 0, zeroBarsBias: 0, samples: 0 },
+    calibration: { crossBarsBias: 0, zeroBarsBias: 0, samples: 0, byTimeframe: {} },
   }
 }
 
 /**
  * Pre-trained starting weights: the same blank structure, seeded with the
- * trust + timing calibration learned from 1334 causal BTC-USD forecasts
- * (see macd-training.test.ts). Fresh installs start here; live outcomes keep
- * adapting every cell from this prior. Always returns a fresh clone.
+ * trust + timing calibration learned from the causal BTC-USD training
+ * scenarios (see macd-training.test.ts and the macd-pretrained.ts header).
+ * Fresh installs start here; live outcomes keep adapting every cell from
+ * this prior. Always returns a fresh clone.
  */
 export function pretrainedMacdAiLearningState(): MacdAiLearningState {
   return {
     version: 1,
     updatedAt: new Date().toISOString(),
     agents: structuredClone(MACD_PRETRAINED_LEARNING.agents),
-    calibration: { ...MACD_PRETRAINED_LEARNING.calibration },
+    calibration: {
+      ...MACD_PRETRAINED_LEARNING.calibration,
+      byTimeframe: structuredClone(MACD_PRETRAINED_LEARNING.calibration.byTimeframe),
+    },
   }
 }
 
@@ -887,6 +967,19 @@ export function normalizeMacdAiLearningState(value: unknown): MacdAiLearningStat
     | undefined
   const numberOr = (input: unknown, otherwise: number) =>
     typeof input === 'number' && Number.isFinite(input) ? input : otherwise
+  const byTimeframe: Partial<Record<Timeframe, MacdCalibrationCell>> = {}
+  const rawCells = (calibration?.byTimeframe ?? {}) as Partial<Record<Timeframe, unknown>>
+  if (rawCells && typeof rawCells === 'object') {
+    for (const [key, cell] of Object.entries(rawCells)) {
+      const typed = cell as Partial<MacdCalibrationCell> | undefined
+      if (!typed || typeof typed !== 'object') continue
+      byTimeframe[key as Timeframe] = {
+        crossBarsBias: clamp(numberOr(typed.crossBarsBias, 0), -4, 4),
+        zeroBarsBias: clamp(numberOr(typed.zeroBarsBias, 0), -4, 4),
+        samples: Math.max(0, Math.round(numberOr(typed.samples, 0))),
+      }
+    }
+  }
   return {
     version: 1,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : fallback.updatedAt,
@@ -895,8 +988,29 @@ export function normalizeMacdAiLearningState(value: unknown): MacdAiLearningStat
       crossBarsBias: clamp(numberOr(calibration?.crossBarsBias, 0), -4, 4),
       zeroBarsBias: clamp(numberOr(calibration?.zeroBarsBias, 0), -4, 4),
       samples: Math.max(0, Math.round(numberOr(calibration?.samples, 0))),
+      byTimeframe,
     },
   }
+}
+
+/**
+ * Resolve the timing bias for one timeframe: its own cell once it has a
+ * voice (3+ samples), otherwise the global fallback.
+ */
+function effectiveMacdCalibration(
+  calibration: MacdCalibration,
+  timeframe: Timeframe,
+): MacdCalibration {
+  const cell = calibration.byTimeframe[timeframe]
+  if (cell && cell.samples >= 3) {
+    return {
+      crossBarsBias: cell.crossBarsBias,
+      zeroBarsBias: cell.zeroBarsBias,
+      samples: cell.samples,
+      byTimeframe: calibration.byTimeframe,
+    }
+  }
+  return calibration
 }
 
 function neutralCell(): PerformanceCell {
@@ -933,6 +1047,31 @@ export function macdLearningHeadline(
   return `${Math.round(skill * 100)}% skill · ${samples} settled ${samples === 1 ? 'sample' : 'samples'}`
 }
 
+/**
+ * A timed cross this far out (or untimed) bows to a bounce verdict.
+ * Training verdict: un-hushing 9–10 bar timers scores no better than hushing
+ * them (far timings land ±4–6 bars off) while poisoning the timing
+ * calibration — so the judge's rejection keeps winning at 9+.
+ */
+const BOUNCE_HUSH_BARS = 9
+
+/**
+ * Whether a bounce verdict hushes the timed cross. A bounce means "no cross
+ * through the touch": far/untimed crosses are hushed, as is a whipsaw flip
+ * timed 1–3 bars out while already sitting on the signal (the flip IS the
+ * touch wiggle, not a separate event).
+ */
+function bounceHushesCross(
+  touch: MacdTouchVerdict,
+  timerBars: number | null,
+  touchZone: boolean,
+): boolean {
+  if (touch !== 'bounce') return false
+  if (timerBars === null) return true
+  if (touchZone && timerBars <= 3) return true
+  return timerBars >= BOUNCE_HUSH_BARS
+}
+
 function buildHeadline(
   regime: MacdForecastRegime,
   timer: CrossTimerResult,
@@ -961,6 +1100,11 @@ function buildHeadline(
   if (regime === 'touch-zone') {
     if (touch.touch === 'bounce') {
       const side = features.cur.hist >= 0 ? 'bullish' : 'bearish'
+      if (timer.dir && !bounceHushesCross(touch.touch, timer.bars, true))
+        return {
+          headline: `Touch the signal, bounce — then ${upDownWord(timer.dir)} cross (~${timer.bars} bars)`,
+          touchBars,
+        }
       return { headline: `Touch the signal, reverse ${upDownWord(side)} — no cross through`, touchBars }
     }
     if (timer.dir && timer.bars !== null)
@@ -970,9 +1114,9 @@ function buildHeadline(
       }
     return { headline: 'MACD is on the signal — the next bar decides break or bounce', touchBars }
   }
-  // A bounce verdict overrules a far timed cross: the judge's rejection wins
-  // over a 9+ bar straight-line extrapolation, so the story is the rejection.
-  if (touch.touch === 'bounce' && (timer.bars === null || timer.bars >= 9)) {
+  // A bounce verdict hushes only a hushed cross (see bounceHushesCross):
+  // a cross timed inside the horizon still lands after the rejection.
+  if (bounceHushesCross(touch.touch, timer.bars, features.touchZone)) {
     const side = features.cur.hist >= 0 ? 'bullish' : 'bearish'
     if (touchBars === 0)
       return { headline: `Touching the signal now — reverse ${upDownWord(side)}, no cross through`, touchBars }
@@ -1009,7 +1153,7 @@ function buildTimeline(
   touchBars: number | null,
 ): MacdTimelineStep[] {
   const steps: MacdTimelineStep[] = []
-  const crossStands = !(touch.touch === 'bounce' && (timer.bars === null || timer.bars >= 9))
+  const crossStands = !bounceHushesCross(touch.touch, timer.bars, features.touchZone)
   const dir = crossStands
     ? (timer.dir ?? (regime === 'fresh-cross' ? features.lastCrossDir : null))
     : null
@@ -1165,7 +1309,10 @@ export function analyzeMacdForecast(
 ): MacdForecast | null {
   const features = extractFeatures(input.candles, input.values)
   if (!features) return null
-  const calibration = learning.calibration ?? defaultMacdAiLearningState().calibration
+  const calibration = effectiveMacdCalibration(
+    learning.calibration ?? defaultMacdAiLearningState().calibration,
+    input.timeframe,
+  )
 
   if (features.flat) {
     const flatOpinion = (id: MacdAgentId, label: string): MacdAgentOpinion => ({
@@ -1236,15 +1383,15 @@ export function analyzeMacdForecast(
     }
   }
 
-  const timer = analyzeCrossTimer(features, calibration)
+  const timer = analyzeCrossTimer(features, calibration, input.timeframe)
   const zero = analyzeZeroScout(features, calibration)
-  const touch = analyzeTouchJudge(features, timer.dir, timer.bars, input.memory)
+  const touch = analyzeTouchJudge(features, timer.dir, timer.bars, input.memory, input.timeframe)
   const thrust = analyzeThrustReader(features, timer.dir)
   const memory = analyzeMemory(features, timer.dir, input.memory, input.symbol, input.timeframe)
   const specialists: MacdAgentOpinion[] = [timer, zero, touch, thrust, memory]
   // The director sides with the judge over a far timer extrapolation: a bounce
   // means no cross through, so the cross fields go quiet with the headline.
-  const crossSuppressed = touch.touch === 'bounce' && (timer.bars === null || timer.bars >= 9)
+  const crossSuppressed = bounceHushesCross(touch.touch, timer.bars, features.touchZone)
   const crossDir = crossSuppressed ? null : timer.dir
   const crossBars = crossSuppressed ? null : timer.bars
   const regime = classifyRegime(features, timer.bars, timer.dir !== null && timer.bars !== null)
@@ -1432,7 +1579,7 @@ export function learnFromMacdOutcome(
     version: 1,
     updatedAt: new Date().toISOString(),
     agents: structuredClone(previous.agents),
-    calibration: { ...previous.calibration },
+    calibration: { ...previous.calibration, byTimeframe: { ...previous.calibration.byTimeframe } },
   }
   const scores = scoreMacdOutcome(record.prediction, actual)
   const perAgent: Record<MacdAgentId, number> = {
@@ -1447,37 +1594,45 @@ export function learnFromMacdOutcome(
     upsertMacdEntry(next, opinion.id, record.regime, record.timeframe, perAgent[opinion.id] ?? 0.5)
   }
   // Timing calibration: the literal "learn when the cross lands" loop.
-  const alpha = next.calibration.samples < 25 ? 0.2 : 0.08
-  if (
+  // Both the global fallback and this timeframe's own cell learn the same
+  // error, each on its own alpha schedule.
+  const crossErr =
     record.prediction.crossDir &&
     actual.crossDir &&
     record.prediction.crossDir === actual.crossDir &&
     record.prediction.crossBars !== null &&
     actual.crossBars !== null
-  ) {
-    const err = actual.crossBars - record.prediction.crossBars
-    next.calibration.crossBarsBias = clamp(
-      next.calibration.crossBarsBias + alpha * (err - next.calibration.crossBarsBias),
-      -4,
-      4,
-    )
-    next.calibration.samples += 1
-  }
-  if (
+      ? actual.crossBars - record.prediction.crossBars
+      : null
+  const zeroErr =
     record.prediction.zeroDir &&
     actual.zeroDir &&
     record.prediction.zeroDir === actual.zeroDir &&
     record.prediction.zeroBars !== null &&
     actual.zeroBars !== null
-  ) {
-    const err = actual.zeroBars - record.prediction.zeroBars
-    next.calibration.zeroBarsBias = clamp(
-      next.calibration.zeroBarsBias + alpha * (err - next.calibration.zeroBarsBias),
-      -4,
-      4,
-    )
-    next.calibration.samples += 1
+      ? actual.zeroBars - record.prediction.zeroBars
+      : null
+  const nudge = (cell: MacdCalibrationCell, kind: 'cross' | 'zero', err: number) => {
+    const alpha = cell.samples < 25 ? 0.2 : 0.08
+    if (kind === 'cross')
+      cell.crossBarsBias = clamp(cell.crossBarsBias + alpha * (err - cell.crossBarsBias), -4, 4)
+    else cell.zeroBarsBias = clamp(cell.zeroBarsBias + alpha * (err - cell.zeroBarsBias), -4, 4)
+    cell.samples += 1
   }
+  const tfCell: MacdCalibrationCell = next.calibration.byTimeframe[record.timeframe] ?? {
+    crossBarsBias: 0,
+    zeroBarsBias: 0,
+    samples: 0,
+  }
+  if (crossErr !== null) {
+    nudge(next.calibration, 'cross', crossErr)
+    nudge(tfCell, 'cross', crossErr)
+  }
+  if (zeroErr !== null) {
+    nudge(next.calibration, 'zero', zeroErr)
+    nudge(tfCell, 'zero', zeroErr)
+  }
+  if (tfCell.samples > 0) next.calibration.byTimeframe[record.timeframe] = tfCell
   return next
 }
 

@@ -114,6 +114,36 @@ describe('macd forecast engine', () => {
     expect(opinionOf(forecast!, 'touch-judge').reasons[0]).toContain('reversal back up')
   })
 
+  it('hushes a whipsaw flip timed inside the touch zone instead of contradicting the bounce', () => {
+    // 1m chop hugging the signal: the last four histograms read
+    // +0.002/-0.006/-0.002/-0.006, so the diffusion timer sees a 3-bar flip
+    // while the judge (correctly) calls the touch a bounce. The flip IS the
+    // touch wiggle — not a separate event — so the cross stays hushed and
+    // the headline must not promise one.
+    const macd: number[] = []
+    const signal: number[] = []
+    for (let i = 0; i < 30; i++) {
+      signal.push(3 + i * 0.05)
+      macd.push(3 + i * 0.05 + 0.3)
+    }
+    for (let i = 0; i < 6; i++) {
+      signal.push(5)
+      macd.push(5)
+    }
+    const chop = [0.002, -0.006, -0.002, -0.006]
+    for (const hist of chop) {
+      signal.push(5)
+      macd.push(5 + hist)
+    }
+    const forecast = analyzeMacdForecast(inputFor(values(macd, signal), '1m'))
+    expect(forecast).not.toBeNull()
+    expect(forecast!.regime).toBe('touch-zone')
+    expect(forecast!.touch).toBe('bounce')
+    expect(opinionOf(forecast!, 'cross-timer').metrics.diffusionBars).toBe(3)
+    expect(forecast!.crossDir).toBeNull()
+    expect(forecast!.headline).toMatch(/reverse down — no cross through/)
+  })
+
   it('stays honest when the lines diverge: no cross on the radar', () => {
     const forecast = analyzeMacdForecast(inputFor(divergingLines()))
     expect(forecast).not.toBeNull()

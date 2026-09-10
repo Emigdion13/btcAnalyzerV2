@@ -4,6 +4,7 @@ import {
   defaultAgentPredictionJournal,
   horizonChoices,
   journalStats,
+  normalizeAgentPredictionJournal,
   recordAgentPrediction,
   resolveAgentPredictionJournal,
   suggestedHorizonBars,
@@ -103,9 +104,7 @@ describe('agent journal', () => {
       analysis,
     })
     expect(duplicate.entries).toHaveLength(1)
-    expect(duplicate.entries[0].targetTime).toBe(
-      candles[candles.length - 1].time + 10 * 60,
-    )
+    expect(duplicate.entries[0].targetTime).toBe(candles[candles.length - 1].time + 10 * 60)
     expect(duplicate.entries[0].horizonBars).toBe(10)
   })
 
@@ -287,5 +286,66 @@ describe('agent journal', () => {
       resolved: 1,
       correct: 1,
     })
+  })
+})
+
+/**
+ * The journal is persisted to localStorage, so entries written by an older build
+ * are still there after an upgrade, waiting for the candles that settle them.
+ * The horizon forecast added fields to `LearningRecord` that those entries do not
+ * have; reading them unguarded threw the moment such an entry settled, and with
+ * no error boundary around the app that took the whole workspace to a blank
+ * screen. Settle them on the directional read they were graded on when written.
+ */
+describe('journal entries written before the horizon forecast existed', () => {
+  const legacyStored = {
+    version: 1,
+    updatedAt: new Date(0).toISOString(),
+    autoJournal: true,
+    entries: [
+      {
+        id: 'legacy-1',
+        source: 'demo',
+        symbol: 'BTCUSDT',
+        timeframe: '1m',
+        createdAt: new Date(0).toISOString(),
+        candleTime: 0,
+        entryPrice: 100,
+        horizonBars: 8,
+        targetTime: 8 * 60,
+        regime: 'range',
+        bias: 'bullish',
+        confidence: 0.5,
+        // The pre-forecast shape: no `forecast`, no `agentForecasts`, no `sigmaAtr`.
+        learningRecord: {
+          timeframe: '1m',
+          regime: 'range',
+          ensemble: { id: 'ensemble', bias: 'bullish', score: 0.4, confidence: 0.5 },
+          agents: [{ id: 'trend', bias: 'bullish', score: 0.4, confidence: 0.5 }],
+        },
+      },
+    ],
+  }
+
+  it('settles without throwing and still grades the directional read', () => {
+    const journal = normalizeAgentPredictionJournal(legacyStored)
+    // Entries saved before window mode predate the field; they settled by bars.
+    expect(journal.entries[0].mode).toBe('bars')
+
+    const resolved = resolveAgentPredictionJournal(journal, defaultAgentLearningState(), {
+      source: 'demo',
+      symbol: 'BTCUSDT',
+      timeframe: '1m',
+      candles: bullishTrendCandles(260),
+    })
+
+    expect(resolved.resolved).toHaveLength(1)
+    expect(resolved.journal.entries[0].result).toBe('correct')
+    // No strike was pinned, so nothing is graded against one.
+    expect(resolved.journal.entries[0].strikeResult).toBeUndefined()
+    // The learner still scored the entry rather than skipping it.
+    expect(resolved.learning.agents.ensemble?.overall.samples).toBe(1)
+    expect(resolved.learning.agents.trend?.overall.samples).toBe(1)
+    expect(Number.isFinite(resolved.learning.agents.trend?.overall.skill ?? NaN)).toBe(true)
   })
 })

@@ -7,6 +7,7 @@ import '@fontsource/dm-sans/latin-700.css'
 import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-500.css'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { initializeCoinbaseWorkspace } from './lib/market-settings'
 import './styles.css'
 
@@ -14,6 +15,8 @@ initializeCoinbaseWorkspace()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 )

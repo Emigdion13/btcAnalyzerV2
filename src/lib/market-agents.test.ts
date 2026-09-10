@@ -437,7 +437,7 @@ describe('market agents', () => {
     )
     expect(held.learningRecord.horizonBars).toBe(10)
     expect(held.learningRecord.strike).toBe(close - 2)
-    expect(held.learningRecord.forecast.driftAtr).toBeCloseTo(held.forecast.expectedMoveAtr, 9)
+    expect(held.learningRecord.forecast!.driftAtr).toBeCloseTo(held.forecast.expectedMoveAtr, 9)
 
     // A strike above price asks the opposite question of the same tape.
     const crossed = analyzeMarket({
@@ -463,17 +463,19 @@ describe('market agents', () => {
     const candles = bullishTrendCandles()
     const result = analyzeMarket({ candles, timeframe: '1m' })
     const record = result.learningRecord
-    expect(record.forecast.driftAtr).toBeCloseTo(record.forecast.driftAtr, 9)
+    // A record from `analyzeMarket` always carries the projection it was built from.
+    const projected = record.forecast!
+    expect(projected.driftAtr).toBeCloseTo(result.forecast.expectedMoveAtr, 9)
     // Same read, two tapes: the one that matched the projection has to score higher.
     const matched = learnFromOutcome(defaultAgentLearningState(), record, {
       move: 0.01,
-      driftAtr: record.forecast.driftAtr,
+      driftAtr: projected.driftAtr,
       strikeDeltaAtr: 1,
       touched: false,
     })
     const missed = learnFromOutcome(defaultAgentLearningState(), record, {
       move: -0.01,
-      driftAtr: -record.forecast.driftAtr,
+      driftAtr: -projected.driftAtr,
       strikeDeltaAtr: -1,
       touched: true,
     })

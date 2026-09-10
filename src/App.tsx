@@ -468,6 +468,8 @@ export default function App() {
   const runnerRef = useRef<AbortController | null>(null)
   const cacheRef = useRef<Map<string, ScriptResult>>(new Map())
   const scriptErrors = useRef<Map<string, string>>(new Map())
+  /** Last journal failure already reported, so a stuck entry warns once instead of every bar. */
+  const journalError = useRef<string | null>(null)
   const visibleTabs = tabs.filter((s) => (source === 'coinbase' ? isProductId(s) : isDemoSymbol(s)))
   const visibleWatchlist = watchlist.filter((s) =>
     source === 'coinbase' ? isProductId(s) : isDemoSymbol(s),
@@ -1069,36 +1071,48 @@ export default function App() {
 
   useEffect(() => {
     if (replayIndex !== null || settledCandles.length < 30) return
-    const resolved = resolveAgentPredictionJournal(safeAgentJournal, safeAgentLearning, {
-      source,
-      symbol,
-      timeframe,
-      candles: settledCandles,
-    })
-    const journalWithPrediction =
-      settledMarketAnalysis && safeAgentJournal.autoJournal
-        ? recordAgentPrediction(resolved.journal, {
-            source,
-            symbol,
-            timeframe,
-            candles: settledCandles,
-            analysis: settledMarketAnalysis,
-            horizonBars: agentHorizonBars,
-            settle: agentSettle,
-            // The entry is pinned to the strike the chart is drawing, so only a defended
-            // (non-provisional) level may seed it — a live print is not a settled level.
-            strike:
-              settledStrike && !settledStrike.provisional
-                ? {
-                    price: settledStrike.price,
-                    windowStart: settledStrike.windowStart,
-                    windowEnd: settledStrike.windowEnd,
-                  }
-                : undefined,
-          })
-        : resolved.journal
-    if (resolved.learning !== safeAgentLearning) setAgentLearning(resolved.learning)
-    if (journalWithPrediction !== safeAgentJournal) setAgentJournal(journalWithPrediction)
+    try {
+      const resolved = resolveAgentPredictionJournal(safeAgentJournal, safeAgentLearning, {
+        source,
+        symbol,
+        timeframe,
+        candles: settledCandles,
+      })
+      const journalWithPrediction =
+        settledMarketAnalysis && safeAgentJournal.autoJournal
+          ? recordAgentPrediction(resolved.journal, {
+              source,
+              symbol,
+              timeframe,
+              candles: settledCandles,
+              analysis: settledMarketAnalysis,
+              horizonBars: agentHorizonBars,
+              settle: agentSettle,
+              // The entry is pinned to the strike the chart is drawing, so only a defended
+              // (non-provisional) level may seed it — a live print is not a settled level.
+              strike:
+                settledStrike && !settledStrike.provisional
+                  ? {
+                      price: settledStrike.price,
+                      windowStart: settledStrike.windowStart,
+                      windowEnd: settledStrike.windowEnd,
+                    }
+                  : undefined,
+            })
+          : resolved.journal
+      if (resolved.learning !== safeAgentLearning) setAgentLearning(resolved.learning)
+      if (journalWithPrediction !== safeAgentJournal) setAgentJournal(journalWithPrediction)
+      journalError.current = null
+    } catch (error) {
+      // One bad journal entry must not take the workspace down with it: the chart,
+      // drawings and alerts are all still usable. Report it once and move on.
+      const detail = error instanceof Error ? error.message : String(error)
+      console.error('Agent journal failed to settle', error)
+      if (journalError.current !== detail) {
+        journalError.current = detail
+        notify('The agent journal could not settle an entry — its stats were skipped.', 'error')
+      }
+    }
   }, [
     replayIndex,
     safeAgentJournal,
@@ -1114,6 +1128,7 @@ export default function App() {
     settledFingerprint,
     setAgentJournal,
     setAgentLearning,
+    notify,
   ])
 
   useEffect(() => {

@@ -55,6 +55,7 @@ import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
 import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedReversalsSettingsDialog'
 import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
+import { NextPivotSettingsDialog } from './NextPivotSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -270,7 +271,8 @@ export function IndicatorLibrary({
       {tab === 'built-in' ? (
         <>
           <div className="filter-pills">
-            {['All', 'Trend', 'Momentum', 'Volatility', 'Volume', 'Price Action'].map((item) => (
+            {['All', 'Trend', 'Momentum', 'Volatility', 'Volume', 'Price Action', 'Forecast'].map(
+              (item) => (
               <button
                 className={category === item ? 'active' : ''}
                 key={item}
@@ -532,6 +534,7 @@ export function IndicatorSettingsDialog(props: {
     return <PivotPointsMissedReversalsSettingsDialog {...props} />
   if (props.indicator.kind === 'coinbase-strike') return <CoinbaseStrikeSettingsDialog {...props} />
   if (props.indicator.kind === 'scalpswing') return <ScalpSwingSettingsDialog {...props} />
+  if (props.indicator.kind === 'next-pivot') return <NextPivotSettingsDialog {...props} />
   return <StandardIndicatorSettingsDialog {...props} />
 }
 

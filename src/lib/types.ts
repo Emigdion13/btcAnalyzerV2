@@ -20,6 +20,7 @@ export type IndicatorKind =
   | 'pivot-points-missed-reversals'
   | 'coinbase-strike'
   | 'scalpswing'
+  | 'next-pivot'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -302,6 +303,88 @@ export const SCALPSWING_DEFAULTS: Readonly<ScalpSwingSettings> = {
   sellColor: '#ef5350',
 }
 
+/**
+ * Similarity measures supported by "The Next Pivot" indicator.
+ * Mirrors Kioseff Trading's published options plus Atlas's own additions.
+ */
+export type NextPivotSimilarity =
+  | 'cosine'
+  | 'pearson'
+  | 'spearman'
+  | 'euclidean'
+  | 'mse'
+  | 'kendall'
+  | 'dtw'
+export type NextPivotSource = 'price' | 'pctChange'
+
+/**
+ * Settings for the Atlas port of Kioseff Trading's "The Next Pivot"
+ * indicator. The published legend reads (20, 50, Cosine Similarity, Price, 5000, 1).
+ * Atlas adds several accuracy upgrades that default on: ensemble top-K blending,
+ * z-normalized similarity, confidence bands, and DTW matching.
+ */
+export interface NextPivotSettings {
+  /** Pine input: "Correlation Length" (20) – bars in the look-back window. */
+  correlationLength: number
+  /** Pine input: "Forecast Length" (50) – bars projected forward. */
+  forecastLength: number
+  /** Pine input: "Similarity Calculation" – defaults to "Cosine Similarity". */
+  similarity: NextPivotSimilarity
+  /** Pine input: "Looks For Similarities In" – Price or %Change. */
+  source: NextPivotSource
+  /** Pine input: "Bars Back To Search" (5000). */
+  barsBack: number
+  /** Pine input: "Show Projected Price Path". */
+  showPricePath: boolean
+  /** Pine input: "Show Projected Zig Zag". */
+  showZigZag: boolean
+  /** Pine input: Lin Reg channel toggle. */
+  showLinReg: boolean
+  /** Pine input: Lin Reg σ multiplier (1). */
+  linRegSigma: number
+  /** Forecast price path color. */
+  forecastColor: string
+  /** Projected ZigZag color. */
+  zigZagColor: string
+  /** LinReg channel color. */
+  linRegColor: string
+  // === Atlas accuracy upgrades (the "double accurate, triple great" part) ===
+  /** Use an ensemble of the top-K most similar sequences (weighted by similarity). */
+  ensembleTopK: number
+  /** Z-normalize sequences before comparing – fixes price-level bias in raw cosine. */
+  zNormalize: boolean
+  /** Show shaded confidence band from the ensemble dispersion. */
+  showConfidenceBand: boolean
+  /** Highlight the matched historical window with a shaded box (like original). */
+  showMatchBox: boolean
+  /** Show an info label with similarity score and match location. */
+  showInfoLabel: boolean
+  /** ZigZag pivot legs (5 in original; smaller = more sensitive). */
+  zigZagLegs: number
+}
+
+/** Published defaults; legend renders (20, 50, Cosine Similarity, Price, 5000, 1). */
+export const NEXT_PIVOT_DEFAULTS: Readonly<NextPivotSettings> = {
+  correlationLength: 20,
+  forecastLength: 50,
+  similarity: 'cosine',
+  source: 'price',
+  barsBack: 5000,
+  showPricePath: true,
+  showZigZag: true,
+  showLinReg: false,
+  linRegSigma: 1,
+  forecastColor: '#ffffff',
+  zigZagColor: '#14D990',
+  linRegColor: '#6929F2',
+  ensembleTopK: 5,
+  zNormalize: true,
+  showConfidenceBand: true,
+  showMatchBox: true,
+  showInfoLabel: true,
+  zigZagLegs: 5,
+}
+
 export interface Plot {
   title: string
   color: string
@@ -343,6 +426,7 @@ export interface Indicator {
   pivots?: PivotPointsMissedReversalsSettings
   strike?: CoinbaseStrikeSettings
   scalpswing?: ScalpSwingSettings
+  nextPivot?: NextPivotSettings
 }
 export interface SavedScript {
   id: string

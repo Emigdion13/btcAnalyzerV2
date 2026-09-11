@@ -166,6 +166,7 @@ import {
   SR_BREAKS_RETESTS_DEFAULTS,
   PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS,
   COINBASE_STRIKE_DEFAULTS,
+  NEXT_PIVOT_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
 import type { WorkspaceBackup } from './lib/workspace-backup'
@@ -1351,6 +1352,7 @@ export default function App() {
           ? { pivots: { ...PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS } }
           : {}),
         ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),
+        ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)

@@ -144,6 +144,16 @@ export const INDICATOR_CATALOG: {
     color: '#26a69a',
   },
   {
+    kind: 'next-pivot',
+    name: 'The Next Pivot [Kioseff Trading]',
+    short: 'Next Pivot',
+    description:
+      'Pattern-matching forecast: finds the historical price sequence most similar to the last N bars and projects what happened next, drawn as a dotted price path, projected ZigZag pivots and optional LinReg channel. Atlas adds a top-K ensemble, z-normalized similarity, DTW matching, and confidence bands — faithful yet "double the accurate". Defaults (20, 50, Cosine Similarity, Price, 5000, 1).',
+    category: 'Forecast',
+    period: 20,
+    color: '#14D990',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -198,6 +208,9 @@ export function builtInPlots(
   if (indicator.kind === 'scalpswing') {
     return scalpSwingPlots(candles, indicator)
   }
+  // The Next Pivot renders its forecast path, ZigZag, bands and match box as a
+  // native SVG overlay on the price pane; no Lightweight Charts series.
+  if (indicator.kind === 'next-pivot') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

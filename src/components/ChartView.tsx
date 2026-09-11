@@ -92,6 +92,7 @@ import {
   SCALPSWING_COLORS,
   scalpSwingSettings,
 } from '../lib/scalpswing'
+import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
@@ -174,6 +175,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const srSvgRef = useRef<SVGSVGElement>(null)
   const pivotSvgRef = useRef<SVGSVGElement>(null)
   const scalpswingSvgRef = useRef<SVGSVGElement>(null)
+  const nextPivotSvgRef = useRef<SVGSVGElement>(null)
   const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -292,6 +294,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           }
         }),
     [candles, indicators],
+  )
+  const nextPivotOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'next-pivot')
+        .map((indicator) => {
+          const settings = nextPivotSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateNextPivot(candles, settings, INTERVAL[timeframe]),
+          }
+        }),
+    [candles, indicators, timeframe],
   )
   const rsiIndicator = indicators.find((i) => i.visible && i.kind === 'rsi')
   const rsiPeriod = rsiIndicator?.period ?? 14
@@ -499,6 +515,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       await paintSvg(srSvgRef.current)
       await paintSvg(pivotSvgRef.current)
       await paintSvg(scalpswingSvgRef.current)
+      await paintSvg(nextPivotSvgRef.current)
       await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
       return new Promise((resolve) => output.toBlob(resolve, 'image/png'))
@@ -594,6 +611,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
               (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
               (indicator.visible && indicator.kind === 'scalpswing') ||
+              (indicator.visible && indicator.kind === 'next-pivot') ||
               (indicator.visible && divergenceEnabled(indicator)),
           )
         )
@@ -2096,6 +2114,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const sells = result.signals.filter((s) => s.side === 'sell').length
     return `${buys} BUY · ${sells} SELL`
   }
+  const nextPivotLegendValue = (result?: (typeof nextPivotOverlays)[number]['result']) => {
+    if (!result || !result.info) return 'computing…'
+    return `r=${result.info.similarity.toFixed(2)} · +${result.info.forecastLength} bars`
+  }
 
   const renderScalpSwingOverlay = (overlay: (typeof scalpSwingOverlays)[number]) => {
     const { indicator, settings, result } = overlay
@@ -2175,6 +2197,310 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     return (
       <g key={indicator.id} data-scalpswing-length={settings.pacLength} data-testid="scalpswing-overlay">
         {result.signals.map(renderSignal)}
+      </g>
+    )
+  }
+
+  const renderNextPivotOverlay = (overlay: (typeof nextPivotOverlays)[number]) => {
+    const { indicator, settings, result } = overlay
+    if (!candles.length) return null
+    const last = candles[candles.length - 1]
+    const lastPos = position({ time: last.time, price: last.close })
+    if (!lastPos) return null
+
+    const forecastStart = position({ time: last.time, price: last.close })
+    if (!forecastStart) return null
+
+    // Convert a forecast point (offset time, price) to screen coordinates.
+    const fp = (pt: { time: number; price: number }) => position({ time: pt.time, price: pt.price })
+
+    const elements: React.ReactNode[] = []
+
+    // ----- Matched-history highlight box -----
+    if (
+      settings.showMatchBox &&
+      result.bestStart !== null &&
+      result.bestEnd !== null &&
+      result.bestStart >= 0 &&
+      result.bestEnd < candles.length
+    ) {
+      const startC = candles[result.bestStart]
+      const endC = candles[result.bestEnd]
+      const midC = candles[result.bestMid!]
+      let minP = Infinity,
+        maxP = -Infinity
+      for (let i = result.bestStart; i <= result.bestEnd; i++) {
+        minP = Math.min(minP, candles[i].low)
+        maxP = Math.max(maxP, candles[i].high)
+      }
+      const p1 = position({ time: startC.time, price: maxP })
+      const p2 = position({ time: midC.time, price: minP })
+      const p3 = position({ time: midC.time, price: maxP })
+      const p4 = position({ time: endC.time, price: minP })
+      if (p1 && p2 && p3 && p4) {
+        elements.push(
+          <rect
+            key={`np-match:${indicator.id}:hist`}
+            x={p1.x}
+            y={p1.y}
+            width={p3.x - p1.x}
+            height={p2.y - p1.y}
+            fill="#3b82f6"
+            fillOpacity={0.12}
+            stroke="none"
+          />,
+        )
+        elements.push(
+          <rect
+            key={`np-match:${indicator.id}:cont`}
+            x={p3.x}
+            y={p3.y}
+            width={Math.max(2, p4.x - p3.x)}
+            height={Math.max(2, p4.y - p3.y)}
+            fill={settings.forecastColor}
+            fillOpacity={0.1}
+            stroke="none"
+          />,
+        )
+      }
+    }
+
+    // ----- Current lookback window highlight -----
+    if (settings.showMatchBox && candles.length >= settings.correlationLength) {
+      const winStart = candles[candles.length - settings.correlationLength]
+      const winEnd = last
+      let minP = Infinity,
+        maxP = -Infinity
+      for (let i = candles.length - settings.correlationLength; i < candles.length; i++) {
+        minP = Math.min(minP, candles[i].low)
+        maxP = Math.max(maxP, candles[i].high)
+      }
+      const p1 = position({ time: winStart.time, price: maxP })
+      const p2 = position({ time: winEnd.time, price: minP })
+      if (p1 && p2) {
+        elements.push(
+          <rect
+            key={`np-cur:${indicator.id}`}
+            x={p1.x}
+            y={p1.y}
+            width={Math.max(2, p2.x - p1.x)}
+            height={Math.max(2, p2.y - p1.y)}
+            fill="#3b82f6"
+            fillOpacity={0.08}
+            stroke="none"
+          />,
+        )
+      }
+    }
+
+    // ----- Confidence band -----
+    if (settings.showConfidenceBand && result.forecast.length > 1) {
+      // Build a closed polygon going upper path forward then lower path backward.
+      const topPts: { x: number; y: number }[] = []
+      const botPts: { x: number; y: number }[] = []
+      for (const pt of result.forecast) {
+        const u = fp({ time: pt.time, price: pt.upper })
+        const l = fp({ time: pt.time, price: pt.lower })
+        if (u) topPts.push(u)
+        if (l) botPts.push(l)
+      }
+      if (topPts.length > 1 && botPts.length > 1) {
+        const d =
+          `M ${forecastStart.x} ${forecastStart.y} ` +
+          topPts.map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          ' ' +
+          [...botPts].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          ' Z'
+        elements.push(
+          <path
+            key={`np-band:${indicator.id}`}
+            d={d}
+            fill={settings.forecastColor}
+            fillOpacity={0.08}
+            stroke="none"
+          />,
+        )
+      }
+    }
+
+    // ----- LinReg channel -----
+    if (settings.showLinReg && result.linReg && result.forecast.length > 1) {
+      const upper: { x: number; y: number }[] = []
+      const lower: { x: number; y: number }[] = []
+      for (let i = 0; i < result.forecast.length; i++) {
+        const pt = result.forecast[i]
+        const u = fp({ time: pt.time, price: result.linReg.upper[i] * settings.linRegSigma + result.linReg.fit[i] })
+        const l = fp({ time: pt.time, price: result.linReg.fit[i] - result.linReg.sigma * settings.linRegSigma })
+        const f = fp({ time: pt.time, price: result.linReg.fit[i] })
+        if (u && f) upper.push(u)
+        if (l && f) lower.push(l)
+      }
+      // Fit line itself
+      const fitPts: { x: number; y: number }[] = []
+      for (let i = 0; i < result.forecast.length; i++) {
+        const pt = result.forecast[i]
+        const q = fp({ time: pt.time, price: result.linReg.fit[i] })
+        if (q) fitPts.push(q)
+      }
+      if (upper.length > 1 && lower.length > 1) {
+        const d =
+          `M ${forecastStart.x} ${forecastStart.y} ` +
+          upper.map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          ' ' +
+          [...lower].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          ' Z'
+        elements.push(
+          <path
+            key={`np-lrfill:${indicator.id}`}
+            d={d}
+            fill={settings.linRegColor}
+            fillOpacity={0.18}
+            stroke="none"
+          />,
+        )
+      }
+      if (fitPts.length > 1) {
+        const fd = `M ${forecastStart.x} ${forecastStart.y} ` + fitPts.map((p) => `L ${p.x} ${p.y}`).join(' ')
+        elements.push(
+          <path
+            key={`np-lr:${indicator.id}`}
+            d={fd}
+            fill="none"
+            stroke={settings.linRegColor}
+            strokeWidth={1.25}
+            strokeDasharray="6 4"
+          />,
+        )
+      }
+    }
+
+    // ----- Forecast price path (dotted, like original) -----
+    if (settings.showPricePath && result.forecast.length > 0) {
+      let prev = forecastStart
+      const segs: string[] = []
+      for (const pt of result.forecast) {
+        const q = fp(pt)
+        if (!q) continue
+        segs.push(`M ${prev.x} ${prev.y} L ${q.x} ${q.y}`)
+        prev = q
+      }
+      elements.push(
+        <path
+          key={`np-path:${indicator.id}`}
+          d={segs.join(' ')}
+          fill="none"
+          stroke={settings.forecastColor}
+          strokeWidth={1.75}
+          strokeDasharray="2 4"
+          strokeLinecap="round"
+        />,
+      )
+    }
+
+    // ----- Projected ZigZag -----
+    if (settings.showZigZag && result.zigZag.length > 0) {
+      // Start from last close, then walk the projected pivots in offset order,
+      // anchoring first segment to the last confirmed real pivot (last close).
+      const pivots = [...result.zigZag].sort((a, b) => a.offset - b.offset)
+      const anchor = forecastStart
+      let prev = anchor
+      const segs: string[] = []
+      for (const z of pivots) {
+        const q = position({ time: z.time, price: z.price })
+        if (!q) continue
+        segs.push(`M ${prev.x} ${prev.y} L ${q.x} ${q.y}`)
+        prev = q
+        // Mark pivot dots
+        elements.push(
+          <circle
+            key={`np-zz-dot:${indicator.id}:${z.offset}`}
+            cx={q.x}
+            cy={q.y}
+            r={3}
+            fill={settings.zigZagColor}
+            stroke={z.direction === 1 ? '#ef5350' : '#26a69a'}
+            strokeWidth={1.5}
+          />,
+        )
+      }
+      // Close to last forecast point if possible
+      if (result.forecast.length > 0) {
+        const lastFp = fp(result.forecast[result.forecast.length - 1])
+        if (lastFp) segs.push(`M ${prev.x} ${prev.y} L ${lastFp.x} ${lastFp.y}`)
+      }
+      elements.push(
+        <path
+          key={`np-zz:${indicator.id}`}
+          d={segs.join(' ')}
+          fill="none"
+          stroke={settings.zigZagColor}
+          strokeWidth={2.25}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />,
+      )
+    }
+
+    // ----- Info label -----
+    if (settings.showInfoLabel && result.info) {
+      const labelX = forecastStart.x + 8
+      const labelY = forecastStart.y - 44
+      const simText = result.info.similarity.toFixed(3)
+      const line1 = `${result.info.method} · ${result.info.source}`
+      const line2 = `r=${simText} · ${result.info.ensembleSize} matches · ${result.info.barsBack} bars back`
+      elements.push(
+        <g key={`np-label:${indicator.id}`} pointerEvents="none">
+          <rect
+            x={labelX - 4}
+            y={labelY - 12}
+            width={Math.max(210, line2.length * 6.2)}
+            height={36}
+            rx={4}
+            fill="#000000"
+            fillOpacity={0.55}
+            stroke={settings.zigZagColor}
+            strokeOpacity={0.5}
+            strokeWidth={1}
+          />
+          <text
+            x={labelX + 4}
+            y={labelY + 2}
+            fill={settings.forecastColor}
+            fontSize={10}
+            fontWeight={700}
+            fontFamily="JetBrains Mono, monospace"
+          >
+            The Next Pivot ({result.info.correlationLength},{result.info.forecastLength})
+          </text>
+          <text
+            x={labelX + 4}
+            y={labelY + 16}
+            fill="#cfd4dc"
+            fontSize={9}
+            fontFamily="DM Sans, sans-serif"
+          >
+            {line1}
+          </text>
+          <text
+            x={labelX + 4}
+            y={labelY + 27}
+            fill="#cfd4dc"
+            fontSize={8.5}
+            fontFamily="DM Sans, sans-serif"
+          >
+            {line2}
+          </text>
+        </g>,
+      )
+    }
+
+    return (
+      <g
+        key={indicator.id}
+        data-testid="next-pivot-overlay"
+        data-similarity={result.info?.similarity ?? 0}
+      >
+        {elements}
       </g>
     )
   }
@@ -2466,7 +2792,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                         (item) => item.indicator.id === indicator.id,
                                       )?.result.currentStrike,
                                     )
-                                  : plotValue(group?.plots[0])}
+                                  : indicator.kind === 'next-pivot'
+                                    ? nextPivotLegendValue(
+                                        nextPivotOverlays.find(
+                                          (item) => item.indicator.id === indicator.id,
+                                        )?.result,
+                                      )
+                                    : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">
@@ -2481,6 +2813,15 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                           {2 * pivotPointsMissedReversalsSettings(indicator).pivotLength + 1} bars
                         </span>
                       )}
+                    {indicator.kind === 'next-pivot' && (() => {
+                      const s = nextPivotSettings(indicator)
+                      const need = s.correlationLength + s.forecastLength + 2
+                      return candles.length < need ? (
+                        <span className="cm-indicator-notice" role="status">
+                          Warming up · {candles.length}/{need} bars
+                        </span>
+                      ) : null
+                    })()}
                     <div className="legend-actions">
                       <IconButton
                         icon={indicator.visible ? Eye : EyeOff}
@@ -2745,6 +3086,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {scalpSwingOverlays.map(renderScalpSwingOverlay)}
+      </svg>
+      <svg
+        ref={nextPivotSvgRef}
+        className="next-pivot-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="next-pivot-overlay"
+        data-revision={revision}
+      >
+        {nextPivotOverlays.map(renderNextPivotOverlay)}
       </svg>
       <svg
         ref={divSvgRef}

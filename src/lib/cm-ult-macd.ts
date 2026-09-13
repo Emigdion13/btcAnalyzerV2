@@ -8,6 +8,7 @@ import { ta } from './indicator-runtime'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
 import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
+import { tuxEmaScalperIndicatorLabel } from './tux-ema-scalper'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
 
 export const CM_MACD_SOURCE =
@@ -99,6 +100,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'sr-breaks-retests') return srBreaksRetestsIndicatorLabel(indicator)
   if (indicator.kind === 'pivot-points-missed-reversals')
     return pivotPointsMissedReversalsIndicatorLabel(indicator)
+  if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
 /**

@@ -167,6 +167,7 @@ import {
   SR_BREAKS_RETESTS_DEFAULTS,
   PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS,
   COINBASE_STRIKE_DEFAULTS,
+  TUX_EMA_SCALPER_DEFAULTS,
   NEXT_PIVOT_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
@@ -1369,9 +1370,11 @@ export default function App() {
               ? 'SR Breaks and Retests'
               : item.kind === 'pivot-points-missed-reversals'
                 ? 'Pivot Points High Low & Missed Reversal Levels'
-                : item.short === 'VOL'
-                  ? 'Volume'
-                  : item.short,
+                : item.kind === 'tux-ema-scalper'
+                  ? 'TUX EMA Scalper+SuperTrend'
+                  : item.short === 'VOL'
+                    ? 'Volume'
+                    : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -1385,6 +1388,7 @@ export default function App() {
           ? { pivots: { ...PIVOT_POINTS_MISSED_REVERSALS_DEFAULTS } }
           : {}),
         ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),
+        ...(kind === 'tux-ema-scalper' ? { tuxEmaScalper: { ...TUX_EMA_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
       },
     ])

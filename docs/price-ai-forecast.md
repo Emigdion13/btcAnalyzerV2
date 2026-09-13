@@ -1,6 +1,6 @@
 # Price AI — the main-chart forecast · Atlas implementation notes
 
-Atlas's main-chart AI used to answer *"what is the tape doing right now"*. It now also answers the
+Atlas's main-chart AI used to answer _"what is the tape doing right now"_. It now also answers the
 question a trader actually has to act on: **over the next N bars, where does price go, and does it
 finish above or below the strike line drawn on the chart?** Every number below is printed next to
 the call it belongs to; none of it is a black box, and all of it is graded against what later
@@ -14,16 +14,26 @@ printed.
 
 ## The question
 
-| Piece       | Definition                                                                                                                              |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Horizon     | A fixed number of bars from the anchor (the last **closed** candle). Default 10 on 1m–15m, 8 on 1h, 6 on 4h, 5 on 1D, 4 on 1W; the panel can change it per timeframe. |
-| Anchor      | The close of the last closed candle — the price everything is measured from.                                                            |
-| Strike      | The level line the chart is showing: the Coinbase strike indicator's live level (interval open, or the custom price when one is set), else the defended 15-minute window strike. |
-| Settlement  | At `anchor + horizonBars`, or at the strike window's cut — the panel chooses. Entries settle on the close of the first candle at or after the target time, never mid-bar. |
+| Piece      | Definition                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Horizon    | Normally a fixed number of bars from the anchor (the last **closed** candle). Default 10 on 1m–15m, 8 on 1h, 6 on 4h, 5 on 1D, 4 on 1W; the panel can change it per timeframe. When the timeframe-peek window is open and points to the chart timeframe or a higher timeframe, the live horizon is temporarily synced to that peek bar's close instead. |
+| Anchor     | The close of the last closed candle — the price everything is measured from.                                                                                                                                                                                                                                                                            |
+| Strike     | The level line the chart is showing: the Coinbase strike indicator's live level (interval open, or the custom price when one is set), else the defended 15-minute window strike.                                                                                                                                                                        |
+| Settlement | At `anchor + horizonBars`, or at the strike window's cut — the panel chooses. Entries settle on the close of the first candle at or after the target time, never mid-bar.                                                                                                                                                                               |
 
 The call is the **finish side**: `above` / `below` the pinned strike, with the probability of that
 side attached. When neither side clears the coin-flip band the call is `none` and the journal says
 so; an abstention is never scored as a win.
+
+### Peek-synced timing
+
+When Peek is visible, Price AI derives its effective horizon from the peek resolution instead of
+blindly reusing the saved N-bar setting. Example: on a 1m chart with a 15m peek bar that opened at
+9:00 and the chart anchored on 9:07, the forecast becomes an 8-bar forecast so the finish lands at
+the 9:15 peek close. The side panel still keeps the saved horizon as a fallback; hide Peek, or pin
+Peek below the chart timeframe, and the saved setting takes over again. If a manually pinned peek
+resolution does not share closes with the chart grid, the forecast snaps to the first chart close
+after the peek close and the UI labels it as a peek-synced horizon.
 
 ## How a specialist becomes a forecast
 
@@ -36,16 +46,16 @@ warnings it uses for the present-tense verdict — and gains a horizon projectio
    30, structure 30, higher-timeframe context 60). The cap stops any single agent from inventing a
    move larger than a third of the excursion a horizon's own noise implies.
 
-   | Specialist       | carry (ATR) | persistence (bars) |
-   | ---------------- | ----------- | ------------------ |
-   | regime           | 0.85        | 18                 |
-   | trend            | 1.15        | 30                 |
-   | momentum         | 0.80        | 5                  |
-   | macd             | 0.85        | 7                  |
-   | level-strength   | 0.70        | 30                 |
-   | structure        | 0.70        | 30                 |
-   | whale            | 0.50        | 2                  |
-   | context          | 1.05        | 60                 |
+   | Specialist     | carry (ATR) | persistence (bars) |
+   | -------------- | ----------- | ------------------ |
+   | regime         | 0.85        | 18                 |
+   | trend          | 1.15        | 30                 |
+   | momentum       | 0.80        | 5                  |
+   | macd           | 0.85        | 7                  |
+   | level-strength | 0.70        | 30                 |
+   | structure      | 0.70        | 30                 |
+   | whale          | 0.50        | 2                  |
+   | context        | 1.05        | 60                 |
 
 2. **The strike question.** With Δ the distance to the strike in ATR (positive = price above) and
    μ the projected drift in ATR:
@@ -130,15 +140,15 @@ accuracy, and first-half vs second-half accuracy so a cold-start prior is not mi
 and asserts behavioral floors before it writes anything — a regression cannot bless new weights.
 Its last recorded run, on the bundled scenarios:
 
-| Scenario                  | Forecasts | Strike call | Brier | Drift error | 2nd-half accuracy |
-| ------------------------- | --------- | ----------- | ----- | ----------- | ----------------- |
-| 1D trailing year          | 289       | 75.0%       | 0.169 | 1.13 ATR    | 76.2%             |
-| 1h Nov-2024 rally         | 228       | 69.8%       | 0.199 | 1.48 ATR    | 73.4%             |
-| 1h recent                 | 289       | 73.0%       | 0.209 | 1.32 ATR    | 74.8%             |
-| 15m recent                | 289       | 57.5%       | 0.244 | 1.59 ATR    | 60.2%             |
-| 5m recent                 | 289       | 66.7%       | 0.220 | 2.01 ATR    | 74.2%             |
-| 1m volatile               | 240       | 77.2%       | 0.170 | 2.33 ATR    | 85.5%             |
-| 1m recent                 | 289       | 76.3%       | 0.164 | 2.09 ATR    | 75.2%             |
+| Scenario          | Forecasts | Strike call | Brier | Drift error | 2nd-half accuracy |
+| ----------------- | --------- | ----------- | ----- | ----------- | ----------------- |
+| 1D trailing year  | 289       | 75.0%       | 0.169 | 1.13 ATR    | 76.2%             |
+| 1h Nov-2024 rally | 228       | 69.8%       | 0.199 | 1.48 ATR    | 73.4%             |
+| 1h recent         | 289       | 73.0%       | 0.209 | 1.32 ATR    | 74.8%             |
+| 15m recent        | 289       | 57.5%       | 0.244 | 1.59 ATR    | 60.2%             |
+| 5m recent         | 289       | 66.7%       | 0.220 | 2.01 ATR    | 74.2%             |
+| 1m volatile       | 240       | 77.2%       | 0.170 | 2.33 ATR    | 85.5%             |
+| 1m recent         | 289       | 76.3%       | 0.164 | 2.09 ATR    | 75.2%             |
 
 **Read that table honestly.** These are selected historical windows, not out-of-sample guarantees,
 and the strike-call hit rate is dominated by the distance case: a tape already three ATR from the

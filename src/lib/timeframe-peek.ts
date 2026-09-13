@@ -135,6 +135,62 @@ export function peekRatioLabel(peek: Timeframe, chart: Timeframe): string {
   return `${rounded} bars = 1 chart bar`
 }
 
+export interface PeekSynchronizedHorizon {
+  chartTimeframe: Timeframe
+  resolution: Timeframe
+  /** Chart bars the price AI should forecast so its finish lands on/after the peek close. */
+  horizonBars: number
+  /** The close of the current peek bar that contains the chart anchor. */
+  peekCloseTime: number
+  /** The actual chart-grid finish time after rounding to whole chart bars. */
+  targetTime: number
+  secondsToPeekClose: number
+  /** Non-zero only when the chart grid cannot land exactly on the peek close. */
+  spilloverSeconds: number
+}
+
+/**
+ * Align a chart-bar forecast to the timing of the current peek bar.
+ *
+ * The forecast engine answers in whole chart candles, so the clean case is a higher peek
+ * resolution that is an exact multiple of the chart. If the user pins a non-multiple pair
+ * (for example 3m chart → 5m peek), the horizon snaps to the first chart close after the
+ * peek close and reports that spillover instead of silently pretending the grids match.
+ * A lower-than-chart peek cannot be targeted by a chart-bar forecast, so it returns null.
+ */
+export function peekSynchronizedHorizon({
+  chartTimeframe,
+  peekTimeframe,
+  anchorTime,
+}: {
+  chartTimeframe: Timeframe
+  peekTimeframe: Timeframe
+  anchorTime: number
+}): PeekSynchronizedHorizon | null {
+  const chartSeconds = INTERVAL_SECONDS[chartTimeframe]
+  const peekSeconds = INTERVAL_SECONDS[peekTimeframe]
+  if (!Number.isFinite(anchorTime) || !chartSeconds || !peekSeconds) return null
+  if (peekSeconds < chartSeconds) return null
+
+  let peekCloseTime = bucketStart(anchorTime, peekTimeframe) + peekSeconds
+  if (peekCloseTime <= anchorTime) {
+    const periods = Math.floor((anchorTime - peekCloseTime) / peekSeconds) + 1
+    peekCloseTime += periods * peekSeconds
+  }
+  const secondsToPeekClose = Math.max(0, peekCloseTime - anchorTime)
+  const horizonBars = Math.max(1, Math.ceil(secondsToPeekClose / chartSeconds))
+  const targetTime = anchorTime + horizonBars * chartSeconds
+  return {
+    chartTimeframe,
+    resolution: peekTimeframe,
+    horizonBars,
+    peekCloseTime,
+    targetTime,
+    secondsToPeekClose,
+    spilloverSeconds: Math.max(0, targetTime - peekCloseTime),
+  }
+}
+
 /** The most recent `bars` candles, oldest first. Short feeds are returned whole. */
 export function peekWindow(candles: Candle[], bars: number): Candle[] {
   if (!candles.length) return []

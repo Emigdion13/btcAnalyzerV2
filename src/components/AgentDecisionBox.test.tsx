@@ -53,6 +53,12 @@ const strikeAnalysis = analyzeMarket({
   horizonBars: 10,
   strike: strike(close - 60),
 })
+const syncedAnalysis = analyzeMarket({
+  candles: tape,
+  timeframe: '1m',
+  horizonBars: 8,
+  strike: strike(close - 60),
+})
 const plainAnalysis = analyzeMarket({ candles: tape, timeframe: '1m', horizonBars: 10 })
 
 const baseProps = {
@@ -101,6 +107,28 @@ describe('AgentDecisionBox', () => {
     expect(markup).toContain('above')
     expect(markup).toContain('4:32')
     expect(markup).toContain('touch')
+  })
+
+  it('labels a horizon that is synced to the peek close', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AgentDecisionBox, {
+        ...baseProps,
+        timeframe: '1m',
+        analysis: syncedAnalysis,
+        horizonSync: {
+          chartTimeframe: '1m',
+          resolution: '15m',
+          horizonBars: 8,
+          peekCloseTime: syncedAnalysis.forecast.targetTime,
+          targetTime: syncedAnalysis.forecast.targetTime,
+          secondsToPeekClose: 8 * 60,
+          spilloverSeconds: 0,
+        },
+        feedState: 'live',
+      }),
+    )
+    expect(markup).toContain('8 bars → 15m close')
+    expect(markup).toContain('synced to the 15m peek close')
   })
 
   it('forecasts the drift when the chart has no strike line', () => {

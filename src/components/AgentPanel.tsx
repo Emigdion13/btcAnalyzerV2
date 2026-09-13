@@ -24,6 +24,7 @@ import type {
   MarketAnalysis,
 } from '../lib/market-agents'
 import { canSettleAtWindow, formatCountdown, kalshiClockLabel } from '../lib/kalshi-window'
+import type { PeekSynchronizedHorizon } from '../lib/timeframe-peek'
 import { formatPrice } from '../lib/market'
 import type { DataSource, Timeframe } from '../lib/types'
 import { EmptyState, IconButton, Toggle } from './ui'
@@ -172,6 +173,8 @@ export function AgentPanel({
   learning,
   journal,
   horizonBars,
+  configuredHorizonBars,
+  horizonSync,
   settleMode,
   onClose,
   onToggleAutoJournal,
@@ -187,7 +190,11 @@ export function AgentPanel({
   context: ContextAnalysis[]
   learning: AgentLearningState
   journal: AgentPredictionJournal
+  /** Effective horizon currently used by the forecast. */
   horizonBars: number
+  /** Saved manual horizon; used by the selector when the live horizon is peek-synced. */
+  configuredHorizonBars?: number
+  horizonSync?: PeekSynchronizedHorizon | null
   settleMode: 'bars' | 'cut'
   onClose: () => void
   onToggleAutoJournal: (enabled: boolean) => void
@@ -199,6 +206,7 @@ export function AgentPanel({
   const stats = useMemo(() => journalStats(journal), [journal])
   const latestEntries = useMemo(() => [...journal.entries].reverse().slice(0, 6), [journal.entries])
   const horizonOptions = useMemo(() => horizonChoices(timeframe), [timeframe])
+  const selectedHorizonBars = configuredHorizonBars ?? horizonBars
   const strike = analysis?.summary.strike ?? null
   const model = analysis?.forecast ?? null
   const windowCall = strike !== null
@@ -241,7 +249,10 @@ export function AgentPanel({
             <span className={`demo-badge ${source === 'coinbase' ? 'coinbase-feed-badge' : ''}`}>
               {source === 'coinbase' ? 'COINBASE' : 'DEMO'}
             </span>
-            <span>Adaptive ensemble · local learning only</span>
+            <span>
+              Adaptive ensemble · local learning only
+              {horizonSync ? ` · synced to ${horizonSync.resolution} peek close` : ''}
+            </span>
           </div>
           {strike ? (
             <div
@@ -459,7 +470,9 @@ export function AgentPanel({
               <p>
                 {settleMode === 'cut'
                   ? `Forecasts settle UP/DOWN from the strike at the ${strike ? kalshiClockLabel(strike.windowEnd) : 'window'} cut.`
-                  : `Forecasts settle ${horizonBars} bars later — where the AI said they would land.`}
+                  : horizonSync
+                    ? `Forecasts settle at the ${horizonSync.resolution} peek-window close — ${horizonBars} ${timeframe} bar${horizonBars === 1 ? '' : 's'} from the anchor.`
+                    : `Forecasts settle ${horizonBars} bars later — where the AI said they would land.`}
               </p>
             </div>
             <label className="agent-horizon-select">
@@ -469,7 +482,11 @@ export function AgentPanel({
                 onChange={(event) => onSettleModeChange(event.target.value as 'bars' | 'cut')}
                 aria-label="Forecast settlement mode"
               >
-                <option value="bars">After {horizonBars} bars</option>
+                <option value="bars">
+                  {horizonSync
+                    ? `${horizonSync.resolution} peek close (${horizonBars} bars)`
+                    : `After ${horizonBars} bars`}
+                </option>
                 <option value="cut" disabled={!windowSettles}>
                   At the strike cut
                 </option>
@@ -480,14 +497,15 @@ export function AgentPanel({
             <div>
               <strong>Prediction horizon</strong>
               <p>
-                Evaluate {timeframe} forecasts after {horizonBars} bars. Recommended default:{' '}
-                {suggestedHorizonBars(timeframe)} bars.
+                {horizonSync
+                  ? `Peek sync is active: this forecast finishes at the ${horizonSync.resolution} close (${horizonBars} ${timeframe} bar${horizonBars === 1 ? '' : 's'}). The saved ${selectedHorizonBars}-bar setting applies when Peek is hidden or pinned below the chart.`
+                  : `Evaluate ${timeframe} forecasts after ${horizonBars} bars. Recommended default: ${suggestedHorizonBars(timeframe)} bars.`}
               </p>
             </div>
             <label className="agent-horizon-select">
-              <span>Bars</span>
+              <span>{horizonSync ? 'Fallback' : 'Bars'}</span>
               <select
-                value={String(horizonBars)}
+                value={String(selectedHorizonBars)}
                 onChange={(event) => onHorizonBarsChange(Number(event.target.value))}
                 aria-label="Prediction horizon bars"
               >

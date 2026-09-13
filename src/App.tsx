@@ -139,9 +139,10 @@ import {
   TIMEFRAME_PEEK_DEFAULTS,
   peekDefaultVisible,
   peekResolution,
+  peekSynchronizedHorizon,
   timeframePeekSettings,
 } from './lib/timeframe-peek'
-import type { TimeframePeekSettings } from './lib/timeframe-peek'
+import type { PeekSynchronizedHorizon, TimeframePeekSettings } from './lib/timeframe-peek'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -534,9 +535,17 @@ export default function App() {
     () => peekResolution(peekSettings, timeframe),
     [peekSettings, timeframe],
   )
-  const agentTimeframes = useMemo(() => agentContextTimeframes(timeframe), [timeframe])
   // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
   const peekActive = peekVisible && replayIndex === null
+  const agentTimeframes = useMemo(() => {
+    const defaults = agentContextTimeframes(timeframe)
+    // If the trader has pinned the peek to another higher frame, feed that same frame into
+    // the AI context so the timing and the higher-timeframe read are talking about one window.
+    if (!peekActive) return defaults
+    if ((INTERVAL_SECONDS[peekTimeframe] ?? 0) <= (INTERVAL_SECONDS[timeframe] ?? 0))
+      return defaults
+    return [...new Set([...defaults, peekTimeframe])]
+  }, [peekActive, peekTimeframe, timeframe])
   const indicatorTimeframes = useMemo(
     () =>
       requestedIndicatorTimeframes(indicators, timeframe, [
@@ -623,6 +632,30 @@ export default function App() {
     () => (replayIndex === null && candles.length > 30 ? candles.slice(0, -1) : candles),
     [candles, replayIndex],
   )
+  const peekHorizonSync = useMemo<PeekSynchronizedHorizon | null>(() => {
+    if (!peekActive) return null
+    const anchor = candles[candles.length - 1]
+    return anchor
+      ? peekSynchronizedHorizon({
+          chartTimeframe: timeframe,
+          peekTimeframe,
+          anchorTime: anchor.time,
+        })
+      : null
+  }, [candles, peekActive, peekTimeframe, timeframe])
+  const settledPeekHorizonSync = useMemo<PeekSynchronizedHorizon | null>(() => {
+    if (!peekActive) return null
+    const anchor = settledCandles[settledCandles.length - 1]
+    return anchor
+      ? peekSynchronizedHorizon({
+          chartTimeframe: timeframe,
+          peekTimeframe,
+          anchorTime: anchor.time,
+        })
+      : null
+  }, [peekActive, peekTimeframe, settledCandles, timeframe])
+  const liveAgentHorizonBars = peekHorizonSync?.horizonBars ?? agentHorizonBars
+  const settledAgentHorizonBars = settledPeekHorizonSync?.horizonBars ?? agentHorizonBars
   // The clock the strike window reads: wall time live, the replay cursor on replay.
   const strikeNowSec = useMemo(() => {
     if (replayIndex === null) return nowMs / 1000
@@ -675,7 +708,7 @@ export default function App() {
           context: contextSignals,
           whale: whaleSignal ?? undefined,
           strike: liveStrike ?? undefined,
-          horizonBars: agentHorizonBars,
+          horizonBars: liveAgentHorizonBars,
         },
         safeAgentLearning,
       )
@@ -689,7 +722,7 @@ export default function App() {
     contextSignals,
     whaleSignal,
     liveStrike,
-    agentHorizonBars,
+    liveAgentHorizonBars,
     safeAgentLearning,
   ])
   const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
@@ -703,7 +736,7 @@ export default function App() {
           context: contextSignals,
           whale: replayIndex === null ? (live.whaleFlow ?? undefined) : undefined,
           strike: settledStrike ?? undefined,
-          horizonBars: agentHorizonBars,
+          horizonBars: settledAgentHorizonBars,
         },
         safeAgentLearning,
       )
@@ -718,7 +751,7 @@ export default function App() {
     contextSignals,
     live.whaleFlow,
     settledStrike,
-    agentHorizonBars,
+    settledAgentHorizonBars,
     safeAgentLearning,
   ])
   const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
@@ -1087,7 +1120,7 @@ export default function App() {
               timeframe,
               candles: settledCandles,
               analysis: settledMarketAnalysis,
-              horizonBars: agentHorizonBars,
+              horizonBars: settledAgentHorizonBars,
               settle: agentSettle,
               // The entry is pinned to the strike the chart is drawing, so only a defended
               // (non-provisional) level may seed it — a live print is not a settled level.
@@ -1119,7 +1152,7 @@ export default function App() {
     safeAgentJournal,
     safeAgentLearning,
     settledMarketAnalysis,
-    agentHorizonBars,
+    settledAgentHorizonBars,
     agentSettle,
     settledStrike,
     source,
@@ -2256,6 +2289,7 @@ export default function App() {
                     timeframe={timeframe}
                     analysis={marketAnalysis}
                     context={contextAnalyses}
+                    horizonSync={peekHorizonSync}
                     feedState={feedState}
                     onOpenPanel={() => {
                       setFocusMode(false)
@@ -2526,7 +2560,9 @@ export default function App() {
             context={contextAnalyses}
             learning={safeAgentLearning}
             journal={safeAgentJournal}
-            horizonBars={agentHorizonBars}
+            horizonBars={liveAgentHorizonBars}
+            configuredHorizonBars={agentHorizonBars}
+            horizonSync={peekHorizonSync}
             settleMode={agentSettle}
             onClose={() => setSidePanel(null)}
             onToggleAutoJournal={(autoJournal) =>

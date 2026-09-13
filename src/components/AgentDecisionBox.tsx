@@ -4,6 +4,8 @@ import type { ConnectionState } from '../../shared/coinbase'
 import { formatCountdown } from '../lib/kalshi-window'
 import { formatPrice } from '../lib/market'
 import type { ContextAnalysis, MarketAnalysis } from '../lib/market-agents'
+import { peekBarTime } from '../lib/timeframe-peek'
+import type { PeekSynchronizedHorizon } from '../lib/timeframe-peek'
 import { useLocalState } from '../lib/storage'
 import { agentDecisionDefaultMinimized, useFloatingWindow } from '../lib/floating-window'
 import type { DataSource, Timeframe } from '../lib/types'
@@ -86,6 +88,7 @@ export function AgentDecisionBox({
   timeframe,
   analysis,
   context,
+  horizonSync,
   feedState,
   onOpenPanel,
   onClose,
@@ -95,6 +98,7 @@ export function AgentDecisionBox({
   timeframe: Timeframe
   analysis: MarketAnalysis | null
   context: ContextAnalysis[]
+  horizonSync?: PeekSynchronizedHorizon | null
   feedState: ConnectionState | 'paused'
   onOpenPanel: () => void
   onClose: () => void
@@ -137,6 +141,17 @@ export function AgentDecisionBox({
     forecast === null
       ? null
       : `${formatPrice(forecast.targetLow)} – ${formatPrice(forecast.targetHigh)}`
+  const targetClock = forecast ? peekBarTime(forecast.targetTime, timeframe) : null
+  const horizonTitle = forecast
+    ? horizonSync
+      ? `Forecast finishes on the chart bar at ${targetClock} UTC, synced to the ${horizonSync.resolution} peek close${horizonSync.spilloverSeconds ? ` plus ${horizonSync.spilloverSeconds}s of chart-grid spillover` : ''}.`
+      : `Forecast finishes ${forecast.horizonBars} bars ahead at ${targetClock} UTC.`
+    : 'Forecast horizon'
+  const horizonLabel = forecast
+    ? horizonSync
+      ? `${forecast.horizonBars} bars → ${horizonSync.resolution} close`
+      : `${forecast.horizonBars} bars`
+    : '—'
 
   return (
     <section
@@ -340,14 +355,9 @@ export function AgentDecisionBox({
               <span>Drift</span>
               <strong>{formatAtr(forecast.expectedMoveAtr)} ATR</strong>
             </div>
-            <div title={`${forecast.horizonBars} bars ahead`}>
+            <div title={horizonTitle}>
               <span>Horizon</span>
-              <strong>
-                {forecast.horizonBars} bars
-                {forecast.snapshot.strikeExpiryLabel
-                  ? ` → ${forecast.snapshot.strikeExpiryLabel}`
-                  : ''}
-              </strong>
+              <strong>{horizonLabel}</strong>
             </div>
           </div>
 
@@ -440,6 +450,9 @@ export function AgentDecisionBox({
               higher-timeframe context — each project their read across the next{' '}
               {forecast.horizonBars} bars, and the director weighs those projections with what has
               been learned from settled forecasts. {agreement ? `${agreement}. ` : ''}
+              {horizonSync
+                ? `This horizon is synced to the ${horizonSync.resolution} peek window close. `
+                : ''}
               {forecast.modelNote}{' '}
               {stale
                 ? `The feed is ${feedState}, so this is the last forecast the data supported rather than a live one. `

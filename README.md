@@ -364,10 +364,22 @@ fresh boundary, and anything the chart cannot defend yields no strike at all rat
 fake one). When a strike is live:
 
 - The strike line on the chart is what the forecast is asked about. When the **Coinbase strike
-  indicator** is loaded, its live level is the pinned strike — the interval open, or the custom
-  price when one is set — and the window shows the level, the side, the distance in ATR, the
-  touch odds and a live `4:32 → 9:30` countdown. With no indicator loaded, the defended
-  15-minute window strike stands in; with neither, the AI forecasts the drift and says so.
+  indicator** is loaded, its live level is the pinned strike — **Kalshi's own published
+  `floor_strike` when it can be fetched**, otherwise the interval open, or the custom price when
+  one is set — and the window shows the level, the side, the distance in ATR, the touch odds and
+  a live `4:32 → 9:30` countdown. With no indicator loaded, the defended 15-minute window strike
+  stands in; with neither, the AI forecasts the drift and says so.
+
+Kalshi does **not** settle these markets on a Coinbase print. Its rule is a 60-second average of
+CF Benchmarks' real-time index (BRTI for BTC, `ETHUSD_RTI` and friends for the other six coins),
+taken across a basket of venues' order books — so a strike re-derived from candle opens drifts
+(measured at a mean bias of +$3.30 and a worst case of $9.09 on BTC, which is enough to flip the
+UP/DOWN read on a window that closes within a few dollars of the line). The chart therefore
+**fetches the strike Kalshi publishes** rather than reconstructing it, labels the price-scale tag
+`KALSHI STRIKE` only when that is genuinely what it is drawing, shows the live Coinbase↔index
+**basis** next to it, and falls back to an averaged estimate clearly marked `STRIKE (EST)`. See
+[`docs/kalshi-strike-exactness.md`](docs/kalshi-strike-exactness.md) for the rule text, the audit,
+and how to enable the optional API key that upgrades the overlay to a second-by-second index line.
 - The present-tense verdict still frames the window call (`Price sits +$12.40 above the strike
   with 4:32 to the 9:30 cut`), says whether the call needs a cross or just needs the side to
   hold, and tilts toward the fast readers (whale flow, momentum, MACD) as the cut approaches

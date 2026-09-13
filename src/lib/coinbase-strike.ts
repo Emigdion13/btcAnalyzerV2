@@ -1,4 +1,10 @@
 import type { Candle, Indicator } from './types'
+import {
+  estimateStrikeFromCandles,
+  KALSHI_WINDOW_SECONDS,
+  type KalshiStrike,
+  type KalshiStrikeSource,
+} from '../../shared/kalshi'
 
 export interface CoinbaseStrikeSettings {
   /** Contract interval in minutes: 5, 15, 30, 60, 240, 1440, etc. Default 15. */
@@ -173,38 +179,153 @@ export function calculateCoinbaseStrike(
 }
 
 /**
+ * The strike the chart should actually draw, and where it came from.
+ *
+ * `calculateCoinbaseStrike` derives a strike from candle opens. That is a reasonable
+ * local estimate, but it is NOT the number Kalshi settles against: Kalshi's rule is a
+ * 60-second average of CF Benchmarks' real-time index, on a basket of venues, not a
+ * single Coinbase print at the boundary. This resolver therefore prefers Kalshi's own
+ * published `floor_strike` whenever it lines up with the window on screen, and falls
+ * back to an estimate that at least averages the same 60 seconds — never to the raw
+ * boundary open while a better estimate exists.
+ *
+ * Everything is reported side by side (authoritative price, estimate, naive open, and
+ * the basis between them) so the UI can show its work instead of asserting a number.
+ */
+export interface ResolvedStrike {
+  /** The price to draw. Null when nothing defensible exists. */
+  price: number | null
+  source: KalshiStrikeSource
+  /** True when the price is Kalshi's published strike, or the user pinned it. */
+  authoritative: boolean
+  /** True when `settings.customStrike` pinned the level by hand. */
+  manual: boolean
+  /** Coinbase 60-second-average estimate, kept even when the published strike wins. */
+  estimate: number | null
+  /** The naive boundary-open strike the line used to draw. */
+  naiveOpen: number | null
+  /** `estimate − price`: the Coinbase↔index basis, in dollars. */
+  basis: number | null
+  windowStart: number
+  windowEnd: number
+  roundDigits: number
+  /** Kalshi market ticker, e.g. "KXBTC15M-26SEP131715-15". */
+  ticker: string | null
+  /** Verbatim settlement rule, for the UI to show what is being measured. */
+  rule: string | null
+  /** Kalshi resolves a dead-even tie UP (`strike_type: greater_or_equal`). */
+  tieGoesUp: boolean
+}
+
+export function resolveStrike(
+  result: CoinbaseStrikeResult,
+  kalshi: KalshiStrike | null,
+  settings: CoinbaseStrikeSettings,
+  candles: Candle[],
+  intervalSeconds: number,
+): ResolvedStrike {
+  const windowStart = result.intervalStart
+  const windowEnd = result.intervalEnd
+  const manual = settings.customStrike > 0
+  const naiveOpen = manual ? null : result.currentStrike
+  const estimate = manual ? null : estimateStrikeFromCandles(candles, windowStart, intervalSeconds)
+
+  const shared = {
+    windowStart,
+    windowEnd,
+    estimate,
+    naiveOpen,
+    roundDigits: 2,
+    ticker: null,
+    rule: null,
+    tieGoesUp: true,
+  }
+
+  if (manual)
+    return {
+      ...shared,
+      price: settings.customStrike,
+      source: 'estimate',
+      authoritative: true,
+      manual: true,
+      basis: null,
+    }
+
+  // Kalshi's published strike only speaks to its own 15-minute ladder, and only to the
+  // window currently on screen. Anything else is a mismatch, not an authority.
+  const usable =
+    kalshi !== null &&
+    settings.intervalMinutes * 60 === KALSHI_WINDOW_SECONDS &&
+    kalshi.windowStart === windowStart &&
+    kalshi.windowEnd === windowEnd
+
+  if (usable && kalshi)
+    return {
+      price: kalshi.strike,
+      source: 'kalshi',
+      authoritative: true,
+      manual: false,
+      estimate,
+      naiveOpen,
+      basis: estimate !== null ? estimate - kalshi.strike : null,
+      windowStart: kalshi.windowStart,
+      windowEnd: kalshi.windowEnd,
+      roundDigits: kalshi.roundDigits,
+      ticker: kalshi.ticker,
+      rule: kalshi.rule || null,
+      tieGoesUp: kalshi.tieGoesUp,
+    }
+
+  // No published strike: fall back to the averaged estimate, and only to the boundary
+  // open when the candle grid is too coarse to average a 60-second window.
+  return {
+    ...shared,
+    price: estimate ?? naiveOpen,
+    source: 'estimate',
+    authoritative: false,
+    manual: false,
+    basis: null,
+  }
+}
+
+/**
  * Return only the active contract levels for native price-scale markers.
  * Historical strike arrays remain available in the calculation result for hover readouts, but
  * deliberately are not emitted as chart plots: the active strike belongs on the right price
  * scale, like the market's current-price marker.
+ *
+ * Pass a `resolved` strike to draw Kalshi's published number; omit it to keep the
+ * purely Coinbase-derived behaviour.
  */
 export function coinbaseStrikePriceLevels(
   result: CoinbaseStrikeResult,
   settings: CoinbaseStrikeSettings,
+  resolved?: ResolvedStrike | null,
 ): CoinbaseStrikePriceLevel[] {
-  if (result.currentStrike === null) return []
+  const strike = resolved ? resolved.price : result.currentStrike
+  if (strike === null) return []
 
   const levels: CoinbaseStrikePriceLevel[] = [
     {
       role: 'strike',
-      price: result.currentStrike,
+      price: strike,
       color: settings.strikeColor,
       axisLabelVisible: true,
-      title: 'STRIKE',
+      title: resolved?.authoritative ? 'KALSHI STRIKE' : 'STRIKE (EST)',
     },
   ]
 
   if (settings.showTargets && settings.buffer > 0) {
     levels.push({
       role: 'upper-target',
-      price: result.currentStrike + settings.buffer,
+      price: strike + settings.buffer,
       color: settings.upColor,
       axisLabelVisible: false,
       title: '',
     })
     levels.push({
       role: 'lower-target',
-      price: result.currentStrike - settings.buffer,
+      price: strike - settings.buffer,
       color: settings.downColor,
       axisLabelVisible: false,
       title: '',

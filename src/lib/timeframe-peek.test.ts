@@ -17,6 +17,7 @@ import {
   peekResolution,
   peekResolutionLabel,
   peekStats,
+  peekSynchronizedHorizon,
   peekTimeRemaining,
   peekWindow,
   TIMEFRAME_PEEK_DEFAULTS,
@@ -129,6 +130,68 @@ describe('peek ratio labels', () => {
     expect(peekResolutionLabel(PEEK_AUTO, '1m')).toBe('Auto · 15m')
     expect(peekResolutionLabel('15m', '15m')).toBe('15m · this chart')
     expect(peekResolutionLabel('4h', '15m')).toBe('4h')
+  })
+})
+
+describe('peek-synchronized AI horizon', () => {
+  it('turns the active peek close into whole chart bars', () => {
+    const anchor = Date.UTC(2026, 8, 8, 9, 7) / 1000
+    const sync = peekSynchronizedHorizon({
+      chartTimeframe: '1m',
+      peekTimeframe: '15m',
+      anchorTime: anchor,
+    })!
+
+    expect(sync.horizonBars).toBe(8)
+    expect(sync.peekCloseTime).toBe(Date.UTC(2026, 8, 8, 9, 15) / 1000)
+    expect(sync.targetTime).toBe(sync.peekCloseTime)
+    expect(sync.secondsToPeekClose).toBe(8 * 60)
+    expect(sync.spilloverSeconds).toBe(0)
+  })
+
+  it('moves to the next peek bar when the anchor opens on the boundary', () => {
+    const anchor = Date.UTC(2026, 8, 8, 9, 15) / 1000
+    const sync = peekSynchronizedHorizon({
+      chartTimeframe: '5m',
+      peekTimeframe: '1h',
+      anchorTime: anchor,
+    })!
+
+    expect(sync.horizonBars).toBe(9)
+    expect(sync.peekCloseTime).toBe(Date.UTC(2026, 8, 8, 10, 0) / 1000)
+    expect(sync.targetTime).toBe(sync.peekCloseTime)
+  })
+
+  it('keeps same-resolution peeks on the next chart close and rejects lower peeks', () => {
+    const anchor = Date.UTC(2026, 8, 8, 9, 15) / 1000
+    expect(
+      peekSynchronizedHorizon({
+        chartTimeframe: '15m',
+        peekTimeframe: '15m',
+        anchorTime: anchor,
+      })?.horizonBars,
+    ).toBe(1)
+    expect(
+      peekSynchronizedHorizon({
+        chartTimeframe: '15m',
+        peekTimeframe: '5m',
+        anchorTime: anchor,
+      }),
+    ).toBeNull()
+  })
+
+  it('reports spillover when the chart and peek grids do not share closes', () => {
+    const anchor = Date.UTC(2026, 8, 8, 9, 3) / 1000
+    const sync = peekSynchronizedHorizon({
+      chartTimeframe: '3m',
+      peekTimeframe: '5m',
+      anchorTime: anchor,
+    })!
+
+    expect(sync.peekCloseTime).toBe(Date.UTC(2026, 8, 8, 9, 5) / 1000)
+    expect(sync.horizonBars).toBe(1)
+    expect(sync.targetTime).toBe(Date.UTC(2026, 8, 8, 9, 6) / 1000)
+    expect(sync.spilloverSeconds).toBe(60)
   })
 })
 

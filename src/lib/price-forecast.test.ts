@@ -157,6 +157,7 @@ describe('buildPriceForecast', () => {
     expect(forecast.agents.every((agent) => agent.driftAtr > 0)).toBe(true)
     expect(forecast.modelNote).toContain('√bars')
     expect(forecast.snapshot.strike).toBe(price - 2)
+    expect(forecast.snapshot.targetTime).toBe(forecast.targetTime)
   })
 
   it('turns a strike the price has to cross into a harder question than one already held', () => {

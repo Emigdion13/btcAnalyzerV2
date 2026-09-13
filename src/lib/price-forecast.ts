@@ -546,10 +546,11 @@ export function buildPriceForecast(input: PriceForecastInput): PriceForecast {
     0.97,
   )
 
+  const targetTime = input.anchorTime + bars * spacing
   const draft: Omit<PriceForecast, 'timeline'> = {
     timeframe: input.timeframe,
     horizonBars: bars,
-    targetTime: input.anchorTime + bars * spacing,
+    targetTime,
     expectedPrice,
     expectedMoveAtr: driftAtr,
     targetLow,
@@ -578,7 +579,7 @@ export function buildPriceForecast(input: PriceForecastInput): PriceForecast {
       price,
       atr,
       horizonBars: bars,
-      targetTime: 0,
+      targetTime,
       sigmaAtr,
       driftAtr,
       strike: strike ? strike.price : null,

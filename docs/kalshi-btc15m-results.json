@@ -1,0 +1,360 @@
+{
+  "generated_at": "2026-09-13T12:15:07.934653+00:00",
+  "assumptions": {
+    "contracts_per_trade": 100,
+    "midpoint_slippage_each_leg": 0.01,
+    "taker_fee_rate": 0.07,
+    "minimum_entry_probability": 0.05,
+    "selection": "top five train ROI per family, then validation ROI; test untouched"
+  },
+  "sample": {
+    "snapshots": 42946,
+    "markets": 5678,
+    "start": "2026-07-10T16:31:00+00:00",
+    "end": "2026-09-08T16:29:00+00:00",
+    "blocks": {
+      "train": 25468,
+      "validation": 8654,
+      "test": 8824
+    }
+  },
+  "selected_strategy": {
+    "candidate": {
+      "family": "macd-thrust",
+      "timeframe": 5,
+      "config": "5-13-4",
+      "entry_minute": 12,
+      "max_entry": 0.4,
+      "target": 0.0
+    },
+    "train": {
+      "n": 152,
+      "pnl": 614.73,
+      "pnl_per_trade": 4.0443,
+      "roi": 0.17146,
+      "win_rate": 0.276316,
+      "direction_accuracy": 0.276316,
+      "avg_entry_probability": 0.2143,
+      "median_entry_probability": 0.205,
+      "early_exit_rate": 0.0,
+      "profit_factor": 1.2577
+    },
+    "validation": {
+      "n": 52,
+      "pnl": 495.26,
+      "pnl_per_trade": 9.5242,
+      "roi": 0.411093,
+      "win_rate": 0.326923,
+      "direction_accuracy": 0.326923,
+      "avg_entry_probability": 0.2104,
+      "median_entry_probability": 0.225,
+      "early_exit_rate": 0.0,
+      "profit_factor": 1.666
+    },
+    "test": {
+      "n": 48,
+      "pnl": 434.02,
+      "pnl_per_trade": 9.0421,
+      "roi": 0.342833,
+      "win_rate": 0.354167,
+      "direction_accuracy": 0.354167,
+      "avg_entry_probability": 0.2414,
+      "median_entry_probability": 0.265,
+      "early_exit_rate": 0.0,
+      "profit_factor": 1.6071
+    },
+    "test_mean_pnl_95ci": [
+      -2.7292,
+      21.4631
+    ]
+  },
+  "family_winners": [
+    {
+      "candidate": {
+        "family": "macd-thrust",
+        "timeframe": 5,
+        "config": "5-13-4",
+        "entry_minute": 12,
+        "max_entry": 0.4,
+        "target": 0.0
+      },
+      "train": {
+        "n": 152,
+        "pnl": 614.73,
+        "pnl_per_trade": 4.0443,
+        "roi": 0.17146,
+        "win_rate": 0.276316,
+        "direction_accuracy": 0.276316,
+        "avg_entry_probability": 0.2143,
+        "median_entry_probability": 0.205,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.2577
+      },
+      "validation": {
+        "n": 52,
+        "pnl": 495.26,
+        "pnl_per_trade": 9.5242,
+        "roi": 0.411093,
+        "win_rate": 0.326923,
+        "direction_accuracy": 0.326923,
+        "avg_entry_probability": 0.2104,
+        "median_entry_probability": 0.225,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.666
+      },
+      "test": {
+        "n": 48,
+        "pnl": 434.02,
+        "pnl_per_trade": 9.0421,
+        "roi": 0.342833,
+        "win_rate": 0.354167,
+        "direction_accuracy": 0.354167,
+        "avg_entry_probability": 0.2414,
+        "median_entry_probability": 0.265,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.6071
+      },
+      "test_mean_pnl_95ci": [
+        -2.7292,
+        21.4631
+      ]
+    },
+    {
+      "candidate": {
+        "family": "macd",
+        "timeframe": 15,
+        "config": "12-26-9",
+        "entry_minute": 12,
+        "max_entry": 0.35,
+        "target": 0.0
+      },
+      "train": {
+        "n": 623,
+        "pnl": 604.64,
+        "pnl_per_trade": 0.9705,
+        "roi": 0.054008,
+        "win_rate": 0.189406,
+        "direction_accuracy": 0.189406,
+        "avg_entry_probability": 0.1603,
+        "median_entry_probability": 0.135,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.0719
+      },
+      "validation": {
+        "n": 240,
+        "pnl": 4.52,
+        "pnl_per_trade": 0.0188,
+        "roi": 0.001077,
+        "win_rate": 0.175,
+        "direction_accuracy": 0.175,
+        "avg_entry_probability": 0.1556,
+        "median_entry_probability": 0.125,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.0014
+      },
+      "test": {
+        "n": 266,
+        "pnl": 949.22,
+        "pnl_per_trade": 3.5685,
+        "roi": 0.195684,
+        "win_rate": 0.218045,
+        "direction_accuracy": 0.218045,
+        "avg_entry_probability": 0.1628,
+        "median_entry_probability": 0.135,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.2782
+      }
+    },
+    {
+      "candidate": {
+        "family": "rsi-momentum",
+        "timeframe": 15,
+        "config": "14-45-55",
+        "entry_minute": 12,
+        "max_entry": 0.35,
+        "target": 0.0
+      },
+      "train": {
+        "n": 421,
+        "pnl": 945.83,
+        "pnl_per_trade": 2.2466,
+        "roi": 0.125206,
+        "win_rate": 0.2019,
+        "direction_accuracy": 0.2019,
+        "avg_entry_probability": 0.16,
+        "median_entry_probability": 0.135,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.1692
+      },
+      "validation": {
+        "n": 152,
+        "pnl": -348.12,
+        "pnl_per_trade": -2.2903,
+        "roi": -0.131459,
+        "win_rate": 0.151316,
+        "direction_accuracy": 0.151316,
+        "avg_entry_probability": 0.1551,
+        "median_entry_probability": 0.125,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.8409
+      },
+      "test": {
+        "n": 154,
+        "pnl": 321.6,
+        "pnl_per_trade": 2.0883,
+        "roi": 0.111729,
+        "win_rate": 0.207792,
+        "direction_accuracy": 0.207792,
+        "avg_entry_probability": 0.1672,
+        "median_entry_probability": 0.145,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.1532
+      }
+    },
+    {
+      "candidate": {
+        "family": "rsi-reversal",
+        "timeframe": 15,
+        "config": "7-30-70",
+        "entry_minute": 2,
+        "max_entry": 0.4,
+        "target": 0.0
+      },
+      "train": {
+        "n": 185,
+        "pnl": 1247.36,
+        "pnl_per_trade": 6.7425,
+        "roi": 0.213128,
+        "win_rate": 0.383784,
+        "direction_accuracy": 0.383784,
+        "avg_entry_probability": 0.2919,
+        "median_entry_probability": 0.295,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.3594
+      },
+      "validation": {
+        "n": 73,
+        "pnl": 337.46,
+        "pnl_per_trade": 4.6227,
+        "roi": 0.142838,
+        "win_rate": 0.369863,
+        "direction_accuracy": 0.369863,
+        "avg_entry_probability": 0.299,
+        "median_entry_probability": 0.315,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.2358
+      },
+      "test": {
+        "n": 49,
+        "pnl": -97.77,
+        "pnl_per_trade": -1.9953,
+        "roi": -0.061192,
+        "win_rate": 0.306122,
+        "direction_accuracy": 0.306122,
+        "avg_entry_probability": 0.3012,
+        "median_entry_probability": 0.295,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.9111
+      }
+    },
+    {
+      "candidate": {
+        "family": "ensemble-rsi+macd+sr",
+        "timeframe": 1,
+        "config": "fixed",
+        "entry_minute": 2,
+        "max_entry": 0.5,
+        "target": 0.0
+      },
+      "train": {
+        "n": 154,
+        "pnl": -289.58,
+        "pnl_per_trade": -1.8804,
+        "roi": -0.043288,
+        "win_rate": 0.415584,
+        "direction_accuracy": 0.415584,
+        "avg_entry_probability": 0.4076,
+        "median_entry_probability": 0.42,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.9244
+      },
+      "validation": {
+        "n": 57,
+        "pnl": -51.08,
+        "pnl_per_trade": -0.8961,
+        "roi": -0.020023,
+        "win_rate": 0.438596,
+        "direction_accuracy": 0.438596,
+        "avg_entry_probability": 0.4206,
+        "median_entry_probability": 0.435,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.9653
+      },
+      "test": {
+        "n": 48,
+        "pnl": -374.55,
+        "pnl_per_trade": -7.8031,
+        "roi": -0.180545,
+        "win_rate": 0.354167,
+        "direction_accuracy": 0.354167,
+        "avg_entry_probability": 0.4054,
+        "median_entry_probability": 0.425,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.7141
+      }
+    },
+    {
+      "candidate": {
+        "family": "sr-bounce",
+        "timeframe": 5,
+        "config": "20-0.5",
+        "entry_minute": 12,
+        "max_entry": 0.4,
+        "target": 0.0
+      },
+      "train": {
+        "n": 161,
+        "pnl": 789.49,
+        "pnl_per_trade": 4.9037,
+        "roi": 0.262245,
+        "win_rate": 0.236025,
+        "direction_accuracy": 0.236025,
+        "avg_entry_probability": 0.1674,
+        "median_entry_probability": 0.135,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.3757
+      },
+      "validation": {
+        "n": 58,
+        "pnl": 336.0,
+        "pnl_per_trade": 5.7931,
+        "roi": 0.348548,
+        "win_rate": 0.224138,
+        "direction_accuracy": 0.224138,
+        "avg_entry_probability": 0.1474,
+        "median_entry_probability": 0.1175,
+        "early_exit_rate": 0.0,
+        "profit_factor": 1.4694
+      },
+      "test": {
+        "n": 74,
+        "pnl": -459.49,
+        "pnl_per_trade": -6.2093,
+        "roi": -0.337987,
+        "win_rate": 0.121622,
+        "direction_accuracy": 0.121622,
+        "avg_entry_probability": 0.1643,
+        "median_entry_probability": 0.13,
+        "early_exit_rate": 0.0,
+        "profit_factor": 0.6006
+      }
+    }
+  ],
+  "data_provenance": {
+    "repository": "https://github.com/SudoAptInstallMyBalls/Kalshi-Bot-Beta",
+    "commit": "9801a9b85e1332b31feddf481fc28971d1b5aae4",
+    "kalshi_snapshots": "data/research/multi-asset/backtests/2026-09-08T17-56-59-774Z/BTC-forecasts.jsonl",
+    "btc_candles": "data/research/multi-asset/BTC/spot.sqlite",
+    "note": "Third-party public archive; raw data is not vendored here."
+  }
+}

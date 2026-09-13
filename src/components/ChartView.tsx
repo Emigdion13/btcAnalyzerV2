@@ -50,6 +50,7 @@ import type {
   Tool,
 } from '../lib/types'
 import type { OrderBookView } from '../../shared/coinbase'
+import type { BrtiAnchor, BrtiSample } from '../../shared/kalshi'
 import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
 import { formatNotional } from '../../shared/whale-flow'
@@ -81,7 +82,11 @@ import {
   calculateCoinbaseStrike,
   coinbaseStrikePriceLevels,
   coinbaseStrikeSettings,
+  COINBASE_STRIKE_DEFAULTS,
+  resolveStrike,
 } from '../lib/coinbase-strike'
+import { brtiOverlayPoints } from '../lib/brti-overlay'
+import { useKalshiStrike } from '../lib/useKalshiStrike'
 import {
   calculatePivotPointsMissedReversals,
   pivotPointsMissedReversalsSettings,
@@ -181,6 +186,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const indicatorSeries = useRef<Map<string, IndicatorSeries>>(new Map())
   const strikePriceLinesRef = useRef<Map<string, ManagedStrikePriceLine>>(new Map())
+  const brtiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const propsRef = useRef(props)
   propsRef.current = props
   const pendingRef = useRef<Anchor | null>(null)
@@ -265,19 +271,54 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         }),
     [candles, indicators],
   )
+  const strikeIndicatorActive = indicators.some(
+    (indicator) => indicator.visible && indicator.kind === 'coinbase-strike',
+  )
+  /**
+   * Kalshi's own published strike, fetched rather than re-derived. Disabled in demo
+   * mode: a simulated chart has no real window for Kalshi to have published against,
+   * and inventing one would present fiction as an authoritative number.
+   */
+  const kalshi = useKalshiStrike({
+    product: asset.symbol,
+    enabled: props.source === 'coinbase' && strikeIndicatorActive,
+  })
+  // A product switch can leave the previous pair's response in state for a frame; the
+  // strike is only ever applied to the market it was actually published for.
+  const kalshiPayload =
+    kalshi.response && kalshi.response.product === asset.symbol ? kalshi.response : null
+  const kalshiStrike = kalshiPayload?.strike ?? null
+  const brtiValues = useMemo<(BrtiSample | BrtiAnchor)[]>(
+    () => (kalshiPayload?.samples?.length ? kalshiPayload.samples : (kalshiPayload?.anchors ?? [])),
+    [kalshiPayload],
+  )
   const strikeOverlays = useMemo(
     () =>
       indicators
         .filter((indicator) => indicator.visible && indicator.kind === 'coinbase-strike')
         .map((indicator) => {
           const settings = coinbaseStrikeSettings(indicator)
+          const result = calculateCoinbaseStrike(candles, settings)
           return {
             indicator,
             settings,
-            result: calculateCoinbaseStrike(candles, settings),
+            result,
+            resolved: resolveStrike(result, kalshiStrike, settings, candles, INTERVAL[timeframe]),
           }
         }),
-    [candles, indicators],
+    [candles, indicators, kalshiStrike, timeframe],
+  )
+  /**
+   * The index Kalshi settles on, snapped to the candle grid so it cannot distort the
+   * chart's time spacing. Sparse by nature without an API key: exact values only exist
+   * at quarter-hour boundaries.
+   */
+  const brtiPoints = useMemo(
+    () =>
+      strikeIndicatorActive && brtiValues.length
+        ? brtiOverlayPoints(candles, brtiValues, INTERVAL[timeframe])
+        : [],
+    [candles, brtiValues, timeframe, strikeIndicatorActive],
   )
   const scalpSwingOverlays = useMemo(
     () =>
@@ -1080,8 +1121,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (!series) return
 
     const activeKeys = new Set<string>()
-    for (const { indicator, settings: strikeSettings, result } of strikeOverlays) {
-      for (const level of coinbaseStrikePriceLevels(result, strikeSettings)) {
+    for (const { indicator, settings: strikeSettings, result, resolved } of strikeOverlays) {
+      for (const level of coinbaseStrikePriceLevels(result, strikeSettings, resolved)) {
         const key = `${indicator.id}:${level.role}`
         activeKeys.add(key)
         const options: CreatePriceLineOptions = {
@@ -1112,6 +1153,44 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       strikePriceLinesRef.current.delete(key)
     }
   }, [asset.priceIncrement, asset.symbol, chartType, strikeOverlays])
+
+  // CF Benchmarks index overlay: the price series Kalshi actually measures, drawn
+  // against the Coinbase trades the chart is built from.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    if (!brtiPoints.length) {
+      if (brtiSeriesRef.current) {
+        chart.removeSeries(brtiSeriesRef.current)
+        brtiSeriesRef.current = null
+      }
+      return
+    }
+    const strikeColor =
+      strikeOverlays[0]?.settings.strikeColor ?? COINBASE_STRIKE_DEFAULTS.strikeColor
+    if (!brtiSeriesRef.current)
+      brtiSeriesRef.current = chart.addSeries(LineSeries, {
+        priceScaleId: 'right',
+        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        color: strikeColor,
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        lineType: 0,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: 'CF BRTI',
+      })
+    brtiSeriesRef.current.setData(
+      brtiPoints.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })),
+    )
+    return () => {
+      if (brtiSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(brtiSeriesRef.current)
+        brtiSeriesRef.current = null
+      }
+    }
+  }, [brtiPoints, strikeOverlays])
 
   const hasCandles = candles.length > 0
   useEffect(() => {
@@ -2762,18 +2841,34 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             </span>
           </div>
         )}
-        {strikeOverlays.map(({ indicator, settings: strikeSettings, result }) => {
-          if (!strikeSettings.showStatusBadge || result.currentStrike === null) return null
+        {strikeOverlays.map(({ indicator, settings: strikeSettings, result, resolved }) => {
+          if (!strikeSettings.showStatusBadge || resolved.price === null) return null
           const strikeDisplay =
             hovered && result.strikeLine[hoverIndex] !== null
               ? result.strikeLine[hoverIndex]!
-              : result.currentStrike
+              : resolved.price
           const currentPrice = hovered
             ? hovered.close
             : (result.currentPrice ?? candles[candles.length - 1]?.close ?? strikeDisplay)
           const delta = currentPrice - strikeDisplay
           const deltaPct = strikeDisplay > 0 ? (delta / strikeDisplay) * 100 : 0
-          const isUp = delta >= 0
+          // Kalshi resolves this ladder on `greater_or_equal`: a dead-even tie is UP.
+          const isUp = resolved.tieGoesUp ? delta >= 0 : delta > 0
+          const sourceLabel = resolved.manual
+            ? 'MANUAL PIN'
+            : resolved.authoritative
+              ? `KALSHI · ${kalshiPayload?.indexId ?? 'BRTI'}`
+              : 'COINBASE EST'
+          const basisLabel =
+            resolved.basis !== null
+              ? `CB basis ${resolved.basis >= 0 ? '+' : '−'}$${formatPrice(Math.abs(resolved.basis), false)}`
+              : resolved.authoritative
+                ? 'exact · 60s index average'
+                : kalshi.status === 'unsupported'
+                  ? 'no Kalshi market on this pair'
+                  : kalshi.status === 'waiting'
+                    ? 'awaiting Kalshi strike'
+                    : kalshi.message || 'estimate · 60s trailing average'
           const minutesLeft = Math.floor(result.timeRemainingSeconds / 60)
           const secondsLeft = result.timeRemainingSeconds % 60
           const countdown = `${String(minutesLeft).padStart(2, '0')}:${String(secondsLeft).padStart(2, '0')}`
@@ -2791,14 +2886,41 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   className="strike-hud-dot"
                   style={{ background: strikeSettings.strikeColor }}
                 />
-                <span className="strike-hud-title">
-                  COINBASE {strikeSettings.intervalMinutes}m STRIKE
+                <span className="strike-hud-title" title={resolved.rule ?? undefined}>
+                  {resolved.authoritative && !resolved.manual
+                    ? `KALSHI ${strikeSettings.intervalMinutes}m STRIKE`
+                    : `COINBASE ${strikeSettings.intervalMinutes}m STRIKE · EST`}
                 </span>
                 {!hovered && (
                   <span className="strike-hud-timer" title="Time to interval expiry">
                     ⏱ {countdown}
                   </span>
                 )}
+              </div>
+              <div
+                className={`strike-hud-source${resolved.authoritative ? ' strike-source-exact' : ''}`}
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  fontSize: 10,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  opacity: 0.85,
+                }}
+              >
+                <span
+                  style={{
+                    color: resolved.authoritative
+                      ? strikeSettings.upColor
+                      : strikeSettings.downColor,
+                    fontWeight: 700,
+                  }}
+                >
+                  {sourceLabel}
+                </span>
+                <span>{basisLabel}</span>
               </div>
               <div className="strike-hud-values">
                 <div className="strike-hud-price-col">
@@ -2894,7 +3016,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                     ? formatPrice(
                                         strikeOverlays.find(
                                           (item) => item.indicator.id === indicator.id,
-                                        )?.result.currentStrike,
+                                        )?.resolved.price ??
+                                          strikeOverlays.find(
+                                            (item) => item.indicator.id === indicator.id,
+                                          )?.result.currentStrike ??
+                                          null,
                                       )
                                     : indicator.kind === 'next-pivot'
                                       ? nextPivotLegendValue(

@@ -1,9 +1,52 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { isInterval, isProductId } from '../shared/coinbase.ts'
+import { KALSHI_COIN_FEEDS, kalshiFeedForProduct } from '../shared/kalshi.ts'
 import { CoinbaseService } from './coinbase-service.ts'
+import { KalshiService } from './kalshi-service.ts'
 import { MarketError } from './rest-client.ts'
 
-export function createMarketApi(service = new CoinbaseService()) {
+/**
+ * Optional Kalshi API credentials, for the CF Benchmarks passthrough.
+ *
+ * Without them the strike feed still works — Kalshi's market data is public — we
+ * simply lose the second-by-second index samples and draw quarter-hour anchors
+ * instead. The private key may be inlined or pointed at a file; a PEM in an
+ * environment variable is painful, so the path form is the practical one.
+ */
+/** Which charted pairs have a Kalshi 15-minute market, and the index behind each. */
+const KALSHI_COIN_LIST = KALSHI_COIN_FEEDS.map((feed) => ({
+  product: feed.product,
+  series: feed.series,
+  indexId: feed.indexId,
+  roundDigits: feed.roundDigits,
+}))
+
+function kalshiCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): {
+  keyId?: string
+  privateKey?: string
+} {
+  const keyId = env.KALSHI_API_KEY_ID?.trim()
+  if (!keyId) return {}
+  const inline = env.KALSHI_API_PRIVATE_KEY?.trim()
+  const path = env.KALSHI_API_PRIVATE_KEY_PATH?.trim()
+  let privateKey = inline || undefined
+  if (!privateKey && path) {
+    try {
+      privateKey = readFileSync(path, 'utf8').trim()
+    } catch {
+      // A missing key file must not take the whole server down; the unauthenticated
+      // strike feed carries on and the UI reports that samples are unavailable.
+      privateKey = undefined
+    }
+  }
+  return privateKey ? { keyId, privateKey } : {}
+}
+
+export function createMarketApi(
+  service = new CoinbaseService(),
+  kalshi = new KalshiService(kalshiCredentialsFromEnv()),
+) {
   const connections = new Set<ServerResponse>()
   const json = (res: ServerResponse, status: number, value: unknown) => {
     if (res.destroyed || res.writableEnded) return
@@ -19,6 +62,27 @@ export function createMarketApi(service = new CoinbaseService()) {
     if (req.method !== 'GET')
       throw new MarketError('Only GET requests are supported.', 405, 'METHOD_NOT_ALLOWED')
     const url = new URL(req.url ?? '/', 'http://market.internal')
+    /**
+     * Kalshi's published strike for one coin's live 15-minute window.
+     *
+     * Handled before the Coinbase parameter validation below: it takes a single
+     * `product`, not a watchlist, and must not be rejected by rules it has no part in.
+     */
+    if (url.pathname === '/api/kalshi/strike') {
+      const product = url.searchParams.get('product')
+      if (!isProductId(product) || !kalshiFeedForProduct(product))
+        throw new MarketError(
+          'Kalshi runs no 15-minute market on this pair.',
+          400,
+          'NO_KALSHI_SERIES',
+        )
+      json(res, 200, await kalshi.strikeFor(product))
+      return
+    }
+    if (url.pathname === '/api/kalshi/coins') {
+      json(res, 200, { source: 'kalshi', keyed: kalshi.keyed, coins: KALSHI_COIN_LIST })
+      return
+    }
     if (url.pathname === '/api/coinbase/products') {
       json(res, 200, await service.getProducts())
       return
@@ -100,17 +164,27 @@ export function createMarketApi(service = new CoinbaseService()) {
           res.end()
           return
         }
+        const kalshiRoute = req.url?.startsWith('/api/kalshi/') ?? false
         const e =
           error instanceof MarketError
             ? error
-            : new MarketError('Coinbase returned unavailable or invalid market data. Please retry.')
-        json(res, e.status, { source: 'coinbase', error: e.code, message: e.message })
+            : new MarketError(
+                kalshiRoute
+                  ? 'Kalshi returned unavailable or invalid market data. Please retry.'
+                  : 'Coinbase returned unavailable or invalid market data. Please retry.',
+              )
+        json(res, e.status, {
+          source: kalshiRoute ? 'kalshi' : 'coinbase',
+          error: e.code,
+          message: e.message,
+        })
       })
       return true
     },
     close() {
       connections.forEach((res) => res.end())
       service.close()
+      kalshi.close()
     },
   }
 }

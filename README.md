@@ -356,6 +356,14 @@ projection in `src/lib/price-forecast.ts`, and the journal in `src/lib/agent-jou
 
 ### The game: UP or DOWN from the strike at every quarter-hour cut
 
+A reproducible, chronological walk-forward study of 5,678 historical KXBTC15M markets is in
+[the Kalshi BTC 15-minute strategy report](docs/kalshi-btc15m-strategy.md). Its expanded
+indicator lab compares RSI, MACD, CCI, MFI, Stochastic, Williams %R, moving averages,
+Bollinger/Donchian channels, ADX/DMI, VWAP, OBV, support/resistance, entry timing,
+low-probability entry caps, and profit targets while stating why historical order-book claims
+are not supported by the available
+archive. The research script is `scripts/analyze-kalshi-btc15m.py`; it does not place orders.
+
 Every agent answers one question: at the next `:00` / `:15` / `:30` / `:45` cut, will price
 be **UP** or **DOWN** from the strike — the price when the window opened? The window math
 lives in `src/lib/kalshi-window.ts`: the strike is the open of the candle that opened the

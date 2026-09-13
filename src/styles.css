@@ -1018,6 +1018,7 @@ button {
   z-index: 1;
 }
 .scalpswing-overlay,
+.chile-reversal-overlay,
 .tux-ema-scalper-overlay {
   position: absolute;
   left: 0;
@@ -1026,9 +1027,11 @@ button {
   overflow: visible;
   z-index: 3;
 }
-.tux-ema-scalper-signal {
+.tux-ema-scalper-signal,
+.chile-reversal-signal {
   pointer-events: none;
 }
+.chile-reversal-label,
 .tux-ema-scalper-label {
   /* Transparent in-chart message: readability comes from the halo, never a plate. */
   paint-order: stroke;

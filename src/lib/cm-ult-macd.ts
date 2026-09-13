@@ -7,6 +7,7 @@ import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase
 import { ta } from './indicator-runtime'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
+import { chileReversalIndicatorLabel, chileReversalSettings } from './chile-reversal'
 import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
 import { tuxEmaScalperIndicatorLabel } from './tux-ema-scalper'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
@@ -101,6 +102,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'pivot-points-missed-reversals')
     return pivotPointsMissedReversalsIndicatorLabel(indicator)
   if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
+  if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
 /**
@@ -125,9 +127,12 @@ export function requestedIndicatorTimeframes(
     )
     .map((indicator) => smcSettings(indicator).fvgTimeframe)
     .filter((resolution): resolution is Timeframe => !!resolution)
+  const chileResolutions = indicators
+    .filter((indicator) => indicator.kind === 'chile-reversal' && indicator.visible)
+    .map((indicator) => chileReversalSettings(indicator).resolution)
   return [
     ...new Set(
-      [...cmResolutions, ...smcFvgResolutions, ...extra].filter(
+      [...cmResolutions, ...smcFvgResolutions, ...chileResolutions, ...extra].filter(
         (resolution) => resolution !== chart,
       ),
     ),

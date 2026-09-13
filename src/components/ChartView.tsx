@@ -94,6 +94,11 @@ import {
 import type { PivotColorRole } from '../lib/pivot-points-missed-reversals'
 import { calculateScalpSwing, SCALPSWING_COLORS, scalpSwingSettings } from '../lib/scalpswing'
 import { calculateTuxEmaScalper, tuxEmaScalperSettings } from '../lib/tux-ema-scalper'
+import {
+  CHILE_REVERSAL_COLORS,
+  calculateChileReversal,
+  chileReversalSettings,
+} from '../lib/chile-reversal'
 import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
@@ -178,6 +183,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const pivotSvgRef = useRef<SVGSVGElement>(null)
   const scalpswingSvgRef = useRef<SVGSVGElement>(null)
   const tuxEmaScalperSvgRef = useRef<SVGSVGElement>(null)
+  const chileReversalSvgRef = useRef<SVGSVGElement>(null)
   const nextPivotSvgRef = useRef<SVGSVGElement>(null)
   const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -347,6 +353,24 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           }
         }),
     [candles, indicators],
+  )
+  const chileReversalOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'chile-reversal')
+        .map((indicator) => {
+          const settings = chileReversalSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateChileReversal(candles, settings, {
+              timeframe,
+              timeframes: indicatorTimeframes,
+              replay,
+            }),
+          }
+        }),
+    [candles, indicators, timeframe, indicatorTimeframes, replay],
   )
   const nextPivotOverlays = useMemo(
     () =>
@@ -569,6 +593,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       await paintSvg(pivotSvgRef.current)
       await paintSvg(scalpswingSvgRef.current)
       await paintSvg(tuxEmaScalperSvgRef.current)
+      await paintSvg(chileReversalSvgRef.current)
       await paintSvg(nextPivotSvgRef.current)
       await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
@@ -666,6 +691,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
               (indicator.visible && indicator.kind === 'scalpswing') ||
               (indicator.visible && indicator.kind === 'tux-ema-scalper') ||
+              (indicator.visible && indicator.kind === 'chile-reversal') ||
               (indicator.visible && indicator.kind === 'next-pivot') ||
               (indicator.visible && divergenceEnabled(indicator)),
           )
@@ -2363,6 +2389,148 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  const chileReversalLegendValue = (result?: (typeof chileReversalOverlays)[number]['result']) => {
+    if (!result) return '—'
+    if (result.missingFeed) return `${result.resolution} feed…`
+    const last = result.signals.at(-1)
+    if (!last) return `${result.levels.length} levels`
+    const text =
+      last.kind === 'bounce-support'
+        ? 'Bounce'
+        : last.kind === 'reject-resistance'
+          ? 'Reject'
+          : last.kind === 'break-resistance'
+            ? 'Break R'
+            : 'Break S'
+    return `${text} ${last.levelKind}`
+  }
+
+  const renderChileReversalOverlay = (overlay: (typeof chileReversalOverlays)[number]) => {
+    const { indicator, settings, result } = overlay
+    if (!candles.length) return null
+    const lastIndex = candles.length - 1
+
+    const zones = settings.showZones
+      ? result.levels.map((level) => {
+          // The Pine boxes span `bar_index - largoZona` to `bar_index + 7`;
+          // here the zone is anchored to the visible window's right edge.
+          const left = srPoint(Math.max(0, lastIndex - 28), level.price + level.zone)
+          const right = srPoint(lastIndex + 2, level.price - level.zone)
+          if (!left || !right) return null
+          const x = Math.min(left.x, right.x)
+          const width = Math.max(2, Math.abs(right.x - left.x))
+          const y = Math.min(left.y, right.y)
+          const height = Math.max(1, Math.abs(right.y - left.y))
+          const color = level.side === 'support' ? settings.supportColor : settings.resistanceColor
+          const secondary = level.kind === 'R2' || level.kind === 'S2'
+          return (
+            <g key={`chile-level:${level.kind}`} data-testid="chile-reversal-zone">
+              <title>
+                {level.kind} {level.price.toFixed(2)}
+                {level.fallback ? ' · mini-range fallback' : ' · pivot'}
+              </title>
+              <rect
+                x={x}
+                y={y}
+                width={width}
+                height={height}
+                fill={color}
+                fillOpacity={secondary ? 0.1 : 0.16}
+                stroke={color}
+                strokeWidth={secondary ? 1 : 2}
+                strokeDasharray={level.fallback ? '4 3' : undefined}
+              />
+              <ChartMessageText
+                x={x + width - 4}
+                y={y + height / 2 + 3}
+                color={color}
+                size={9}
+                weight={700}
+                anchor="end"
+                className="chile-reversal-label"
+              >
+                {level.kind}
+              </ChartMessageText>
+            </g>
+          )
+        })
+      : []
+
+    return (
+      <g key={indicator.id} data-testid="chile-reversal-overlay">
+        {zones}
+        {result.signals.map((signal) => {
+          const candle = candles[signal.index]
+          if (!candle) return null
+          const bullish = signal.side === 'bullish'
+          const anchor = position({
+            time: candle.time,
+            price: bullish ? candle.low : candle.high,
+          })
+          if (!anchor) return null
+          const isBreak = signal.kind === 'break-resistance' || signal.kind === 'break-support'
+          const color = isBreak
+            ? CHILE_REVERSAL_COLORS.breakout
+            : bullish
+              ? settings.supportColor
+              : settings.resistanceColor
+          const size = 8
+          const gap = 9
+          const tipY = bullish ? anchor.y + gap : anchor.y - gap
+          const baseY = bullish ? tipY + size : tipY - size
+          const glyph =
+            signal.kind === 'bounce-support'
+              ? 'Bounce'
+              : signal.kind === 'reject-resistance'
+                ? 'Reject'
+                : signal.kind === 'break-resistance'
+                  ? 'Break'
+                  : 'Break'
+          return (
+            <g
+              key={`chile-reversal:${signal.kind}:${signal.index}`}
+              className="chile-reversal-signal"
+              data-testid={`chile-reversal-${signal.kind}`}
+              data-index={signal.index}
+            >
+              <title>
+                {glyph} · {signal.levelKind} {signal.level.toFixed(2)}
+              </title>
+              {isBreak ? (
+                <rect
+                  x={anchor.x - size * 0.7}
+                  y={Math.min(tipY, baseY)}
+                  width={size * 1.4}
+                  height={size}
+                  fill={color}
+                  fillOpacity={0.9}
+                />
+              ) : (
+                <path
+                  d={`M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`}
+                  fill={color}
+                  stroke={color}
+                  strokeWidth={0.7}
+                />
+              )}
+              <ChartMessageText
+                x={anchor.x}
+                y={bullish ? baseY + 12 : baseY - 6}
+                color={color}
+                size={9}
+                weight={700}
+                anchor="middle"
+                className="chile-reversal-label"
+              >
+                {glyph}
+              </ChartMessageText>
+            </g>
+          )
+        })}
+      </g>
+    )
+  }
+
   const renderNextPivotOverlay = (overlay: (typeof nextPivotOverlays)[number]) => {
     const { indicator, settings, result } = overlay
     if (!candles.length) return null
@@ -3012,23 +3180,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                         (item) => item.indicator.id === indicator.id,
                                       )?.result,
                                     )
-                                  : indicator.kind === 'coinbase-strike'
-                                    ? formatPrice(
-                                        strikeOverlays.find(
+                                  : indicator.kind === 'chile-reversal'
+                                    ? chileReversalLegendValue(
+                                        chileReversalOverlays.find(
                                           (item) => item.indicator.id === indicator.id,
-                                        )?.resolved.price ??
+                                        )?.result,
+                                      )
+                                    : indicator.kind === 'coinbase-strike'
+                                      ? formatPrice(
                                           strikeOverlays.find(
                                             (item) => item.indicator.id === indicator.id,
-                                          )?.result.currentStrike ??
-                                          null,
-                                      )
-                                    : indicator.kind === 'next-pivot'
-                                      ? nextPivotLegendValue(
-                                          nextPivotOverlays.find(
-                                            (item) => item.indicator.id === indicator.id,
-                                          )?.result,
+                                          )?.resolved.price ??
+                                            strikeOverlays.find(
+                                              (item) => item.indicator.id === indicator.id,
+                                            )?.result.currentStrike ??
+                                            null,
                                         )
-                                      : plotValue(group?.plots[0])}
+                                      : indicator.kind === 'next-pivot'
+                                        ? nextPivotLegendValue(
+                                            nextPivotOverlays.find(
+                                              (item) => item.indicator.id === indicator.id,
+                                            )?.result,
+                                          )
+                                        : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">
@@ -3330,6 +3504,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {tuxEmaScalperOverlays.map(renderTuxEmaScalperOverlay)}
+      </svg>
+      <svg
+        ref={chileReversalSvgRef}
+        className="chile-reversal-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="chile-reversal-overlay"
+        data-revision={revision}
+      >
+        {chileReversalOverlays.map(renderChileReversalOverlay)}
       </svg>
       <svg
         ref={nextPivotSvgRef}

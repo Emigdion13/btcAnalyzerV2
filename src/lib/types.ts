@@ -22,6 +22,7 @@ export type IndicatorKind =
   | 'scalpswing'
   | 'tux-ema-scalper'
   | 'next-pivot'
+  | 'chile-reversal'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -339,6 +340,51 @@ export const TUX_EMA_SCALPER_DEFAULTS: Readonly<TuxEmaScalperSettings> = {
 }
 
 /**
+ * Settings for Chile Reversal — the reversal core of "ROBEX IA CHILERA V18
+ * PRO", ported to Atlas. The fields mirror the Pine inputs the reversal logic
+ * actually depends on; the trend-scoring inputs are deliberately absent.
+ */
+export interface ChileReversalSettings {
+  /** Timeframe the pivots come from. Pine hard-codes "15". */
+  resolution: Timeframe
+  /** Pine input: "Pivot 15M izquierda" (2). */
+  pivotLeft: number
+  /** Pine input: "Pivot 15M derecha" (2). */
+  pivotRight: number
+  /** Pine input: "Distancia maxima S/R en ATR" (2.5). */
+  maxDistanceAtr: number
+  /** Pine input: "Grosor rectangulo S/R en ATR" (0.10) — zone half-thickness. */
+  zoneThicknessAtr: number
+  /** Draw the S/R zone rectangles. Pine input: "Mostrar zonas S/R 15M". */
+  showZones: boolean
+  /** Include the `rompeResistencia`/`rompeSoporte` break markers. */
+  showBreaks: boolean
+  /** Apply the Pine scalping gates (close vs EMA9/VWAP/RSI50 + impulse body). */
+  requireConfirmation: boolean
+  /** Pine `velaImpulso`: minimum body/range ratio (0.45). */
+  impulseBodyRatio: number
+  /** Support zone color. Pine `verde` rgb(0, 225, 145). */
+  supportColor: string
+  /** Resistance zone color. Pine `rojo` rgb(250, 65, 90). */
+  resistanceColor: string
+}
+
+/** Defaults taken from the Pine script's own input defaults. */
+export const CHILE_REVERSAL_DEFAULTS: Readonly<ChileReversalSettings> = {
+  resolution: '15m',
+  pivotLeft: 2,
+  pivotRight: 2,
+  maxDistanceAtr: 2.5,
+  zoneThicknessAtr: 0.1,
+  showZones: true,
+  showBreaks: true,
+  requireConfirmation: false,
+  impulseBodyRatio: 0.45,
+  supportColor: '#00e191',
+  resistanceColor: '#fa415a',
+}
+
+/**
  * Similarity measures supported by "The Next Pivot" indicator.
  * Mirrors Kioseff Trading's published options plus Atlas's own additions.
  */
@@ -457,6 +503,7 @@ export interface Indicator {
   scalpswing?: ScalpSwingSettings
   tuxEmaScalper?: TuxEmaScalperSettings
   nextPivot?: NextPivotSettings
+  chileReversal?: ChileReversalSettings
 }
 export interface SavedScript {
   id: string

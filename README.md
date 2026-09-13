@@ -162,6 +162,16 @@ One documented difference exists, again because Atlas loads a finite candle wind
 
 See [the compatibility notes, calculation contract and provenance](docs/pivot-points-missed-reversals.md).
 
+## Chile Reversal
+
+Atlas includes **Chile Reversal**, the reversal core of the Pine v6 script _ROBEX IA CHILERA V18 PRO_, ported as a native price overlay. The original is a trend-continuation scoring engine in which reversal behavior lives in exactly four price-vs-level booleans, each worth +3 into a score that can exceed 20 — so a reversal alone can never fire a signal there. This indicator isolates those four, making the reversal logic itself readable instead of a trend score that happens to contain it.
+
+Add it from **Indicators → Chile Reversal**. Pivot highs and lows from a higher timeframe (default **15m**, matching Pine's hard-coded `"15"`) become **R1/R2** and **S1/S2** zones whose half-thickness is `0.10 × ATR(14)`; candidates further than **2.5 ATR** from price are discarded, and a 6-bar high/low range fills an empty slot as a dashed fallback level. A **Bounce** prints when a candle wicks into the support zone and closes green above the level, a **Reject** when it wicks resistance and closes red below it, and a **Break** when close clears the zone with the previous close inside. Higher-timeframe levels are read only from **closed** bars, so a developing candle's eventual extreme never reaches an earlier chart bar.
+
+The original's scalping gates — close beyond EMA 9 and VWAP, RSI past 50, and a 0.45 impulse body — are available as an optional **Require confirmation** toggle, off by default. They are what make the Pine signals late by design: at a true bottom price sits below both EMA 9 and VWAP, so the signal waits until price has already reclaimed them. Read the marks accordingly — in a trending market these are pullback continuations, not trend reversals.
+
+See [the calculation contract, the one documented correction, and provenance](docs/chile-reversal.md).
+
 ## Write a custom indicator
 
 Open **Indicator Studio**, edit the script, and select **Add to chart** (Ctrl/⌘ + Enter).
@@ -380,6 +390,7 @@ UP/DOWN read on a window that closes within a few dollars of the line). The char
 **basis** next to it, and falls back to an averaged estimate clearly marked `STRIKE (EST)`. See
 [`docs/kalshi-strike-exactness.md`](docs/kalshi-strike-exactness.md) for the rule text, the audit,
 and how to enable the optional API key that upgrades the overlay to a second-by-second index line.
+
 - The present-tense verdict still frames the window call (`Price sits +$12.40 above the strike
   with 4:32 to the 9:30 cut`), says whether the call needs a cross or just needs the side to
   hold, and tilts toward the fast readers (whale flow, momentum, MACD) as the cut approaches

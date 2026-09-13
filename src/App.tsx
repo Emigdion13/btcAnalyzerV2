@@ -169,6 +169,7 @@ import {
   COINBASE_STRIKE_DEFAULTS,
   TUX_EMA_SCALPER_DEFAULTS,
   NEXT_PIVOT_DEFAULTS,
+  CHILE_REVERSAL_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
 import type { WorkspaceBackup } from './lib/workspace-backup'
@@ -1366,15 +1367,17 @@ export default function App() {
         name:
           item.kind === 'smart-money-concepts'
             ? 'Smart Money Concepts'
-            : item.kind === 'sr-breaks-retests'
-              ? 'SR Breaks and Retests'
-              : item.kind === 'pivot-points-missed-reversals'
-                ? 'Pivot Points High Low & Missed Reversal Levels'
-                : item.kind === 'tux-ema-scalper'
-                  ? 'TUX EMA Scalper+SuperTrend'
-                  : item.short === 'VOL'
-                    ? 'Volume'
-                    : item.short,
+            : item.kind === 'chile-reversal'
+              ? 'Chile Reversal'
+              : item.kind === 'sr-breaks-retests'
+                ? 'SR Breaks and Retests'
+                : item.kind === 'pivot-points-missed-reversals'
+                  ? 'Pivot Points High Low & Missed Reversal Levels'
+                  : item.kind === 'tux-ema-scalper'
+                    ? 'TUX EMA Scalper+SuperTrend'
+                    : item.short === 'VOL'
+                      ? 'Volume'
+                      : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -1390,6 +1393,7 @@ export default function App() {
         ...(kind === 'coinbase-strike' ? { strike: { ...COINBASE_STRIKE_DEFAULTS } } : {}),
         ...(kind === 'tux-ema-scalper' ? { tuxEmaScalper: { ...TUX_EMA_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
+        ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)

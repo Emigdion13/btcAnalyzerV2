@@ -165,6 +165,16 @@ export const INDICATOR_CATALOG: {
     color: '#14D990',
   },
   {
+    kind: 'chile-reversal',
+    name: 'Chile Reversal',
+    short: 'Chile Reversal',
+    description:
+      'The reversal core of ROBEX IA CHILERA V18 PRO: 15m pivot support/resistance zones sized in ATR, with bounce, rejection and break markers — the four price-vs-level patterns, without the trend score around them.',
+    category: 'Price Action',
+    period: 2,
+    color: '#00e191',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -227,6 +237,9 @@ export function builtInPlots(
   // The Next Pivot renders its forecast path, ZigZag, bands and match box as a
   // native SVG overlay on the price pane; no Lightweight Charts series.
   if (indicator.kind === 'next-pivot') return []
+  // Chile Reversal draws its S/R zones and reversal markers as a native SVG
+  // price overlay; no Lightweight Charts series.
+  if (indicator.kind === 'chile-reversal') return []
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

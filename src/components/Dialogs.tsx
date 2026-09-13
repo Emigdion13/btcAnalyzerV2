@@ -52,6 +52,7 @@ import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
 import { DivergenceSettingsSection } from './DivergenceSettingsSection'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
+import { ChileReversalSettingsDialog } from './ChileReversalSettingsDialog'
 import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedReversalsSettingsDialog'
 import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
@@ -530,6 +531,7 @@ export function IndicatorSettingsDialog(props: {
 }) {
   if (props.indicator.kind === 'cm-ult-macd') return <CmMacdSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
+  if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
   if (props.indicator.kind === 'sr-breaks-retests')
     return <SrBreaksRetestsSettingsDialog {...props} />
   if (props.indicator.kind === 'pivot-points-missed-reversals')

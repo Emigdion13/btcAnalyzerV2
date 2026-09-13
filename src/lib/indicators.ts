@@ -1,6 +1,7 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
 import { scalpSwingPlots } from './scalpswing'
+import { tuxEmaScalperPlots } from './tux-ema-scalper'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
@@ -144,6 +145,16 @@ export const INDICATOR_CATALOG: {
     color: '#26a69a',
   },
   {
+    kind: 'tux-ema-scalper',
+    name: 'TUX EMA Scalper+SuperTrend',
+    short: 'TUX EMA Scalper',
+    description:
+      'EMA 20 cross BUY/SELL arrows with the green/pink SuperTrend context line, recreated from the published (3, 7, 20, close) profile.',
+    category: 'Price Action',
+    period: 20,
+    color: '#39b978',
+  },
+  {
     kind: 'next-pivot',
     name: 'The Next Pivot [Kioseff Trading]',
     short: 'Next Pivot',
@@ -207,6 +218,11 @@ export function builtInPlots(
   // SCALPSWING R1-6 draws small buy/sell arrows as SVG overlay; optional PAC/EMA lines are Lightweight series.
   if (indicator.kind === 'scalpswing') {
     return scalpSwingPlots(candles, indicator)
+  }
+  // TUX draws its arrows as a native SVG overlay; its EMA and SuperTrend lines
+  // remain ordinary price plots so they participate in the chart scale.
+  if (indicator.kind === 'tux-ema-scalper') {
+    return tuxEmaScalperPlots(candles, indicator)
   }
   // The Next Pivot renders its forecast path, ZigZag, bands and match box as a
   // native SVG overlay on the price pane; no Lightweight Charts series.

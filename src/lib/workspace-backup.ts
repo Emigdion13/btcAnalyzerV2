@@ -6,6 +6,7 @@ import { isSmartMoneyConceptsSettings } from './smart-money-concepts'
 import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
+import { isTuxEmaScalperSettings } from './tux-ema-scalper'
 import {
   defaultAgentPredictionJournal,
   normalizeAgentLearningState,
@@ -129,6 +130,7 @@ function indicator(value: unknown): Indicator {
       'sr-breaks-retests',
       'pivot-points-missed-reversals',
       'coinbase-strike',
+      'tux-ema-scalper',
       'vwap',
       'volume',
       'custom',
@@ -259,6 +261,22 @@ function indicator(value: unknown): Indicator {
       downColor: settings.downColor,
     }
     result.period = result.strike.intervalMinutes
+  }
+  if (kind === 'tux-ema-scalper' && i.tuxEmaScalper !== undefined) {
+    const settings = i.tuxEmaScalper
+    if (!isTuxEmaScalperSettings(settings)) invalid('TUX EMA Scalper+SuperTrend settings')
+    result.tuxEmaScalper = {
+      factor: settings.factor,
+      atrPeriod: settings.atrPeriod,
+      emaLength: settings.emaLength,
+      source: settings.source,
+      showEma: settings.showEma,
+      showSuperTrend: settings.showSuperTrend,
+      showLabels: settings.showLabels,
+      buyColor: settings.buyColor,
+      sellColor: settings.sellColor,
+    }
+    result.period = result.tuxEmaScalper.emaLength
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)
@@ -429,11 +447,23 @@ export function persistWorkspaceBackup(backup: WorkspaceBackup): void {
     ['draft', backup.draft],
     ['alerts', backup.alerts],
     ['notes', backup.notes],
-    ['agent-learning', normalizeAgentLearningState(backup.agentLearning ?? defaultAgentLearningState())],
-    ['agent-journal', normalizeAgentPredictionJournal(backup.agentJournal ?? defaultAgentPredictionJournal())],
+    [
+      'agent-learning',
+      normalizeAgentLearningState(backup.agentLearning ?? defaultAgentLearningState()),
+    ],
+    [
+      'agent-journal',
+      normalizeAgentPredictionJournal(backup.agentJournal ?? defaultAgentPredictionJournal()),
+    ],
     ['agent-horizons', backup.agentHorizons ?? {}],
-    ['macd-ai-learning', normalizeMacdAiLearningState(backup.macdAiLearning ?? pretrainedMacdAiLearningState())],
-    ['macd-ai-journal', normalizeMacdForecastJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())],
+    [
+      'macd-ai-learning',
+      normalizeMacdAiLearningState(backup.macdAiLearning ?? pretrainedMacdAiLearningState()),
+    ],
+    [
+      'macd-ai-journal',
+      normalizeMacdForecastJournal(backup.macdAiJournal ?? defaultMacdForecastJournal()),
+    ],
   ]
   const previous = entries.map(([key]) => [key, localStorage.getItem(`atlas.v1.${key}`)] as const)
   try {

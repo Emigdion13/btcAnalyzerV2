@@ -56,6 +56,7 @@ import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedRev
 import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
 import { NextPivotSettingsDialog } from './NextPivotSettingsDialog'
+import { TuxEmaScalperSettingsDialog } from './TuxEmaScalperSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -273,14 +274,15 @@ export function IndicatorLibrary({
           <div className="filter-pills">
             {['All', 'Trend', 'Momentum', 'Volatility', 'Volume', 'Price Action', 'Forecast'].map(
               (item) => (
-              <button
-                className={category === item ? 'active' : ''}
-                key={item}
-                onClick={() => setCategory(item)}
-              >
-                {item}
-              </button>
-            ))}
+                <button
+                  className={category === item ? 'active' : ''}
+                  key={item}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </button>
+              ),
+            )}
           </div>
           <div className="indicator-catalog">
             {catalog.map((entry) => {
@@ -534,6 +536,7 @@ export function IndicatorSettingsDialog(props: {
     return <PivotPointsMissedReversalsSettingsDialog {...props} />
   if (props.indicator.kind === 'coinbase-strike') return <CoinbaseStrikeSettingsDialog {...props} />
   if (props.indicator.kind === 'scalpswing') return <ScalpSwingSettingsDialog {...props} />
+  if (props.indicator.kind === 'tux-ema-scalper') return <TuxEmaScalperSettingsDialog {...props} />
   if (props.indicator.kind === 'next-pivot') return <NextPivotSettingsDialog {...props} />
   return <StandardIndicatorSettingsDialog {...props} />
 }

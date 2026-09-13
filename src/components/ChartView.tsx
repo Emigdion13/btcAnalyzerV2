@@ -87,11 +87,8 @@ import {
   pivotPointsMissedReversalsSettings,
 } from '../lib/pivot-points-missed-reversals'
 import type { PivotColorRole } from '../lib/pivot-points-missed-reversals'
-import {
-  calculateScalpSwing,
-  SCALPSWING_COLORS,
-  scalpSwingSettings,
-} from '../lib/scalpswing'
+import { calculateScalpSwing, SCALPSWING_COLORS, scalpSwingSettings } from '../lib/scalpswing'
+import { calculateTuxEmaScalper, tuxEmaScalperSettings } from '../lib/tux-ema-scalper'
 import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
@@ -175,6 +172,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const srSvgRef = useRef<SVGSVGElement>(null)
   const pivotSvgRef = useRef<SVGSVGElement>(null)
   const scalpswingSvgRef = useRef<SVGSVGElement>(null)
+  const tuxEmaScalperSvgRef = useRef<SVGSVGElement>(null)
   const nextPivotSvgRef = useRef<SVGSVGElement>(null)
   const divSvgRef = useRef<SVGSVGElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -291,6 +289,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             indicator,
             settings,
             result: calculateScalpSwing(candles, settings),
+          }
+        }),
+    [candles, indicators],
+  )
+  const tuxEmaScalperOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'tux-ema-scalper')
+        .map((indicator) => {
+          const settings = tuxEmaScalperSettings(indicator)
+          return {
+            indicator,
+            settings,
+            result: calculateTuxEmaScalper(candles, settings),
           }
         }),
     [candles, indicators],
@@ -515,6 +527,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       await paintSvg(srSvgRef.current)
       await paintSvg(pivotSvgRef.current)
       await paintSvg(scalpswingSvgRef.current)
+      await paintSvg(tuxEmaScalperSvgRef.current)
       await paintSvg(nextPivotSvgRef.current)
       await paintSvg(divSvgRef.current)
       if (propsRef.current.drawingsVisible) await paintSvg(svgRef.current)
@@ -611,6 +624,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
               (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
               (indicator.visible && indicator.kind === 'scalpswing') ||
+              (indicator.visible && indicator.kind === 'tux-ema-scalper') ||
               (indicator.visible && indicator.kind === 'next-pivot') ||
               (indicator.visible && divergenceEnabled(indicator)),
           )
@@ -2114,6 +2128,12 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const sells = result.signals.filter((s) => s.side === 'sell').length
     return `${buys} BUY · ${sells} SELL`
   }
+  const tuxEmaScalperLegendValue = (result?: (typeof tuxEmaScalperOverlays)[number]['result']) => {
+    if (!result) return '—'
+    const buys = result.signals.filter((s) => s.side === 'buy').length
+    const sells = result.signals.filter((s) => s.side === 'sell').length
+    return `${buys} BUY · ${sells} SELL`
+  }
   const nextPivotLegendValue = (result?: (typeof nextPivotOverlays)[number]['result']) => {
     if (!result || !result.info) return 'computing…'
     return `r=${result.info.similarity.toFixed(2)} · +${result.info.forecastLength} bars`
@@ -2162,7 +2182,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           data-index={signal.index}
         >
           <title>
-            {isBuy ? 'BUY' : 'SELL'} {formatPrice(signal.close)} · PAC {settings.pacLength} {isBuy ? '>' : '<'} {isBuy ? formatPrice(signal.pacU ?? 0) : formatPrice(signal.pacL ?? 0)} · {settings.filterWithEma ? `EMA${settings.emaFilterLength} filter` : 'no filter'} {settings.signalOnNextBar ? '[next bar]' : '[same bar]'}
+            {isBuy ? 'BUY' : 'SELL'} {formatPrice(signal.close)} · PAC {settings.pacLength}{' '}
+            {isBuy ? '>' : '<'}{' '}
+            {isBuy ? formatPrice(signal.pacU ?? 0) : formatPrice(signal.pacL ?? 0)} ·{' '}
+            {settings.filterWithEma ? `EMA${settings.emaFilterLength} filter` : 'no filter'}{' '}
+            {settings.signalOnNextBar ? '[next bar]' : '[same bar]'}
           </title>
           {settings.useBigArrows && (
             <line
@@ -2195,8 +2219,67 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     }
 
     return (
-      <g key={indicator.id} data-scalpswing-length={settings.pacLength} data-testid="scalpswing-overlay">
+      <g
+        key={indicator.id}
+        data-scalpswing-length={settings.pacLength}
+        data-testid="scalpswing-overlay"
+      >
         {result.signals.map(renderSignal)}
+      </g>
+    )
+  }
+
+  const renderTuxEmaScalperOverlay = (overlay: (typeof tuxEmaScalperOverlays)[number]) => {
+    const { indicator, settings, result } = overlay
+    const point = (index: number, price: number) => {
+      const candle = candles[index]
+      return candle ? position({ time: candle.time, price }) : null
+    }
+
+    return (
+      <g key={indicator.id} data-testid="tux-ema-scalper-overlay">
+        {result.signals.map((signal) => {
+          const candle = candles[signal.index]
+          if (!candle) return null
+          const isBuy = signal.side === 'buy'
+          const anchor = point(signal.index, isBuy ? candle.low : candle.high)
+          if (!anchor) return null
+          const color = isBuy ? settings.buyColor : settings.sellColor
+          const size = 9
+          const gap = 8
+          const tipY = isBuy ? anchor.y + gap : anchor.y - gap
+          const baseY = isBuy ? tipY + size : tipY - size
+          const arrowPath = isBuy
+            ? `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
+            : `M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`
+          return (
+            <g
+              key={`tux-ema-scalper:${signal.side}:${signal.index}`}
+              className="tux-ema-scalper-signal"
+              data-testid={`tux-ema-scalper-${signal.side}`}
+              data-index={signal.index}
+            >
+              <title>
+                {isBuy ? 'BUY' : 'SELL'} · EMA {settings.emaLength} cross · SuperTrend{' '}
+                {signal.trend ?? 'warming up'}
+              </title>
+              <path d={arrowPath} fill={color} stroke={color} strokeWidth={0.7} />
+              {settings.showLabels && (
+                <ChartMessageText
+                  x={anchor.x}
+                  y={isBuy ? baseY + 12 : baseY - 6}
+                  color={color}
+                  size={9}
+                  weight={700}
+                  anchor="middle"
+                  className="tux-ema-scalper-label"
+                >
+                  {isBuy ? 'Buy' : 'Sell'}
+                </ChartMessageText>
+              )}
+            </g>
+          )
+        })}
       </g>
     )
   }
@@ -2309,7 +2392,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           `M ${forecastStart.x} ${forecastStart.y} ` +
           topPts.map((p) => `L ${p.x} ${p.y}`).join(' ') +
           ' ' +
-          [...botPts].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          [...botPts]
+            .reverse()
+            .map((p) => `L ${p.x} ${p.y}`)
+            .join(' ') +
           ' Z'
         elements.push(
           <path
@@ -2329,8 +2415,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const lower: { x: number; y: number }[] = []
       for (let i = 0; i < result.forecast.length; i++) {
         const pt = result.forecast[i]
-        const u = fp({ time: pt.time, price: result.linReg.upper[i] * settings.linRegSigma + result.linReg.fit[i] })
-        const l = fp({ time: pt.time, price: result.linReg.fit[i] - result.linReg.sigma * settings.linRegSigma })
+        const u = fp({
+          time: pt.time,
+          price: result.linReg.upper[i] * settings.linRegSigma + result.linReg.fit[i],
+        })
+        const l = fp({
+          time: pt.time,
+          price: result.linReg.fit[i] - result.linReg.sigma * settings.linRegSigma,
+        })
         const f = fp({ time: pt.time, price: result.linReg.fit[i] })
         if (u && f) upper.push(u)
         if (l && f) lower.push(l)
@@ -2347,7 +2439,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           `M ${forecastStart.x} ${forecastStart.y} ` +
           upper.map((p) => `L ${p.x} ${p.y}`).join(' ') +
           ' ' +
-          [...lower].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ') +
+          [...lower]
+            .reverse()
+            .map((p) => `L ${p.x} ${p.y}`)
+            .join(' ') +
           ' Z'
         elements.push(
           <path
@@ -2360,7 +2455,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         )
       }
       if (fitPts.length > 1) {
-        const fd = `M ${forecastStart.x} ${forecastStart.y} ` + fitPts.map((p) => `L ${p.x} ${p.y}`).join(' ')
+        const fd =
+          `M ${forecastStart.x} ${forecastStart.y} ` +
+          fitPts.map((p) => `L ${p.x} ${p.y}`).join(' ')
         elements.push(
           <path
             key={`np-lr:${indicator.id}`}
@@ -2783,22 +2880,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                 )
                               : indicator.kind === 'scalpswing'
                                 ? scalpSwingLegendValue(
-                                    scalpSwingOverlays.find((item) => item.indicator.id === indicator.id)
-                                      ?.result,
+                                    scalpSwingOverlays.find(
+                                      (item) => item.indicator.id === indicator.id,
+                                    )?.result,
                                   )
-                                : indicator.kind === 'coinbase-strike'
-                                  ? formatPrice(
-                                      strikeOverlays.find(
+                                : indicator.kind === 'tux-ema-scalper'
+                                  ? tuxEmaScalperLegendValue(
+                                      tuxEmaScalperOverlays.find(
                                         (item) => item.indicator.id === indicator.id,
-                                      )?.result.currentStrike,
+                                      )?.result,
                                     )
-                                  : indicator.kind === 'next-pivot'
-                                    ? nextPivotLegendValue(
-                                        nextPivotOverlays.find(
+                                  : indicator.kind === 'coinbase-strike'
+                                    ? formatPrice(
+                                        strikeOverlays.find(
                                           (item) => item.indicator.id === indicator.id,
-                                        )?.result,
+                                        )?.result.currentStrike,
                                       )
-                                    : plotValue(group?.plots[0])}
+                                    : indicator.kind === 'next-pivot'
+                                      ? nextPivotLegendValue(
+                                          nextPivotOverlays.find(
+                                            (item) => item.indicator.id === indicator.id,
+                                          )?.result,
+                                        )
+                                      : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">
@@ -2813,15 +2917,16 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                           {2 * pivotPointsMissedReversalsSettings(indicator).pivotLength + 1} bars
                         </span>
                       )}
-                    {indicator.kind === 'next-pivot' && (() => {
-                      const s = nextPivotSettings(indicator)
-                      const need = s.correlationLength + s.forecastLength + 2
-                      return candles.length < need ? (
-                        <span className="cm-indicator-notice" role="status">
-                          Warming up · {candles.length}/{need} bars
-                        </span>
-                      ) : null
-                    })()}
+                    {indicator.kind === 'next-pivot' &&
+                      (() => {
+                        const s = nextPivotSettings(indicator)
+                        const need = s.correlationLength + s.forecastLength + 2
+                        return candles.length < need ? (
+                          <span className="cm-indicator-notice" role="status">
+                            Warming up · {candles.length}/{need} bars
+                          </span>
+                        ) : null
+                      })()}
                     <div className="legend-actions">
                       <IconButton
                         icon={indicator.visible ? Eye : EyeOff}
@@ -3086,6 +3191,19 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {scalpSwingOverlays.map(renderScalpSwingOverlay)}
+      </svg>
+      <svg
+        ref={tuxEmaScalperSvgRef}
+        className="tux-ema-scalper-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="tux-ema-scalper-overlay"
+        data-revision={revision}
+      >
+        {tuxEmaScalperOverlays.map(renderTuxEmaScalperOverlay)}
       </svg>
       <svg
         ref={nextPivotSvgRef}

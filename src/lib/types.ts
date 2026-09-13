@@ -20,6 +20,7 @@ export type IndicatorKind =
   | 'pivot-points-missed-reversals'
   | 'coinbase-strike'
   | 'scalpswing'
+  | 'tux-ema-scalper'
   | 'next-pivot'
   | 'vwap'
   | 'volume'
@@ -303,18 +304,46 @@ export const SCALPSWING_DEFAULTS: Readonly<ScalpSwingSettings> = {
   sellColor: '#ef5350',
 }
 
+/** Settings for the public-facing recreation of TUX EMA Scalper+SuperTrend. */
+export interface TuxEmaScalperSettings {
+  /** SuperTrend ATR multiplier; published default is 3. */
+  factor: number
+  /** SuperTrend ATR period; published default is 7. */
+  atrPeriod: number
+  /** TonyUX EMA signal length; published default is 20. */
+  emaLength: number
+  /** Source shown in the published legend. This recreation uses close. */
+  source: 'close'
+  /** Show the blue EMA signal line. */
+  showEma: boolean
+  /** Show green/red SuperTrend context lines. */
+  showSuperTrend: boolean
+  /** Show transparent BUY/SELL text beside the arrows. */
+  showLabels: boolean
+  /** Green long arrow color. */
+  buyColor: string
+  /** Pink short arrow color. */
+  sellColor: string
+}
+
+export const TUX_EMA_SCALPER_DEFAULTS: Readonly<TuxEmaScalperSettings> = {
+  factor: 3,
+  atrPeriod: 7,
+  emaLength: 20,
+  source: 'close',
+  showEma: true,
+  showSuperTrend: true,
+  showLabels: true,
+  buyColor: '#39b978',
+  sellColor: '#d14b83',
+}
+
 /**
  * Similarity measures supported by "The Next Pivot" indicator.
  * Mirrors Kioseff Trading's published options plus Atlas's own additions.
  */
 export type NextPivotSimilarity =
-  | 'cosine'
-  | 'pearson'
-  | 'spearman'
-  | 'euclidean'
-  | 'mse'
-  | 'kendall'
-  | 'dtw'
+  'cosine' | 'pearson' | 'spearman' | 'euclidean' | 'mse' | 'kendall' | 'dtw'
 export type NextPivotSource = 'price' | 'pctChange'
 
 /**
@@ -426,6 +455,7 @@ export interface Indicator {
   pivots?: PivotPointsMissedReversalsSettings
   strike?: CoinbaseStrikeSettings
   scalpswing?: ScalpSwingSettings
+  tuxEmaScalper?: TuxEmaScalperSettings
   nextPivot?: NextPivotSettings
 }
 export interface SavedScript {

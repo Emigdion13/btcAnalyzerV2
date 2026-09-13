@@ -1017,13 +1017,25 @@ button {
   overflow: hidden;
   z-index: 1;
 }
-.scalpswing-overlay {
+.scalpswing-overlay,
+.tux-ema-scalper-overlay {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
   overflow: visible;
   z-index: 3;
+}
+.tux-ema-scalper-signal {
+  pointer-events: none;
+}
+.tux-ema-scalper-label {
+  /* Transparent in-chart message: readability comes from the halo, never a plate. */
+  paint-order: stroke;
+  stroke: #101318;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 /* Pivot Points High Low & Missed Reversal Levels: ▼ ▲ 👻 label glyphs keep the
    chart-message halo; the emoji only needs a light one. */

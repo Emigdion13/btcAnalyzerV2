@@ -14,6 +14,7 @@ import {
   type StrikeSide,
 } from './kalshi-window'
 import { formatPrice } from './market'
+import { whaleLevelContext, type WhaleLevelFrame } from './whale-level-context'
 import { SR_BREAKS_RETESTS_DEFAULTS, type Candle, type Timeframe } from './types'
 import { calculateSrBreaksRetests } from './sr-breaks-retests'
 import { AGENT_PRETRAINED_LEARNING } from './agent-pretrained'
@@ -1095,7 +1096,7 @@ function analyzeContext(
 
 /**
  * Whale-flow specialist: reads the live executed sweep and pushes the ensemble toward
- * whichever direction the whale money is going.
+ * whichever direction the whale money is going — *unless the level it is hitting says otherwise*.
  *
  * Direction is the sign of the net sweep — taker buying (lifting the offer) is a bullish
  * push, taker selling (hitting the bid) is bearish. Conviction comes from absolute size
@@ -1103,11 +1104,22 @@ function analyzeContext(
  * the sweep runs, and how one-sided the fills are. Returns null at rest so an idle tape
  * never dilutes the call — this agent only speaks while (or just after) size prints.
  * Its trust weights therefore adapt only from sweeps it actually voted on.
+ *
+ * When a `frame` is supplied the sweep is also judged against the nearest confirmed level and
+ * the resting book inside it (`whaleLevelContext`, the port of ROBEX's heaviest-weighted events):
+ * a push off a defended level or through a failing one is boosted, a push into a level the book
+ * is still defending is cut, and when that resting size decisively outweighs the sweep the vote
+ * flips against the tape — the money is being faded, not followed. Without a frame the raw
+ * detector read stands, exactly as before.
  */
-function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'whale'> | null {
+function analyzeWhale(
+  flow: WhaleFlow | null | undefined,
+  frame?: WhaleLevelFrame,
+): SpecializedOpinion<'whale'> | null {
   if (!flow) return null
   const direction = flow.net > 0 ? 1 : flow.net < 0 ? -1 : 0
   if (direction === 0) return null
+  const level = frame ? whaleLevelContext(flow, frame) : null
   const absNet = Math.abs(flow.net)
   const tierScore =
     absNet >= 1_000_000
@@ -1132,11 +1144,16 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
   const gross = flow.bought + flow.sold
   const oneSided = gross > 0 ? Math.abs(flow.bought - flow.sold) / gross : 0
   const intensityFactor = clamp(flow.intensity / 2, 0, 1)
-  const strength = clamp(0.45 * tierScore + 0.3 * intensityFactor + 0.25 * oneSided, 0, 1)
+  const rawStrength = clamp(0.45 * tierScore + 0.3 * intensityFactor + 0.25 * oneSided, 0, 1)
+  // Where the money is going scales how much it counts: a defended level behind the push or a
+  // failing level ahead of it boosts the read, a level the book is still defending cuts it, and
+  // decisive resting size flips the vote against the tape (see `whaleLevelContext`).
+  const strength = clamp(rawStrength * (level?.multiplier ?? 1), 0, 1)
+  const vote = level?.flip ? -direction : direction
   // A sweep in progress pushes hardest; a building one is unconfirmed and a finished one
   // may already be in the price — but both still lean the call their way.
   const phaseWeight = flow.phase === 'active' ? 1 : flow.phase === 'building' ? 0.7 : 0.55
-  const score = clamp(direction * strength * phaseWeight, -1, 1)
+  const score = clamp(vote * strength * phaseWeight, -1, 1)
   const base = flow.product.replace(/-USD$/, '')
   const phaseLabel = flow.phase === 'active' ? 'happening now' : flow.phase
 
@@ -1144,7 +1161,10 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
     `${formatNotional(flow.net)} ${direction > 0 ? 'push into' : 'push out of'} ${base} — takers ${direction > 0 ? 'lifting the offer' : 'hitting the bid'} across ${flow.count} fill${flow.count === 1 ? '' : 's'} (${phaseLabel}, ${flow.intensity.toFixed(1)}× the ${formatNotional(flow.threshold).replace('+', '')} whale threshold).`,
     `Absolute size is ${tierLabel} at ${formatNotional(flow.net)} net, ${Math.round(oneSided * 100)}% one-sided.`,
   ]
+  if (level?.reason) reasons.push(level.reason)
   const warnings: string[] = []
+  // The level verdict comes first: it is the line that changes the call, and the panel shows one.
+  if (level) warnings.push(...level.warnings)
   if (flow.phase === 'fading')
     warnings.push('The sweep has stopped — this push may already be in the price.')
   if (flow.phase === 'building')
@@ -1152,7 +1172,7 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
   if (!flow.calibrated)
     warnings.push('The whale threshold is still calibrating — size reads as provisional.')
   if (oneSided < 0.55) warnings.push('Flow is two-sided — both buys and sells are printing size.')
-  if (strength >= 0.6)
+  if (rawStrength >= 0.6)
     warnings.push('Big prints mark energy more reliably than direction — expect movement.')
 
   return {
@@ -1165,7 +1185,8 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
         strength * 0.35 +
         oneSided * 0.1 +
         (flow.phase === 'active' ? 0.12 : 0) +
-        (flow.calibrated ? 0.03 : -0.15),
+        (flow.calibrated ? 0.03 : -0.15) +
+        (level?.confidence ?? 0),
       0.2,
       0.88,
     ),
@@ -1182,6 +1203,9 @@ function analyzeWhale(flow: WhaleFlow | null | undefined): SpecializedOpinion<'w
       oneSided,
       tier: tierLabel,
       calibrated: flow.calibrated,
+      rawStrength: Number(rawStrength.toFixed(3)),
+      strength: Number(strength.toFixed(3)),
+      ...(level ? level.metrics : {}),
     },
   }
 }
@@ -1498,7 +1522,14 @@ export function analyzeMarket(
   const macdOpinion = analyzeMacd(currentPrice, atrValue, candles)
   const levelStrength = analyzeLevelStrength(currentPrice, atrValue, candles, snapshot.book)
   const structure = analyzeStructure(currentPrice, atrValue, levelStrength.summary)
-  const whale = analyzeWhale(snapshot.whale)
+  // The whale agent only speaks while a sweep is live, but when it does it should know *where*
+  // that money is going: the levels it just pinned and the resting book are both in scope here.
+  const whale = analyzeWhale(snapshot.whale, {
+    price: currentPrice,
+    atr: atrValue,
+    levels: levelStrength.summary,
+    book: snapshot.book,
+  })
   const context = analyzeContext(snapshot.timeframe, snapshot.context ?? [])
   const specialists: SpecializedOpinion[] = [
     regime,

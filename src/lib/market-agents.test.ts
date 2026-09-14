@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { WhaleFlow } from '../../shared/coinbase'
+import type { WhaleFlow, WhalePrint } from '../../shared/coinbase'
 import { OrderBook, PERSISTENCE_SECONDS } from '../../shared/order-book'
 import {
   analyzeMarket,
@@ -117,6 +117,42 @@ function whaleFlow(overrides: Partial<WhaleFlow> = {}): WhaleFlow {
     sampled: 1200,
     ...overrides,
   }
+}
+
+/**
+ * A book whose resting size is large enough to be detected as a wall at these fixture prices
+ * (~$100/unit), so the whale agent's level context sees real book evidence rather than texture.
+ */
+function walledBook(
+  mid: number,
+  options: { askWallAt?: number; bidWallAt?: number; size?: number } = {},
+) {
+  const book = new OrderBook('BTC-USD')
+  const bids: { price: number; size: number }[] = []
+  const asks: { price: number; size: number }[] = []
+  for (let i = 1; i <= 180; i++) {
+    bids.push({ price: mid - i * 0.05, size: 1 + (i % 5) * 0.15 })
+    asks.push({ price: mid + i * 0.05, size: 1 + (i % 4) * 0.12 })
+  }
+  const size = options.size ?? 3_000
+  if (options.askWallAt)
+    for (let i = 0; i < 5; i++) asks.push({ price: options.askWallAt + i * 0.01, size })
+  if (options.bidWallAt)
+    for (let i = 0; i < 5; i++) bids.push({ price: options.bidWallAt - i * 0.01, size })
+  book.seed(bids, asks, 1000, PERSISTENCE_SECONDS)
+  return book.view(1060)
+}
+
+/** Sweep prints at given prices, so a test can say how far the money actually walked. */
+function whalePrints(prices: number[], side: 'buy' | 'sell'): WhalePrint[] {
+  return prices.map((price, index) => ({
+    id: index + 1,
+    time: 1000 + index,
+    price,
+    size: 5,
+    notional: side === 'buy' ? price * 5 : -price * 5,
+    side,
+  }))
 }
 
 function strikeInput(overrides: Record<string, number | string | boolean> = {}) {
@@ -339,6 +375,107 @@ describe('market agents', () => {
     )
     expect(provisional.warnings.join(' ')).toContain('calibrating')
     expect(provisional.confidence).toBeLessThan(active.confidence)
+  })
+
+  it('keeps the whale read raw when no level is within reach of the sweep', () => {
+    // A clean trend leaves no confirmed S/R nearby, so the level context has nothing to add.
+    const candles = bullishTrendCandles()
+    const whale = opinion(analyzeMarket({ candles, timeframe: '1m', whale: whaleFlow() }), 'whale')
+    expect(whale.metrics.levelVerdict).toBe('clear')
+    expect(whale.metrics.levelMultiplier).toBe(1)
+    expect(whale.metrics.levelFlip).toBe(false)
+    expect(whale.reasons.join(' ')).toContain('raw tape read stands on its own')
+    expect(whale.score).toBeGreaterThan(0.4)
+  })
+
+  it('flips a whale sweep that runs into resistance the book is defending', () => {
+    const candles = rangeNearResistanceCandles()
+    const close = candles[candles.length - 1].close
+    const band = analyzeMarket({ candles, timeframe: '5m' }).summary.nearestResistance!
+    const book = walledBook(close, { askWallAt: close + 0.55 })
+    const unwatched = analyzeMarket({ candles, timeframe: '5m', whale: whaleFlow() })
+    const faded = analyzeMarket({ candles, timeframe: '5m', book, whale: whaleFlow() })
+    const plain = opinion(unwatched, 'whale')
+    const whale = opinion(faded, 'whale')
+
+    expect(band.distanceAtr).toBeLessThan(1)
+    expect(whale.metrics.levelVerdict).toBe('absorbed')
+    expect(whale.metrics.levelFlip).toBe(true)
+    expect(Number(whale.metrics.levelWallNotional)).toBeGreaterThan(500_000)
+    // Same tape, defended level: the vote turns against the executed buying.
+    expect(plain.bias).toBe('bullish')
+    expect(whale.bias).toBe('bearish')
+    expect(whale.score).toBeLessThan(0)
+    expect(whale.score).toBeLessThan(plain.score)
+    expect(whale.reasons.join(' ')).toContain('pressing into resistance')
+    expect(whale.warnings[0]).toContain('cast against $500K of executed buying')
+    expect(faded.risks.join(' ')).toContain('resting-book evidence')
+    expect(faded.score).toBeLessThan(unwatched.score)
+  })
+
+  it('damps — but never flips — a sweep into a level the book cannot confirm', () => {
+    const candles = rangeNearResistanceCandles()
+    const whale = opinion(
+      analyzeMarket({ candles, timeframe: '5m', whale: whaleFlow() }),
+      'whale',
+    )
+    expect(whale.metrics.levelVerdict).toBe('absorbed')
+    expect(whale.metrics.levelBook).toBe(false)
+    expect(whale.metrics.levelFlip).toBe(false)
+    expect(Number(whale.metrics.levelMultiplier)).toBeLessThan(1)
+    expect(Number(whale.metrics.levelMultiplier)).toBeGreaterThan(0.5)
+    expect(whale.bias).toBe('bullish')
+    expect(whale.warnings[0]).toContain('resting book is unavailable')
+    expect(Number(whale.metrics.strength)).toBeLessThan(Number(whale.metrics.rawStrength))
+  })
+
+  it('boosts a whale sweep that trades through the level ahead of it', () => {
+    const candles = rangeNearResistanceCandles()
+    const close = candles[candles.length - 1].close
+    const band = analyzeMarket({ candles, timeframe: '5m' }).summary.nearestResistance!
+    // The wall that used to sit in the band has been eaten; the next one rests far above.
+    const book = walledBook(close, { askWallAt: close + 6 })
+    const big = { net: 1_200_000, bought: 1_200_000, sold: 0, intensity: 3.2 }
+    const atLevel = opinion(
+      analyzeMarket({ candles, timeframe: '5m', book, whale: whaleFlow(big) }),
+      'whale',
+    )
+    const broken = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      book,
+      whale: whaleFlow({
+        ...big,
+        prints: whalePrints([band.top + 0.15, band.top + 0.4], 'buy'),
+      }),
+    })
+    const whale = opinion(broken, 'whale')
+
+    expect(atLevel.metrics.levelVerdict).toBe('absorbed')
+    expect(whale.metrics.levelVerdict).toBe('break')
+    expect(Number(whale.metrics.levelPenetration)).toBe(1)
+    expect(Number(whale.metrics.levelMultiplier)).toBeGreaterThan(1)
+    expect(whale.score).toBeGreaterThan(atLevel.score)
+    expect(whale.confidence).toBeGreaterThan(atLevel.confidence)
+    expect(whale.reasons.join(' ')).toContain('traded through resistance')
+    expect(whale.warnings[0]).toContain('not a level cleared')
+  })
+
+  it('reads a sell sweep off a defended ceiling as the stronger side of the same wall', () => {
+    const candles = rangeNearResistanceCandles()
+    const close = candles[candles.length - 1].close
+    const book = walledBook(close, { askWallAt: close + 0.55 })
+    const sweep = whaleFlow({ net: -500_000, bought: 0, sold: 500_000 })
+    const plain = opinion(analyzeMarket({ candles, timeframe: '5m', whale: sweep }), 'whale')
+    const rejecting = opinion(
+      analyzeMarket({ candles, timeframe: '5m', book, whale: sweep }),
+      'whale',
+    )
+    expect(plain.metrics.levelVerdict).toBe('clear')
+    expect(rejecting.metrics.levelVerdict).toBe('defended')
+    expect(Number(rejecting.metrics.levelMultiplier)).toBeGreaterThan(1)
+    expect(rejecting.reasons.join(' ')).toContain('pressing off resistance')
+    expect(rejecting.score).toBeLessThan(plain.score)
   })
 
   it('frames the verdict as the UP/DOWN window call against the strike', () => {

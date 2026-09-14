@@ -89,6 +89,7 @@ import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
+import { WAVE_TREND_DEFAULTS } from './lib/wave-trend'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
   TIMEFRAME_PEEK_DEFAULTS,
@@ -867,9 +868,11 @@ export default function App() {
                   ? 'Pivot Points High Low & Missed Reversal Levels'
                   : item.kind === 'tux-ema-scalper'
                     ? 'TUX EMA Scalper+SuperTrend'
-                    : item.short === 'VOL'
-                      ? 'Volume'
-                      : item.short,
+                    : item.kind === 'wave-trend'
+                      ? 'WaveTrend [LazyBear]'
+                      : item.short === 'VOL'
+                        ? 'Volume'
+                        : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -886,6 +889,7 @@ export default function App() {
         ...(kind === 'tux-ema-scalper' ? { tuxEmaScalper: { ...TUX_EMA_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
         ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
+        ...(kind === 'wave-trend' ? { waveTrend: { ...WAVE_TREND_DEFAULTS } } : {}),
       },
     ])
     notify(`${item.name} added to chart.`)

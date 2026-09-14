@@ -58,6 +58,7 @@ import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
 import { NextPivotSettingsDialog } from './NextPivotSettingsDialog'
 import { TuxEmaScalperSettingsDialog } from './TuxEmaScalperSettingsDialog'
+import { WaveTrendSettingsDialog } from './WaveTrendSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -537,6 +538,7 @@ export function IndicatorSettingsDialog(props: {
   if (props.indicator.kind === 'cm-ult-macd') return <CmMacdSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
+  if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
   if (props.indicator.kind === 'sr-breaks-retests')
     return <SrBreaksRetestsSettingsDialog {...props} />
   if (props.indicator.kind === 'pivot-points-missed-reversals')

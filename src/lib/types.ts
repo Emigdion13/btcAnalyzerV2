@@ -23,6 +23,7 @@ export type IndicatorKind =
   | 'tux-ema-scalper'
   | 'next-pivot'
   | 'chile-reversal'
+  | 'wave-trend'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -48,6 +49,18 @@ export interface Asset {
   priceIncrement?: number
   category: 'Layer 1' | 'DeFi' | 'Other'
 }
+/** Published inputs of LazyBear's WaveTrend [LazyBear] (short title `WT_LB`). */
+export interface WaveTrendSettings {
+  /** `n1` — channel length of the ESA and the absolute-deviation average. */
+  channelLength: number
+  /** `n2` — average length applied to the channel position index. */
+  averageLength: number
+  obLevel1: number
+  obLevel2: number
+  osLevel1: number
+  osLevel2: number
+}
+
 export interface CmMacdSettings {
   useCurrentRes: boolean
   resCustom: Timeframe
@@ -467,7 +480,9 @@ export interface Plot {
   pane: 'price' | 'oscillator'
   lineWidth: number
   // Native built-ins only. The custom-script sandbox still accepts line plots only.
-  style?: 'line' | 'histogram' | 'circles'
+  style?: 'line' | 'histogram' | 'circles' | 'cross' | 'area'
+  /** Pine `transp`, 0–100. Applies to the fill of an `area` plot. */
+  transp?: number
   colors?: string[]
   horizontalLine?: number
   hideLegend?: boolean
@@ -504,6 +519,7 @@ export interface Indicator {
   tuxEmaScalper?: TuxEmaScalperSettings
   nextPivot?: NextPivotSettings
   chileReversal?: ChileReversalSettings
+  waveTrend?: WaveTrendSettings
 }
 export interface SavedScript {
   id: string

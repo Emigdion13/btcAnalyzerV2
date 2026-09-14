@@ -1,5 +1,6 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
+import { calculateWaveTrend, waveTrendPlots, waveTrendSettings } from './wave-trend'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
 import type { IndicatorContext } from './cm-ult-macd'
@@ -165,6 +166,16 @@ export const INDICATOR_CATALOG: {
     color: '#14D990',
   },
   {
+    kind: 'wave-trend',
+    name: 'WaveTrend [LazyBear]',
+    short: 'WT_LB',
+    description:
+      'LazyBear’s open-source WaveTrend oscillator: hlc3 channel position (10), smoothed over 21 bars, with its 4-bar signal, ±60/±53 levels and the blue area between the two waves.',
+    category: 'Momentum',
+    period: 10,
+    color: '#008000',
+  },
+  {
     kind: 'chile-reversal',
     name: 'Chile Reversal',
     short: 'Chile Reversal',
@@ -210,6 +221,10 @@ export function builtInPlots(
   if (indicator.kind === 'cm-ult-macd') {
     const settings = cmMacdSettings(indicator)
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
+  }
+  if (indicator.kind === 'wave-trend') {
+    const settings = waveTrendSettings(indicator)
+    return waveTrendPlots(calculateWaveTrend(candles, settings), settings)
   }
   if (indicator.kind === 'coinbase-strike') {
     // The active strike is a native dotted price-scale marker in ChartView, not a historical

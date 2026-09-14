@@ -66,6 +66,8 @@ test('adds the original wave, dotted signal, area and levels to its own pane', a
   expect(painted.green).toBeGreaterThan(20) // WT1
   expect(painted.red).toBeGreaterThan(20) // WT2 crosses and the overbought levels
   expect(painted.blue).toBeGreaterThan(100) // the transparent WT1 − WT2 area
+  // The pane legend reveals its controls on hover, like every other oscillator pane.
+  await page.locator(legend).hover()
   await page
     .getByRole('button', { name: 'Toggle WaveTrend [LazyBear] visibility', exact: true })
     .click()
@@ -123,13 +125,16 @@ test('persists all six published inputs and restores the original defaults', asy
 })
 
 test('removes, restores and edits the oscillator on mobile without overflow', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
   await demo(page)
   await addFromLibrary(page, 'WaveTrend')
   await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  await page.locator(legend).hover()
   await page.getByRole('button', { name: 'Remove WaveTrend [LazyBear] 10', exact: true }).click()
   await expect(page.locator(legend)).toHaveCount(0)
   await addFromLibrary(page, 'WaveTrend')
+  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  // The toolbar drops the Indicators button at phone width, so add it first.
+  await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
   await page.getByRole('button', { name: title, exact: true }).click()
   await page.getByRole('spinbutton', { name: 'Channel Length', exact: true }).fill('14')

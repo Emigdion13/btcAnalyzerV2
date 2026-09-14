@@ -5046,12 +5046,14 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar .indicator-button > svg {
     width: 17px;
   }
-  .chart-toolbar .alert-toolbar-button {
+  /* The meter stays reachable from the workspace menu: this row cannot take another
+     button without overflowing the viewport. */
+  .chart-toolbar .alert-toolbar-button,
+  .chart-toolbar .rsi-meter-toggle {
     display: none;
   }
   .chart-toolbar .replay-button,
-  .chart-toolbar .peek-toggle,
-  .chart-toolbar .rsi-meter-toggle {
+  .chart-toolbar .peek-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .toolbar-separator {

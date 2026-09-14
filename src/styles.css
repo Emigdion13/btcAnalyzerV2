@@ -4414,12 +4414,14 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span {
+  .chart-toolbar .peek-toggle > span,
+  .chart-toolbar .rsi-meter-toggle > span {
     display: none;
   }
   .alert-toolbar-button,
   .replay-button,
-  .peek-toggle {
+  .peek-toggle,
+  .rsi-meter-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .toolbar-separator:first-child {
@@ -4531,12 +4533,14 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span {
+  .chart-toolbar .peek-toggle > span,
+  .chart-toolbar .rsi-meter-toggle > span {
     display: inline;
   }
   .alert-toolbar-button,
   .replay-button,
-  .peek-toggle {
+  .peek-toggle,
+  .rsi-meter-toggle {
     padding: 0 6px !important;
   }
   .editor-inspiration {
@@ -4729,10 +4733,12 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span {
+  .chart-toolbar .peek-toggle > span,
+  .chart-toolbar .rsi-meter-toggle > span {
     display: none !important;
   }
-  .chart-toolbar .peek-toggle {
+  .chart-toolbar .peek-toggle,
+  .chart-toolbar .rsi-meter-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .icon-button:nth-child(2),
@@ -5040,7 +5046,10 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar .indicator-button > svg {
     width: 17px;
   }
-  .chart-toolbar .alert-toolbar-button {
+  /* The meter stays reachable from the workspace menu: this row cannot take another
+     button without overflowing the viewport. */
+  .chart-toolbar .alert-toolbar-button,
+  .chart-toolbar .rsi-meter-toggle {
     display: none;
   }
   .chart-toolbar .replay-button,
@@ -8189,6 +8198,14 @@ input[type='color']::-webkit-color-swatch {
 }
 .peek-toggle.active svg {
   color: #8fd9c4;
+}
+/* The RSI meter button carries the indicator's own colour when the window is open. */
+.rsi-meter-toggle.active {
+  background: #221d33;
+  color: #c4b1fd;
+}
+.rsi-meter-toggle.active svg {
+  color: #c4b1fd;
 }
 @media (max-width: 1180px) {
   .peek-box {

@@ -54,6 +54,7 @@ import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
 import { formatNotional } from '../../shared/whale-flow'
 import { builtInPlots, macdHistogram } from '../lib/indicators'
+import { rsiMeterPeriod } from '../lib/rsi-hud'
 import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
 import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
 import {
@@ -136,6 +137,8 @@ interface Props {
   onIndicatorRemove: (id: string) => void
   onIndicatorRetry: () => void
   replay: boolean
+  /** Floating RSI meter. The toolbar button owns it; the RSI pane stays the indicator's job. */
+  rsiHud?: boolean
   /** Resting-liquidity depth view of the charted product; zone chips and walls need it. */
   book?: OrderBookView | null
 }
@@ -366,8 +369,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         }),
     [candles, indicators, timeframe],
   )
-  const rsiIndicator = indicators.find((i) => i.visible && i.kind === 'rsi')
-  const rsiPeriod = rsiIndicator?.period ?? 14
+  // The meter reads its period from the chart's RSI — visible or hidden — so the window and the
+  // oscillator pane always talk about the same setting.
+  const rsiPeriod = rsiMeterPeriod(indicators)
   const [rsiMinimized, setRsiMinimized] = useState(false)
   const [rsiPos, setRsiPos] = useState<{ x: number; y: number } | null>(null)
   const [isDraggingRsi, setIsDraggingRsi] = useState(false)
@@ -3195,7 +3199,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       <div className="chart-currency">
         {quoteCurrency(asset)} <ChevronDown size={10} />
       </div>
-      {rsiIndicator && activeRsi !== null && (
+      {props.rsiHud && activeRsi !== null && (
         <div
           ref={rsiCardRef}
           className={`rsi-hud-card ${rsiZoneClass} ${rsiMinimized ? 'is-minimized' : ''} ${isDraggingRsi ? 'is-dragging' : ''}`}

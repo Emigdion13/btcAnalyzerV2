@@ -4,6 +4,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  pull-requests: write
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -19,7 +20,26 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Browser tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee e2e.log
+      # TEMPORARY diagnostic: this sandbox cannot download Actions logs or artifacts,
+      # so a failure is reported where it can be read. Remove once the suite is green.
+      - name: Post the e2e failure tail to the pull request
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo '### e2e failure tail (temporary diagnostic step)'
+            echo '```'
+            tail -n 150 e2e.log
+            echo '```'
+          } > e2e-comment.md
+          gh pr comment "$PR" --body-file e2e-comment.md
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

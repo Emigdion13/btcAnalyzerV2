@@ -50,7 +50,6 @@ import type {
   Tool,
 } from '../lib/types'
 import type { OrderBookView } from '../../shared/coinbase'
-import type { BrtiAnchor, BrtiSample } from '../../shared/kalshi'
 import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
 import { formatNotional } from '../../shared/whale-flow'
@@ -82,10 +81,8 @@ import {
   calculateCoinbaseStrike,
   coinbaseStrikePriceLevels,
   coinbaseStrikeSettings,
-  COINBASE_STRIKE_DEFAULTS,
   resolveStrike,
 } from '../lib/coinbase-strike'
-import { brtiOverlayPoints } from '../lib/brti-overlay'
 import { useKalshiStrike } from '../lib/useKalshiStrike'
 import {
   calculatePivotPointsMissedReversals,
@@ -192,7 +189,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const indicatorSeries = useRef<Map<string, IndicatorSeries>>(new Map())
   const strikePriceLinesRef = useRef<Map<string, ManagedStrikePriceLine>>(new Map())
-  const brtiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const propsRef = useRef(props)
   propsRef.current = props
   const pendingRef = useRef<Anchor | null>(null)
@@ -294,10 +290,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const kalshiPayload =
     kalshi.response && kalshi.response.product === asset.symbol ? kalshi.response : null
   const kalshiStrike = kalshiPayload?.strike ?? null
-  const brtiValues = useMemo<(BrtiSample | BrtiAnchor)[]>(
-    () => (kalshiPayload?.samples?.length ? kalshiPayload.samples : (kalshiPayload?.anchors ?? [])),
-    [kalshiPayload],
-  )
   const strikeOverlays = useMemo(
     () =>
       indicators
@@ -313,18 +305,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           }
         }),
     [candles, indicators, kalshiStrike, timeframe],
-  )
-  /**
-   * The index Kalshi settles on, snapped to the candle grid so it cannot distort the
-   * chart's time spacing. Sparse by nature without an API key: exact values only exist
-   * at quarter-hour boundaries.
-   */
-  const brtiPoints = useMemo(
-    () =>
-      strikeIndicatorActive && brtiValues.length
-        ? brtiOverlayPoints(candles, brtiValues, INTERVAL[timeframe])
-        : [],
-    [candles, brtiValues, timeframe, strikeIndicatorActive],
   )
   const scalpSwingOverlays = useMemo(
     () =>
@@ -1179,44 +1159,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       strikePriceLinesRef.current.delete(key)
     }
   }, [asset.priceIncrement, asset.symbol, chartType, strikeOverlays])
-
-  // CF Benchmarks index overlay: the price series Kalshi actually measures, drawn
-  // against the Coinbase trades the chart is built from.
-  useEffect(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    if (!brtiPoints.length) {
-      if (brtiSeriesRef.current) {
-        chart.removeSeries(brtiSeriesRef.current)
-        brtiSeriesRef.current = null
-      }
-      return
-    }
-    const strikeColor =
-      strikeOverlays[0]?.settings.strikeColor ?? COINBASE_STRIKE_DEFAULTS.strikeColor
-    if (!brtiSeriesRef.current)
-      brtiSeriesRef.current = chart.addSeries(LineSeries, {
-        priceScaleId: 'right',
-        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
-        color: strikeColor,
-        lineWidth: 1,
-        lineStyle: LineStyle.Solid,
-        lineType: 0,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-        title: 'CF BRTI',
-      })
-    brtiSeriesRef.current.setData(
-      brtiPoints.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })),
-    )
-    return () => {
-      if (brtiSeriesRef.current && chartRef.current) {
-        chartRef.current.removeSeries(brtiSeriesRef.current)
-        brtiSeriesRef.current = null
-      }
-    }
-  }, [brtiPoints, strikeOverlays])
 
   const hasCandles = candles.length > 0
   useEffect(() => {

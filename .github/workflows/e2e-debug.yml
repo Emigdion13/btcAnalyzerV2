@@ -23,11 +23,11 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          npx playwright test tests/wave-trend.spec.ts 2>&1 | tee e2e.log | tail -n 60
+          npm run test:e2e 2>&1 | tee e2e.log | tail -n 60
       - name: Report the failure tail
         if: steps.e2e.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          { echo '### wave-trend e2e failure tail'; echo '```'; tail -n 200 e2e.log; echo '```'; } > body.md
+          { echo '### full e2e failure tail'; echo '```'; tail -n 200 e2e.log; echo '```'; } > body.md
           gh pr comment 34 --repo Emigdion13/btcAnalyzerV2 --body-file body.md

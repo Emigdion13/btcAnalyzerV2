@@ -2,7 +2,7 @@
 
 A professional, Coinbase-connected charting workspace inspired by TradingView. Built with React, TypeScript, a Node.js market-data adapter, and TradingView Lightweight Charts™.
 
-**Coinbase is the default data source. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. The main-chart AI prints a probabilistic forecast — a model with stated assumptions, graded against what later printed — not investment advice and not a promise. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
+**Coinbase is the default data source. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
 
 ## Run locally
 
@@ -99,7 +99,6 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
-- **AI forecast window:** the main-chart AI's forward call as a floating picture-in-picture window — where price is expected to finish over the next N bars, and whether that finish is above or below the strike line, with the probability, the expected close and band, the chance the strike is touched and broken or held, the levels in the way, and the order things are expected to happen in. **Alt A** toggles it.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
 - **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
@@ -231,7 +230,6 @@ src/
     Sidebar.tsx                Watchlist, symbol detail, alerts, trading notes
     Dialogs.tsx                Lazy-loaded search, library, settings, docs, sharing
     TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
-    AgentDecisionBox.tsx      Floating AI ensemble decision, with levels and reasons
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
     market.ts                  Asset metadata, explicit demo feed, quote formatting
@@ -247,7 +245,7 @@ src/
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
     timeframe-peek.ts          Auto resolution choice, window stats, forming bar and SVG geometry
     floating-window.ts        Shared drag/dock/remember logic for the floating chart windows
-    market-agents.ts           Specialist agents, ensemble vote, adaptive trust weights
+    market-agents.ts           Agent/forecast engines: dormant, no UI wires them up
     script-runner.ts           Isolated execution and result validation
     workspace-backup.ts        Backup schema validation and rollback-safe persistence
     storage.ts                 Versioned local persistence and downloads
@@ -323,130 +321,29 @@ Charting 1m while a 15m structure decides the session is a scrolling problem: th
 
 Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar, the workspace menu, or its own close button. Below 1050px — the width the side panels collapse at — the window starts closed so it never sits on the price legend, and opening it there is remembered like any other preference. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
 
-## AI forecast window — the main-chart AI
+## AI — removed from the app, engines kept on disk
 
-The chart AI answers a forward question, not a present-tense one: **over the next N bars, where does
-price go, and does it finish above or below the strike line?** The **AI forecast window** is a
-floating picture-in-picture panel — the same shape as the peek window, docked in the opposite
-corner — carrying the call, the number behind it and the sequence it expects.
+Both AI features are gone from the workspace: the floating **AI decision window** (was **Alt A**) and
+its agent panel, the floating **MACD AI forecast window** (was **Alt M**) and its panel, the two
+toolbar and rail buttons, the two shortcuts, and the AI fields in the workspace-backup schema. Nothing
+computes or renders a forecast, and the shipped bundle no longer carries the model weights.
 
-- **A side and a probability, not a mood.** The header badge reads `↑ 62%` (or the projected drift
-  when the chart has no strike line). The body carries the expected close and its ±1 move-scale
-  band, the projected drift in ATR, the horizon, the chance the strike is touched and whether it is
-  expected to break or hold, the chance the nearest support/resistance is reached inside the
-  horizon, and the path shape (continuation, reversal, range, squeeze).
-- **What happens next, in order** — the MACD AI idiom, applied to price: the near bars (test the
-  strike, or hold the side), the moment of contact (break or hold, with the funding behind the
-  level), then the finish bar with its expected close and band.
-- **The call and its dissent, together.** A split bar shows how the specialists' own horizon
-  projections lean, and the line under it reads `6 of 8 agents lean that way`, so agreement and
-  dissent are both on screen — a confident lone agent never looks like a consensus.
-- **Same chrome as the peek window.** Drag it by the header anywhere inside the chart and the
-  position persists; minimize it to a single line, snap it back to its docked corner with the reset
-  button, or hide it from its own close button, the toolbar, the workspace menu, or **Alt A**.
-  The full panel — every specialist's own projection, the timeline, the journal and the learning —
-  is one click away.
-- **Honest about its freshness.** The window needs 30 candles before it says anything, and it dims
-  while the feed is stale, reconnecting, offline, or paused — a forecast is only as current as the
-  data behind it. It is hidden during bar replay, like the peek window, because replayed bars are
-  not live candles. The info chip spells out the model: a drift-and-volatility projection, never a
-  black box.
+The analysis engines stay in the repository — no longer imported by `src/App.tsx`, still covered by
+their own unit tests — so a rework starts from working maths instead of from scratch:
 
-The AI ships **pre-trained**: `src/lib/agent-training.test.ts` replays real BTC-USD history through
-the production loop and generates `src/lib/agent-pretrained.ts`, so a fresh install starts with
-trust learned from the tape instead of an empty prior. Learning stays local after that — every
-closed candle records a forecast, settles it when the horizon completes, and adapts the specialists'
-trust weights; nothing places a trade and no order is suggested.
+| Path                                | What it holds                                            |
+| ----------------------------------- | -------------------------------------------------------- |
+| `src/lib/market-agents.ts`          | Specialist agents, ensemble vote, adaptive trust weights |
+| `src/lib/price-forecast.ts`         | Horizon projection, drift and band maths                 |
+| `src/lib/agent-journal.ts`          | Forecast journal, settling and scoring                   |
+| `src/lib/agent-pretrained.ts`       | Generated pre-trained agent weights                      |
+| `src/lib/macd-forecast.ts`          | MACD forecast engine, journal and learning state         |
+| `src/lib/macd-pretrained.ts`        | Generated pre-trained MACD weights                       |
+| `src/lib/macd-training-data/*.json` | The BTC history both trainers replay                     |
+| `docs/price-ai-forecast.md`         | Original design notes                                    |
 
-The full model — the per-specialist projection table, the two probability formulas, the skill
-scoring, the training report card and its honest limits — is in
-[the price-forecast implementation notes](docs/price-ai-forecast.md). The window is
-`src/components/AgentDecisionBox.tsx`; the ensemble lives in `src/lib/market-agents.ts`, the
-projection in `src/lib/price-forecast.ts`, and the journal in `src/lib/agent-journal.ts`.
-
-### The game: UP or DOWN from the strike at every quarter-hour cut
-
-Every agent answers one question: at the next `:00` / `:15` / `:30` / `:45` cut, will price
-be **UP** or **DOWN** from the strike — the price when the window opened? The window math
-lives in `src/lib/kalshi-window.ts`: the strike is the open of the candle that opened the
-window (a live print stands in as a provisional strike for the first two minutes after a
-fresh boundary, and anything the chart cannot defend yields no strike at all rather than a
-fake one). When a strike is live:
-
-- The strike line on the chart is what the forecast is asked about. When the **Coinbase strike
-  indicator** is loaded, its live level is the pinned strike — **Kalshi's own published
-  `floor_strike` when it can be fetched**, otherwise the interval open, or the custom price when
-  one is set — and the window shows the level, the side, the distance in ATR, the touch odds and
-  a live `4:32 → 9:30` countdown. With no indicator loaded, the defended 15-minute window strike
-  stands in; with neither, the AI forecasts the drift and says so.
-
-Kalshi does **not** settle these markets on a Coinbase print. Its rule is a 60-second average of
-CF Benchmarks' real-time index (BRTI for BTC, `ETHUSD_RTI` and friends for the other six coins),
-taken across a basket of venues' order books — so a strike re-derived from candle opens drifts
-(measured at a mean bias of +$3.30 and a worst case of $9.09 on BTC, which is enough to flip the
-UP/DOWN read on a window that closes within a few dollars of the line). The chart therefore
-**fetches the strike Kalshi publishes** rather than reconstructing it, labels the price-scale tag
-`KALSHI STRIKE` only when that is genuinely what it is drawing, shows the live Coinbase↔index
-**basis** next to it, and falls back to an averaged estimate clearly marked `STRIKE (EST)`. See
-[`docs/kalshi-strike-exactness.md`](docs/kalshi-strike-exactness.md) for the rule text, the audit,
-and how to enable the optional API key that upgrades the overlay to a second-by-second index line.
-
-- The present-tense verdict still frames the window call (`Price sits +$12.40 above the strike
-  with 4:32 to the 9:30 cut`), says whether the call needs a cross or just needs the side to
-  hold, and tilts toward the fast readers (whale flow, momentum, MACD) as the cut approaches
-  while fading the slow ones. A chart coarser than the 15-minute expiry says so in the risks.
-- Forecasts settle **either after N bars — the default, graded where the AI said it would land —
-  or at the strike cut, UP/DOWN from the level itself**. The panel switches between the two; the
-  journal records which was used, pins the strike it graded against, and scores the strike call
-  separately from the directional read.
-
-### MACD, level-strength, and whale-flow specialists
-
-Three of the eight votes belong to the readings traders watch closest. Each of them — and each of
-its five peers — also projects its read across the horizon, so the panel shows not just what every
-specialist sees now but what it expects over the next N bars and how much confidence it has in that
-projection:
-
-- **MACD Agent** — a dedicated conventional 12/26/9 read, separate from the RSI-blended
-  momentum vote. It scores the line-vs-signal trigger, histogram thrust (widening or fading),
-  the freshness of the last cross, and the zero-line regime — all measured against the MACD
-  line's own recent swing, so a wiggle never reads as a quake. A cross against a strong
-  zero-line regime is scored as a pause, not a reversal, and says so in its warnings. Before
-  it commits, the read has to clear RSI: a promising call facing an RSI that sits on the other
-  side of the 50 midline and/or rolls the other way runs into wall material — the RSI's
-  strength and aim shave conviction out of the score (up to half, never flipping the MACD's
-  own direction) and the agent warns that RSI will put up resistance. A weak RSI, or one
-  aiming the same side, leaves the read intact and says so in its reasons.
-- **Level Strength Agent** — the nearby-level watch. It pins the nearest confirmed support
-  and resistance (SR zones first, pivots as the fallback), measures each one's strength from
-  fill density, touches, volume, and the resting order book on that side, and always says
-  whether the level is going to be a problem: *a real problem*, *worth watching*, or *not a
-  problem from this distance* — with the distance in ATR attached. When one side has no
-  confirmed level, it says the path is clear (or that a drop has no cushion in sight). The
-  structure agent then scores the odds from inside the range it found.
-- **Whale Flow Agent** — the live sweep, as a vote. While the whale box shows a figure, this
-  agent pushes the ensemble toward the push: taker buying (lifting the offer) leans bullish,
-  taker selling (hitting the bid) leans bearish. Conviction scales with absolute size —
-  `$50K+`, `$100K+`, `$500K+` and `$1M+` sweeps each carry more weight — with how far past
-  the adaptive whale threshold the sweep runs and how one-sided the fills are. A sweep in progress pushes
-  hardest; a building one is unconfirmed and a finished one may already be in the price. At
-  rest the agent abstains entirely, so silence never dilutes the call, and its trust weights
-  adapt only from sweeps it actually voted on. Like the whale box itself it is Coinbase-live
-  only: demo mode and replays run the ensemble without it, and its warnings repeat the honest
-  caveat that big prints mark energy more reliably than direction.
-- **…and it knows where that money is going.** Every sweep is also judged against the nearest
-  confirmed S/R level *and* the resting level2 book inside it — or against a book wall with no
-  chart level at all, whichever sits closer. A push off a level the book is defending earns extra
-  weight, a push that trades through a level whose resting size has just been eaten earns more,
-  and a push into a level the book is still defending is cut back. When that resting size is
-  decisively bigger than the sweep (absorption ≥ 0.75 and at least half the sweep's own notional)
-  the vote **flips against the tape** — the whale is being faded, not followed — and the warning
-  says plainly that Atlas is arguing with executed money on resting-book evidence that can be
-  pulled in seconds. A chart level alone can damp a vote but never flip it, and with no book the
-  read stays raw and says so. See
-  [the level-context rules](docs/whale-level-context.md). In demo mode, during replay, or on any
-  product without a level2 book the sweep is still judged against its price-action levels, and the
-  agent says out loud that no resting wall could confirm them.
+The removed UI (`AgentPanel.tsx`, `AgentDecisionBox.tsx`, `MacdAiPanel.tsx`, `MacdAiDecisionBox.tsx`
+and their tests) is in git history if any of it is worth rebuilding from.
 
 ## Research notes
 

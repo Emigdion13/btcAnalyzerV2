@@ -2,7 +2,6 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   Activity,
   ArrowDownToLine,
-  Bot,
   Bell,
   BellPlus,
   Camera,
@@ -56,16 +55,11 @@ import {
   RefreshCw,
   Loader2,
   WifiOff,
-  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
-import { AgentPanel } from './components/AgentPanel'
-import { AgentDecisionBox } from './components/AgentDecisionBox'
-import { MacdAiDecisionBox } from './components/MacdAiDecisionBox'
-import { MacdAiPanel } from './components/MacdAiPanel'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -89,60 +83,19 @@ import {
   quoteCurrency,
 } from './lib/market'
 import { useCoinbaseMarket } from './lib/useCoinbaseMarket'
-import {
-  agentContextTimeframes,
-  defaultAgentPredictionJournal,
-  normalizeAgentLearningState,
-  normalizeAgentPredictionJournal,
-  recordAgentPrediction,
-  resolveAgentPredictionJournal,
-  suggestedHorizonBars,
-} from './lib/agent-journal'
-import {
-  analyzeMarket,
-  pretrainedAgentLearningState,
-  type AgentLearningState,
-  type MarketAnalysis,
-  type StrikeInput,
-} from './lib/market-agents'
-import {
-  analyzeMacdForecast,
-  defaultMacdForecastJournal,
-  macdMemoryStats,
-  normalizeMacdAiLearningState,
-  normalizeMacdForecastJournal,
-  pretrainedMacdAiLearningState,
-  recordMacdForecast,
-  resolveMacdJournal,
-  type MacdAiLearningState,
-  type MacdForecast,
-  type MacdForecastJournal,
-} from './lib/macd-forecast'
-import { agentDecisionDefaultVisible } from './lib/floating-window'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
-import { INTERVAL_SECONDS, isProductId, candleFingerprint } from '../shared/coinbase'
-import { kalshiClockLabel, kalshiStrike } from './lib/kalshi-window'
-import { calculateCoinbaseStrike, coinbaseStrikeSettings } from './lib/coinbase-strike'
-import type { CoinbaseStrikeSettings } from './lib/coinbase-strike'
+import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
-import {
-  calculateCmMacd,
-  CM_MACD_DEFAULTS,
-  cmMacdResolution,
-  cmMacdSettings,
-  indicatorLabel,
-  requestedIndicatorTimeframes,
-} from './lib/cm-ult-macd'
+import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
   TIMEFRAME_PEEK_DEFAULTS,
   peekDefaultVisible,
   peekResolution,
-  peekSynchronizedHorizon,
   timeframePeekSettings,
 } from './lib/timeframe-peek'
-import type { PeekSynchronizedHorizon, TimeframePeekSettings } from './lib/timeframe-peek'
+import type { TimeframePeekSettings } from './lib/timeframe-peek'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -227,40 +180,6 @@ const DRAW_TOOLS: { id: Tool; label: string; icon: LucideIcon; shortcut?: string
   { id: 'text', label: 'Text note', icon: TextCursorInput },
   { id: 'measure', label: 'Measure', icon: Ruler },
 ]
-/**
- * The strike line the chart is actually drawing, as a forecast input.
- *
- * The strike indicator's own level wins when it is on the chart — that is the line the
- * user is asking about, whether it is the interval open or a custom price. The live
- * window's strike stands in when the indicator is not loaded.
- */
-function pinnedStrikeFromIndicator(
-  candles: Candle[],
-  settings: CoinbaseStrikeSettings,
-  nowSec: number,
-): StrikeInput | null {
-  if (candles.length < 2) return null
-  try {
-    const result = calculateCoinbaseStrike(candles, settings)
-    if (result.currentStrike === null || !Number.isFinite(result.currentStrike)) return null
-    if (result.currentStrike <= 0) return null
-    return {
-      price: result.currentStrike,
-      windowStart: result.intervalStart,
-      windowEnd: result.intervalEnd,
-      secondsLeft: Math.max(0, result.intervalEnd - nowSec),
-      expiryLabel: kalshiClockLabel(result.intervalEnd),
-      provisional: false,
-      label: settings.customStrike > 0 ? 'custom strike' : `${settings.intervalMinutes}m strike`,
-    }
-  } catch {
-    return null
-  }
-}
-
-const DEFAULT_AGENT_HORIZONS = Object.fromEntries(
-  TIMEFRAMES.map((interval) => [interval, suggestedHorizonBars(interval)]),
-) as Record<Timeframe, number>
 type ModalName =
   | 'symbols'
   | 'indicators'
@@ -342,45 +261,6 @@ export default function App() {
   const [drawingsLocked, setDrawingsLocked] = useLocalState('drawings-locked', false)
   const [magnet, setMagnet] = useLocalState('magnet', false)
   const [feedActive, setFeedActive] = useLocalState('feed-active', true)
-  const [agentLearning, setAgentLearning] = useLocalState<AgentLearningState>(
-    'agent-learning',
-    pretrainedAgentLearningState(),
-  )
-  const [agentJournal, setAgentJournal] = useLocalState(
-    'agent-journal',
-    defaultAgentPredictionJournal(),
-  )
-  // The AI's general decision, as a floating window on the chart rather than a panel to open.
-  // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
-  const [agentDecisionPreference, setAgentDecisionPreference] = useLocalState<boolean | null>(
-    'agent-decision-visible',
-    null,
-  )
-  const agentDecisionVisible =
-    agentDecisionPreference ?? agentDecisionDefaultVisible(window.innerWidth)
-  const setAgentDecisionVisible = (next: boolean) => setAgentDecisionPreference(next)
-  const [agentHorizons, setAgentHorizons] = useLocalState<Record<Timeframe, number>>(
-    'agent-horizons',
-    DEFAULT_AGENT_HORIZONS,
-  )
-  // Where a forecast settles: its own horizon (the default) or the strike window's cut.
-  const [agentSettle, setAgentSettle] = useLocalState<'bars' | 'cut'>('agent-settle', 'bars')
-  const [macdAiLearning, setMacdAiLearning] = useLocalState<MacdAiLearningState>(
-    'macd-ai-learning',
-    pretrainedMacdAiLearningState(),
-  )
-  const [macdAiJournal, setMacdAiJournal] = useLocalState<MacdForecastJournal>(
-    'macd-ai-journal',
-    defaultMacdForecastJournal(),
-  )
-  // The MACD AI forecast, as a floating window on the chart rather than a panel to open.
-  // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
-  const [macdAiPreference, setMacdAiPreference] = useLocalState<boolean | null>(
-    'macd-ai-visible',
-    null,
-  )
-  const macdAiVisible = macdAiPreference ?? agentDecisionDefaultVisible(window.innerWidth)
-  const setMacdAiVisible = (next: boolean) => setMacdAiPreference(next)
   // The floating timeframe-peek window: a second resolution, forming bar included.
   // null means "never chosen", which defers to the viewport; a real choice wins over it either way.
   const [peekPreference, setPeekPreference] = useLocalState<boolean | null>(
@@ -393,9 +273,9 @@ export default function App() {
     TIMEFRAME_PEEK_DEFAULTS,
   )
   const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
-  const [sidePanel, setSidePanel] = useState<
-    'watchlist' | 'alerts' | 'notes' | 'agents' | 'macd-ai' | null
-  >(() => (window.innerWidth >= 1050 ? 'watchlist' : null))
+  const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
+    window.innerWidth >= 1050 ? 'watchlist' : null,
+  )
   const [modal, setModal] = useState<ModalName>(null)
   const [searchAdding, setSearchAdding] = useState(false)
   const [libraryTab, setLibraryTab] = useState<'built-in' | 'scripts'>('built-in')
@@ -405,8 +285,6 @@ export default function App() {
   const [focusMode, setFocusMode] = useState(false)
   const [tool, setTool] = useState<Tool>('cursor')
   const [tick, setTick] = useState(0)
-  // One-second wall clock so the 15-minute strike countdown ticks even when the feed is quiet.
-  const [nowMs, setNowMs] = useState(() => Date.now())
   const [replayIndex, setReplayIndex] = useState<number | null>(null)
   const [replaySnapshot, setReplaySnapshot] = useState<Candle[] | null>(null)
   const [timeframeFeeds, setTimeframeFeeds] = useState<Record<string, IndicatorTimeframeData>>({})
@@ -445,35 +323,12 @@ export default function App() {
     label: string
     action: () => void
   } | null>(null)
-  const safeAgentLearning = useMemo(
-    () => normalizeAgentLearningState(agentLearning),
-    [agentLearning],
-  )
-  const safeAgentJournal = useMemo(
-    () => normalizeAgentPredictionJournal(agentJournal),
-    [agentJournal],
-  )
-  const safeMacdAiLearning = useMemo(
-    () => normalizeMacdAiLearningState(macdAiLearning),
-    [macdAiLearning],
-  )
-  const safeMacdAiJournal = useMemo(
-    () => normalizeMacdForecastJournal(macdAiJournal),
-    [macdAiJournal],
-  )
-  const agentHorizonBars = useMemo(() => {
-    const fallback = suggestedHorizonBars(timeframe)
-    const configured = Number(agentHorizons[timeframe] ?? fallback)
-    return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : fallback
-  }, [agentHorizons, timeframe])
   const chartRef = useRef<ChartHandle>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   const runnerRef = useRef<AbortController | null>(null)
   const cacheRef = useRef<Map<string, ScriptResult>>(new Map())
   const scriptErrors = useRef<Map<string, string>>(new Map())
-  /** Last journal failure already reported, so a stuck entry warns once instead of every bar. */
-  const journalError = useRef<string | null>(null)
   const visibleTabs = tabs.filter((s) => (source === 'coinbase' ? isProductId(s) : isDemoSymbol(s)))
   const visibleWatchlist = watchlist.filter((s) =>
     source === 'coinbase' ? isProductId(s) : isDemoSymbol(s),
@@ -523,9 +378,6 @@ export default function App() {
     [source, symbol, simulatedCandles],
   )
   const bookView = replayIndex === null ? (live.book ?? demoBookView) : null
-  // Executed whale flow is live tape, not replayable history: the ensemble reads it only
-  // while the chart is live, exactly like the book. Null at rest, in demo, or on a dead feed.
-  const whaleSignal = replayIndex === null ? live.whaleFlow : null
   const availableCandles =
     source === 'coinbase' ? (live.snapshot?.candles ?? EMPTY_CANDLES) : simulatedCandles
   const baseCandles = replaySnapshot ?? availableCandles
@@ -539,22 +391,10 @@ export default function App() {
   )
   // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
   const peekActive = peekVisible && replayIndex === null
-  const agentTimeframes = useMemo(() => {
-    const defaults = agentContextTimeframes(timeframe)
-    // If the trader has pinned the peek to another higher frame, feed that same frame into
-    // the AI context so the timing and the higher-timeframe read are talking about one window.
-    if (!peekActive) return defaults
-    if ((INTERVAL_SECONDS[peekTimeframe] ?? 0) <= (INTERVAL_SECONDS[timeframe] ?? 0))
-      return defaults
-    return [...new Set([...defaults, peekTimeframe])]
-  }, [peekActive, peekTimeframe, timeframe])
   const indicatorTimeframes = useMemo(
     () =>
-      requestedIndicatorTimeframes(indicators, timeframe, [
-        ...(peekActive ? [peekTimeframe] : []),
-        ...agentTimeframes,
-      ]),
-    [indicators, timeframe, peekActive, peekTimeframe, agentTimeframes],
+      requestedIndicatorTimeframes(indicators, timeframe, [...(peekActive ? [peekTimeframe] : [])]),
+    [indicators, timeframe, peekActive, peekTimeframe],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
     () =>
@@ -588,284 +428,6 @@ export default function App() {
   const currentPrice = quotePrices[symbol] ?? candles[candles.length - 1]?.close
   const hasData = candles.length > 1
   const feedState = source === 'coinbase' ? live.state : feedActive ? 'live' : 'paused'
-  const analysisTimeframes = replayIndex === null ? nativeTimeframes : replayTimeframes
-  const contextAnalyses = useMemo(
-    () =>
-      agentTimeframes.map((interval) => {
-        const feed = analysisTimeframes[interval]
-        const contextCandles = feed?.candles ?? EMPTY_CANDLES
-        let analysis: MarketAnalysis | null = null
-        if (contextCandles.length >= 30) {
-          try {
-            analysis = analyzeMarket(
-              { candles: contextCandles, timeframe: interval },
-              safeAgentLearning,
-            )
-          } catch {
-            analysis = null
-          }
-        }
-        return {
-          timeframe: interval,
-          state: feed?.state ?? (source === 'coinbase' ? 'loading' : 'paused'),
-          analysis,
-        }
-      }),
-    [agentTimeframes, analysisTimeframes, safeAgentLearning, source],
-  )
-  const contextSignals = useMemo(
-    () =>
-      contextAnalyses.flatMap((item) =>
-        item.analysis
-          ? [
-              {
-                timeframe: item.timeframe,
-                bias: item.analysis.bias,
-                score: item.analysis.score,
-                confidence: item.analysis.confidence,
-                regime: item.analysis.regime,
-              },
-            ]
-          : [],
-      ),
-    [contextAnalyses],
-  )
-  const settledCandles = useMemo(
-    () => (replayIndex === null && candles.length > 30 ? candles.slice(0, -1) : candles),
-    [candles, replayIndex],
-  )
-  const peekHorizonSync = useMemo<PeekSynchronizedHorizon | null>(() => {
-    if (!peekActive) return null
-    const anchor = candles[candles.length - 1]
-    return anchor
-      ? peekSynchronizedHorizon({
-          chartTimeframe: timeframe,
-          peekTimeframe,
-          anchorTime: anchor.time,
-        })
-      : null
-  }, [candles, peekActive, peekTimeframe, timeframe])
-  const settledPeekHorizonSync = useMemo<PeekSynchronizedHorizon | null>(() => {
-    if (!peekActive) return null
-    const anchor = settledCandles[settledCandles.length - 1]
-    return anchor
-      ? peekSynchronizedHorizon({
-          chartTimeframe: timeframe,
-          peekTimeframe,
-          anchorTime: anchor.time,
-        })
-      : null
-  }, [peekActive, peekTimeframe, settledCandles, timeframe])
-  const liveAgentHorizonBars = peekHorizonSync?.horizonBars ?? agentHorizonBars
-  const settledAgentHorizonBars = settledPeekHorizonSync?.horizonBars ?? agentHorizonBars
-  // The clock the strike window reads: wall time live, the replay cursor on replay.
-  const strikeNowSec = useMemo(() => {
-    if (replayIndex === null) return nowMs / 1000
-    const anchor = candles[candles.length - 1]
-    return anchor ? anchor.time + (INTERVAL_SECONDS[timeframe] ?? 60) : nowMs / 1000
-  }, [replayIndex, candles, timeframe, nowMs])
-  // The game every agent is playing: UP or DOWN from this strike at the cut.
-  const kalshiLive = useMemo(
-    () => kalshiStrike(candles, strikeNowSec, currentPrice),
-    [candles, strikeNowSec, currentPrice],
-  )
-  const kalshiSettled = useMemo(
-    () => kalshiStrike(settledCandles, strikeNowSec, currentPrice),
-    [settledCandles, strikeNowSec, currentPrice],
-  )
-  // The strike line on the chart, when the strike indicator is loaded: the level the
-  // forecast is asked about, in preference to the plain window strike.
-  const strikeIndicator = useMemo(
-    () =>
-      indicators.find((indicator) => indicator.visible && indicator.kind === 'coinbase-strike') ??
-      null,
-    [indicators],
-  )
-  const strikeSettings = useMemo(
-    () => (strikeIndicator ? coinbaseStrikeSettings(strikeIndicator) : null),
-    [strikeIndicator],
-  )
-  const indicatorStrikeLive = useMemo(
-    () =>
-      strikeSettings ? pinnedStrikeFromIndicator(candles, strikeSettings, strikeNowSec) : null,
-    [strikeSettings, candles, strikeNowSec],
-  )
-  const indicatorStrikeSettled = useMemo(
-    () =>
-      strikeSettings
-        ? pinnedStrikeFromIndicator(settledCandles, strikeSettings, strikeNowSec)
-        : null,
-    [strikeSettings, settledCandles, strikeNowSec],
-  )
-  const liveStrike = indicatorStrikeLive ?? kalshiLive ?? null
-  const settledStrike = indicatorStrikeSettled ?? kalshiSettled ?? null
-  const marketAnalysis = useMemo<MarketAnalysis | null>(() => {
-    if (candles.length < 30) return null
-    try {
-      return analyzeMarket(
-        {
-          candles,
-          timeframe,
-          book: bookView ?? undefined,
-          context: contextSignals,
-          whale: whaleSignal ?? undefined,
-          strike: liveStrike ?? undefined,
-          horizonBars: liveAgentHorizonBars,
-        },
-        safeAgentLearning,
-      )
-    } catch {
-      return null
-    }
-  }, [
-    candles,
-    timeframe,
-    bookView,
-    contextSignals,
-    whaleSignal,
-    liveStrike,
-    liveAgentHorizonBars,
-    safeAgentLearning,
-  ])
-  const settledMarketAnalysis = useMemo<MarketAnalysis | null>(() => {
-    if (settledCandles.length < 30) return null
-    try {
-      return analyzeMarket(
-        {
-          candles: settledCandles,
-          timeframe,
-          book: replayIndex === null ? (bookView ?? undefined) : undefined,
-          context: contextSignals,
-          whale: replayIndex === null ? (live.whaleFlow ?? undefined) : undefined,
-          strike: settledStrike ?? undefined,
-          horizonBars: settledAgentHorizonBars,
-        },
-        safeAgentLearning,
-      )
-    } catch {
-      return null
-    }
-  }, [
-    settledCandles,
-    timeframe,
-    replayIndex,
-    bookView,
-    contextSignals,
-    live.whaleFlow,
-    settledStrike,
-    settledAgentHorizonBars,
-    safeAgentLearning,
-  ])
-  const settledFingerprint = useMemo(() => candleFingerprint(settledCandles), [settledCandles])
-  // MACD AI reads the chart's own CM_Ult_MacD_MTF pane — its settings, its
-  // resolution, its projection — so the forecast matches the lines on screen.
-  const cmIndicator = useMemo(
-    () => indicators.find((indicator) => indicator.kind === 'cm-ult-macd') ?? null,
-    [indicators],
-  )
-  const cmSettings = useMemo(
-    () => (cmIndicator ? cmMacdSettings(cmIndicator) : { ...CM_MACD_DEFAULTS }),
-    [cmIndicator],
-  )
-  const cmResolution = cmMacdResolution(cmSettings, timeframe)
-  const cmSettingsLabel = cmIndicator ? indicatorLabel(cmIndicator) : 'CM_Ult_MacD_MTF'
-  const macdSettingsKey = useMemo(
-    () =>
-      JSON.stringify({
-        fast: cmSettings.fastLength,
-        slow: cmSettings.slowLength,
-        signal: cmSettings.signalLength,
-        resolution: cmResolution,
-      }),
-    [cmSettings, cmResolution],
-  )
-  const macdLiveValues = useMemo(() => {
-    if (!cmIndicator) return null
-    try {
-      return calculateCmMacd(candles, cmSettings, {
-        timeframe,
-        timeframes: analysisTimeframes,
-        replay: replayIndex !== null,
-      })
-    } catch {
-      return null
-    }
-  }, [cmIndicator, candles, cmSettings, timeframe, analysisTimeframes, replayIndex])
-  const settledMacdValues = useMemo(() => {
-    if (!cmIndicator) return null
-    try {
-      return calculateCmMacd(settledCandles, cmSettings, {
-        timeframe,
-        timeframes: analysisTimeframes,
-        replay: replayIndex !== null,
-      })
-    } catch {
-      return null
-    }
-  }, [cmIndicator, settledCandles, cmSettings, timeframe, analysisTimeframes, replayIndex])
-  const macdMemory = useMemo(
-    () => macdMemoryStats(safeMacdAiJournal, symbol, timeframe),
-    [safeMacdAiJournal, symbol, timeframe],
-  )
-  const macdForecast = useMemo<MacdForecast | null>(() => {
-    if (!cmIndicator || !macdLiveValues) return null
-    try {
-      return analyzeMacdForecast(
-        {
-          candles,
-          timeframe,
-          values: macdLiveValues,
-          resolution: cmResolution,
-          settingsLabel: cmSettingsLabel,
-          symbol,
-          memory: macdMemory,
-        },
-        safeMacdAiLearning,
-      )
-    } catch {
-      return null
-    }
-  }, [
-    cmIndicator,
-    candles,
-    macdLiveValues,
-    cmResolution,
-    cmSettingsLabel,
-    symbol,
-    timeframe,
-    macdMemory,
-    safeMacdAiLearning,
-  ])
-  const settledMacdForecast = useMemo<MacdForecast | null>(() => {
-    if (!cmIndicator || !settledMacdValues) return null
-    try {
-      return analyzeMacdForecast(
-        {
-          candles: settledCandles,
-          timeframe,
-          values: settledMacdValues,
-          resolution: cmResolution,
-          settingsLabel: cmSettingsLabel,
-          symbol,
-          memory: macdMemory,
-        },
-        safeMacdAiLearning,
-      )
-    } catch {
-      return null
-    }
-  }, [
-    cmIndicator,
-    settledCandles,
-    settledMacdValues,
-    cmResolution,
-    cmSettingsLabel,
-    symbol,
-    timeframe,
-    macdMemory,
-    safeMacdAiLearning,
-  ])
-
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
     if (!peekActive) return null
     const peekingTheChart = peekTimeframe === timeframe
@@ -993,12 +555,6 @@ export default function App() {
     return () => clearInterval(interval)
   }, [source, feedActive, replayIndex])
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!document.hidden) setNowMs(Date.now())
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
-  useEffect(() => {
     if (!replayPlaying) return
     const interval = setInterval(
       () =>
@@ -1104,110 +660,6 @@ export default function App() {
       ),
     )
   }, [alerts, quotePrices, quotes, source, feedState, replayIndex, setAlerts, notify])
-
-  useEffect(() => {
-    if (replayIndex !== null || settledCandles.length < 30) return
-    try {
-      const resolved = resolveAgentPredictionJournal(safeAgentJournal, safeAgentLearning, {
-        source,
-        symbol,
-        timeframe,
-        candles: settledCandles,
-      })
-      const journalWithPrediction =
-        settledMarketAnalysis && safeAgentJournal.autoJournal
-          ? recordAgentPrediction(resolved.journal, {
-              source,
-              symbol,
-              timeframe,
-              candles: settledCandles,
-              analysis: settledMarketAnalysis,
-              horizonBars: settledAgentHorizonBars,
-              settle: agentSettle,
-              // The entry is pinned to the strike the chart is drawing, so only a defended
-              // (non-provisional) level may seed it — a live print is not a settled level.
-              strike:
-                settledStrike && !settledStrike.provisional
-                  ? {
-                      price: settledStrike.price,
-                      windowStart: settledStrike.windowStart,
-                      windowEnd: settledStrike.windowEnd,
-                    }
-                  : undefined,
-            })
-          : resolved.journal
-      if (resolved.learning !== safeAgentLearning) setAgentLearning(resolved.learning)
-      if (journalWithPrediction !== safeAgentJournal) setAgentJournal(journalWithPrediction)
-      journalError.current = null
-    } catch (error) {
-      // One bad journal entry must not take the workspace down with it: the chart,
-      // drawings and alerts are all still usable. Report it once and move on.
-      const detail = error instanceof Error ? error.message : String(error)
-      console.error('Agent journal failed to settle', error)
-      if (journalError.current !== detail) {
-        journalError.current = detail
-        notify('The agent journal could not settle an entry — its stats were skipped.', 'error')
-      }
-    }
-  }, [
-    replayIndex,
-    safeAgentJournal,
-    safeAgentLearning,
-    settledMarketAnalysis,
-    settledAgentHorizonBars,
-    agentSettle,
-    settledStrike,
-    source,
-    symbol,
-    timeframe,
-    settledCandles,
-    settledFingerprint,
-    setAgentJournal,
-    setAgentLearning,
-    notify,
-  ])
-
-  useEffect(() => {
-    if (replayIndex !== null || settledCandles.length < 30 || !cmIndicator || !settledMacdValues)
-      return
-    const resolved = resolveMacdJournal(safeMacdAiJournal, safeMacdAiLearning, {
-      source,
-      symbol,
-      timeframe,
-      candles: settledCandles,
-      values: settledMacdValues,
-      settingsKey: macdSettingsKey,
-    })
-    const journalWithPrediction =
-      settledMacdForecast && safeMacdAiJournal.autoJournal
-        ? recordMacdForecast(resolved.journal, {
-            source,
-            symbol,
-            timeframe,
-            candles: settledCandles,
-            forecast: settledMacdForecast,
-            settingsKey: macdSettingsKey,
-          })
-        : resolved.journal
-    if (resolved.learning !== safeMacdAiLearning) setMacdAiLearning(resolved.learning)
-    if (journalWithPrediction !== safeMacdAiJournal) setMacdAiJournal(journalWithPrediction)
-  }, [
-    replayIndex,
-    safeMacdAiJournal,
-    safeMacdAiLearning,
-    settledMacdForecast,
-    settledMacdValues,
-    macdSettingsKey,
-    cmIndicator,
-    source,
-    symbol,
-    timeframe,
-    settledCandles,
-    settledFingerprint,
-    setMacdAiJournal,
-    setMacdAiLearning,
-  ])
-
   const openSearch = (adding = false) => {
     setSearchAdding(adding)
     setModal('symbols')
@@ -1628,11 +1080,6 @@ export default function App() {
       draft,
       alerts,
       notes: readStored('notes', ''),
-      agentLearning: safeAgentLearning,
-      agentJournal: safeAgentJournal,
-      agentHorizons,
-      macdAiLearning: safeMacdAiLearning,
-      macdAiJournal: safeMacdAiJournal,
     }
     downloadFile('atlas-workspace.json', JSON.stringify(backup, null, 2))
     notify('Workspace backup downloaded.')
@@ -1656,14 +1103,6 @@ export default function App() {
       setScripts(backup.scripts)
       setDraft(backup.draft)
       setAlerts(backup.alerts)
-      setAgentLearning(backup.agentLearning ?? pretrainedAgentLearningState())
-      setAgentJournal(backup.agentJournal ?? defaultAgentPredictionJournal())
-      setMacdAiLearning(backup.macdAiLearning ?? pretrainedMacdAiLearningState())
-      setMacdAiJournal(backup.macdAiJournal ?? defaultMacdForecastJournal())
-      setAgentHorizons({
-        ...DEFAULT_AGENT_HORIZONS,
-        ...(backup.agentHorizons ?? {}),
-      })
       setDrawingHistory({})
       setComputed({})
       setReplayIndex(null)
@@ -1728,8 +1167,6 @@ export default function App() {
     }
   }
   const togglePeek = () => setPeekPreference(!peekVisible)
-  const toggleDecision = () => setAgentDecisionVisible(!agentDecisionVisible)
-  const toggleMacdAi = () => setMacdAiVisible(!macdAiVisible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1739,8 +1176,6 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
-    toggleDecision,
-    toggleMacdAi,
     draft,
     modal,
     confirmation,
@@ -1754,8 +1189,6 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
-    toggleDecision,
-    toggleMacdAi,
     draft,
     modal,
     confirmation,
@@ -1805,14 +1238,6 @@ export default function App() {
       if (event.altKey && !mod && (event.key.toLowerCase() === 'p' || event.code === 'KeyP')) {
         event.preventDefault()
         cmd.togglePeek()
-      }
-      if (event.altKey && !mod && (event.key.toLowerCase() === 'a' || event.code === 'KeyA')) {
-        event.preventDefault()
-        cmd.toggleDecision()
-      }
-      if (event.altKey && !mod && (event.key.toLowerCase() === 'm' || event.code === 'KeyM')) {
-        event.preventDefault()
-        cmd.toggleMacdAi()
       }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
@@ -1911,16 +1336,6 @@ export default function App() {
                   {peekVisible ? 'Hide timeframe peek window' : 'Show timeframe peek window'}
                 </MenuItem>
                 <MenuItem
-                  icon={Bot}
-                  selected={agentDecisionVisible}
-                  onClick={() => {
-                    setAgentDecisionVisible(!agentDecisionVisible)
-                    close()
-                  }}
-                >
-                  {agentDecisionVisible ? 'Hide AI decision window' : 'Show AI decision window'}
-                </MenuItem>
-                <MenuItem
                   icon={Layers}
                   selected={bookBoxVisible}
                   onClick={() => {
@@ -1940,8 +1355,6 @@ export default function App() {
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
                     setPeekPreference(null)
-                    setAgentDecisionVisible(true)
-                    setMacdAiVisible(true)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -2140,24 +1553,6 @@ export default function App() {
               <PictureInPicture2 size={17} strokeWidth={1.5} />
               <span>Peek</span>
             </button>
-            <button
-              className={`toolbar-button ai-decision-toggle ${agentDecisionVisible ? 'active' : ''}`}
-              onClick={() => setAgentDecisionVisible(!agentDecisionVisible)}
-              title="Floating AI decision window (Alt A)"
-              aria-pressed={agentDecisionVisible}
-            >
-              <Bot size={17} strokeWidth={1.5} />
-              <span>AI</span>
-            </button>
-            <button
-              className={`toolbar-button macd-ai-toggle ${macdAiVisible ? 'active' : ''}`}
-              onClick={() => setMacdAiVisible(!macdAiVisible)}
-              title="Floating MACD AI forecast window (Alt M)"
-              aria-pressed={macdAiVisible}
-            >
-              <Zap size={17} strokeWidth={1.5} />
-              <span>MACD AI</span>
-            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -2290,37 +1685,6 @@ export default function App() {
                   replay={replayIndex !== null}
                   book={bookView}
                 />
-                {agentDecisionVisible && hasData && replayIndex === null && (
-                  <AgentDecisionBox
-                    assetLabel={asset.symbol}
-                    source={source}
-                    timeframe={timeframe}
-                    analysis={marketAnalysis}
-                    context={contextAnalyses}
-                    horizonSync={peekHorizonSync}
-                    feedState={feedState}
-                    onOpenPanel={() => {
-                      setFocusMode(false)
-                      setSidePanel('agents')
-                    }}
-                    onClose={() => setAgentDecisionVisible(false)}
-                  />
-                )}
-                {macdAiVisible && hasData && replayIndex === null && (
-                  <MacdAiDecisionBox
-                    assetLabel={asset.symbol}
-                    source={source}
-                    timeframe={timeframe}
-                    forecast={macdForecast}
-                    cmActive={cmIndicator !== null}
-                    feedState={feedState}
-                    onOpenPanel={() => {
-                      setFocusMode(false)
-                      setSidePanel('macd-ai')
-                    }}
-                    onClose={() => setMacdAiVisible(false)}
-                  />
-                )}
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}
@@ -2559,72 +1923,6 @@ export default function App() {
           />
         )}
         {sidePanel === 'notes' && <NotesPanel onClose={() => setSidePanel(null)} />}
-        {sidePanel === 'agents' && (
-          <AgentPanel
-            assetLabel={asset.symbol}
-            source={source}
-            timeframe={timeframe}
-            analysis={marketAnalysis}
-            context={contextAnalyses}
-            learning={safeAgentLearning}
-            journal={safeAgentJournal}
-            horizonBars={liveAgentHorizonBars}
-            configuredHorizonBars={agentHorizonBars}
-            horizonSync={peekHorizonSync}
-            settleMode={agentSettle}
-            onClose={() => setSidePanel(null)}
-            onToggleAutoJournal={(autoJournal) =>
-              setAgentJournal((previous) => ({
-                ...previous,
-                autoJournal,
-                updatedAt: new Date().toISOString(),
-              }))
-            }
-            onSettleModeChange={setAgentSettle}
-            onHorizonBarsChange={(bars) =>
-              setAgentHorizons((previous) => ({
-                ...previous,
-                [timeframe]: bars,
-              }))
-            }
-            onClearJournal={() => {
-              setAgentJournal(defaultAgentPredictionJournal())
-              notify('Agent journal cleared.', 'info')
-            }}
-            onResetLearning={() => {
-              setAgentLearning(pretrainedAgentLearningState())
-              notify('Agent learning reset to pre-trained weights.', 'info')
-            }}
-          />
-        )}
-        {sidePanel === 'macd-ai' && (
-          <MacdAiPanel
-            assetLabel={asset.symbol}
-            source={source}
-            timeframe={timeframe}
-            forecast={macdForecast}
-            cmActive={cmIndicator !== null}
-            settingsLabel={cmSettingsLabel}
-            learning={safeMacdAiLearning}
-            journal={safeMacdAiJournal}
-            onClose={() => setSidePanel(null)}
-            onToggleAutoJournal={(autoJournal) =>
-              setMacdAiJournal((previous) => ({
-                ...previous,
-                autoJournal,
-                updatedAt: new Date().toISOString(),
-              }))
-            }
-            onClearJournal={() => {
-              setMacdAiJournal(defaultMacdForecastJournal())
-              notify('MACD forecast journal cleared.', 'info')
-            }}
-            onResetLearning={() => {
-              setMacdAiLearning(pretrainedMacdAiLearningState())
-              notify('MACD AI learning reset to pre-trained weights.', 'info')
-            }}
-          />
-        )}
         <aside className="activity-rail" aria-label="Workspace sidebar">
           <div>
             <IconButton
@@ -2642,18 +1940,6 @@ export default function App() {
               />
               {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
             </div>
-            <IconButton
-              icon={Bot}
-              label="Toggle agent panel"
-              active={sidePanel === 'agents'}
-              onClick={() => setSidePanel(sidePanel === 'agents' ? null : 'agents')}
-            />
-            <IconButton
-              icon={Zap}
-              label="Toggle MACD AI panel"
-              active={sidePanel === 'macd-ai'}
-              onClick={() => setSidePanel(sidePanel === 'macd-ai' ? null : 'macd-ai')}
-            />
             <IconButton
               icon={Code2}
               label="Open script library"

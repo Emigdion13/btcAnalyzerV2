@@ -7,21 +7,6 @@ import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
-import {
-  defaultAgentPredictionJournal,
-  normalizeAgentLearningState,
-  normalizeAgentPredictionJournal,
-  type AgentPredictionJournal,
-} from './agent-journal'
-import { defaultAgentLearningState, type AgentLearningState } from './market-agents'
-import {
-  defaultMacdForecastJournal,
-  normalizeMacdAiLearningState,
-  normalizeMacdForecastJournal,
-  pretrainedMacdAiLearningState,
-  type MacdAiLearningState,
-  type MacdForecastJournal,
-} from './macd-forecast'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -50,11 +35,6 @@ export interface WorkspaceBackup {
   draft: { id: string; name: string; source: string }
   alerts: PriceAlert[]
   notes: string
-  agentLearning?: AgentLearningState
-  agentJournal?: AgentPredictionJournal
-  agentHorizons?: Partial<Record<Timeframe, number>>
-  macdAiLearning?: MacdAiLearningState
-  macdAiJournal?: MacdForecastJournal
 }
 const symbols = ASSETS.map((a) => a.symbol)
 function validSymbol(value: unknown): value is string {
@@ -329,18 +309,6 @@ function alert(value: unknown): PriceAlert {
   if (a.triggeredAt !== undefined) result.triggeredAt = date(a.triggeredAt, 'alert trigger date')
   return result
 }
-function agentHorizons(value: unknown): Partial<Record<Timeframe, number>> {
-  const entries = Object.entries(record(value, 'agent horizons'))
-  if (entries.length > TIMEFRAMES.length) invalid('too many agent horizons')
-  return Object.fromEntries(
-    entries.map(([timeframe, bars]) => {
-      if (!TIMEFRAMES.includes(timeframe as Timeframe)) invalid('agent horizon timeframe')
-      const parsed = number(bars, 'agent horizon bars', 1, 500)
-      if (!Number.isInteger(parsed)) invalid('agent horizon bars')
-      return [timeframe, parsed]
-    }),
-  )
-}
 export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
   const b = record(value, 'file contents')
   if (b.version !== 1) invalid('unsupported version')
@@ -414,19 +382,6 @@ export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
     },
     alerts: unique(array(b.alerts, 50, 'alerts').map(alert), (a) => a.id, 'alert ID'),
     notes: text(b.notes, 50000, 'notes', true),
-    ...(b.agentLearning === undefined
-      ? {}
-      : { agentLearning: normalizeAgentLearningState(b.agentLearning) }),
-    ...(b.agentJournal === undefined
-      ? {}
-      : { agentJournal: normalizeAgentPredictionJournal(b.agentJournal) }),
-    ...(b.agentHorizons === undefined ? {} : { agentHorizons: agentHorizons(b.agentHorizons) }),
-    ...(b.macdAiLearning === undefined
-      ? {}
-      : { macdAiLearning: normalizeMacdAiLearningState(b.macdAiLearning) }),
-    ...(b.macdAiJournal === undefined
-      ? {}
-      : { macdAiJournal: normalizeMacdForecastJournal(b.macdAiJournal) }),
   }
 }
 
@@ -447,23 +402,6 @@ export function persistWorkspaceBackup(backup: WorkspaceBackup): void {
     ['draft', backup.draft],
     ['alerts', backup.alerts],
     ['notes', backup.notes],
-    [
-      'agent-learning',
-      normalizeAgentLearningState(backup.agentLearning ?? defaultAgentLearningState()),
-    ],
-    [
-      'agent-journal',
-      normalizeAgentPredictionJournal(backup.agentJournal ?? defaultAgentPredictionJournal()),
-    ],
-    ['agent-horizons', backup.agentHorizons ?? {}],
-    [
-      'macd-ai-learning',
-      normalizeMacdAiLearningState(backup.macdAiLearning ?? pretrainedMacdAiLearningState()),
-    ],
-    [
-      'macd-ai-journal',
-      normalizeMacdForecastJournal(backup.macdAiJournal ?? defaultMacdForecastJournal()),
-    ],
   ]
   const previous = entries.map(([key]) => [key, localStorage.getItem(`atlas.v1.${key}`)] as const)
   try {

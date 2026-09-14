@@ -84,7 +84,8 @@ test('stands alone when the RSI pane comes off the chart, sharing one editable l
   await expect(dialog).toBeVisible()
 
   // One length, shared: changing it in the dialog moves the window's reading too.
-  await dialog.getByRole('spinbutton', { name: 'Length', exact: true }).fill('21')
+  // The field's label wraps a hint, so the accessible name is longer than "Length".
+  await dialog.getByRole('spinbutton', { name: 'Length', exact: false }).fill('21')
   await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(dialog).toBeHidden()
   await expect(meter).toContainText('RSI 21')

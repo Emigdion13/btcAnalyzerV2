@@ -434,9 +434,29 @@ projection:
   adapt only from sweeps it actually voted on. Like the whale box itself it is Coinbase-live
   only: demo mode and replays run the ensemble without it, and its warnings repeat the honest
   caveat that big prints mark energy more reliably than direction.
+- **…and it knows where that money is going.** Every sweep is also judged against the nearest
+  confirmed S/R level *and* the resting level2 book inside it — or against a book wall with no
+  chart level at all, whichever sits closer. A push off a level the book is defending earns extra
+  weight, a push that trades through a level whose resting size has just been eaten earns more,
+  and a push into a level the book is still defending is cut back. When that resting size is
+  decisively bigger than the sweep (absorption ≥ 0.75 and at least half the sweep's own notional)
+  the vote **flips against the tape** — the whale is being faded, not followed — and the warning
+  says plainly that Atlas is arguing with executed money on resting-book evidence that can be
+  pulled in seconds. A chart level alone can damp a vote but never flip it, and with no book the
+  read stays raw and says so. See
+  [the level-context rules](docs/whale-level-context.md). In demo mode, during replay, or on any
+  product without a level2 book the sweep is still judged against its price-action levels, and the
+  agent says out loud that no resting wall could confirm them.
 
-## Research notes (not implemented)
+## Research notes
 
-[Whale flow sources](docs/whale-flow-sources.md) surveys where large-holder inflows and outflows can be observed — raw on-chain transfers, labeled exchange-flow aggregates, the Coinbase Premium Index, ETF flows, derivatives positioning, and the executed tape — with published lead times, documented false positives, per-source pricing, and how each would (or would not) fit the same-origin adapter. **No whale or on-chain feed is wired into Atlas, no vendor account exists, and no API key is stored in this repository.** The note also records that the largest immediate opportunity needs no vendor at all: the Coinbase `matches` stream already parsed in `shared/coinbase.ts` carries per-fill size that is currently discarded after OHLCV aggregation.
+[Whale flow vs. ROBEX IA CHILERA](docs/whale-flow-vs-robex.md) compares the whale detector with a
+multi-factor Pine scoring engine and lists six borrowable ideas with effort/value ratings. Its
+top item — S/R and book-wall context on the sweep — is now implemented as
+[whale sweep level context](docs/whale-level-context.md); the remaining five (regime awareness,
+edge/participation gating, price-follow confirmation, a session-level baseline, and an event
+journal) are still proposals.
+
+[Whale flow sources](docs/whale-flow-sources.md) — not implemented — surveys where large-holder inflows and outflows can be observed — raw on-chain transfers, labeled exchange-flow aggregates, the Coinbase Premium Index, ETF flows, derivatives positioning, and the executed tape — with published lead times, documented false positives, per-source pricing, and how each would (or would not) fit the same-origin adapter. **No whale or on-chain feed is wired into Atlas, no vendor account exists, and no API key is stored in this repository.** The note also records that the largest immediate opportunity needs no vendor at all: the Coinbase `matches` stream already parsed in `shared/coinbase.ts` carries per-fill size that is currently discarded after OHLCV aggregation.
 
 Atlas is independent of TradingView and Coinbase. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the bundled licenses. Lightweight Charts attribution is provided in the status bar and About dialog.

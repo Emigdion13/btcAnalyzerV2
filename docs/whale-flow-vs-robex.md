@@ -1,10 +1,14 @@
 # Whale flow vs. ROBEX IA CHILERA — what the Pine script gets right that our whale logic should steal
 
-**Status: analysis.** No code shipped as part of this note. It compares the ROBEX IA CHILERA
+**Status: analysis, with §4.1 now shipped.** It compares the ROBEX IA CHILERA
 V18 PRO Pine indicator (a bar-based, multi-factor scoring engine) against the whale-flow logic
 already in Atlas (`shared/whale-flow.ts` → `WhaleFlowTracker`, and the decision layer
 `analyzeWhale()` in `src/lib/market-agents.ts`). The goal is one question: _which parts of
 ROBEX's decision machinery would make our whale logic better, and which parts we must not copy._
+
+The highest-value item in §4 — S/R and book-wall context on the sweep — is implemented as
+[`whale-level-context.md`](whale-level-context.md); §4.1 below records what was proposed and what
+shipped. §4.2–§4.6 remain proposals.
 
 Nothing here is trading advice.
 
@@ -92,6 +96,15 @@ resting book actually becomes predictive: the book shows the wall the sweep is a
 
 **Where:** `analyzeWhale()` gains a parameter (level summary + `OrderBookView`), called from
 `analyzeMarket()` where `levelStrength.summary` and `snapshot.book` are already in scope.
+
+**Shipped.** Implemented as `whaleLevelContext()` in `src/lib/whale-level-context.ts`, wired into
+`analyzeWhale(flow, frame)`. All four rows above exist as verdicts — `defended`, `break`,
+`absorbed` (damp, or **flip** against the tape when absorption ≥ 0.75 *and* the resting size is at
+least half the sweep), and `clear` — with two refinements the table above did not spell out:
+an obstacle may also be a book wall with **no** chart level at that price (the book sees walls the
+SR engine does not), and a chart level on its own can never flip a vote, only damp it, because
+arguing against executed money needs resting size to argue with. Rules, constants and the exact
+scoring live in [`whale-level-context.md`](whale-level-context.md).
 
 ### 4.2 Regime awareness (maps to ROBEX's `mercadoLateral` suppression)
 
@@ -201,15 +214,15 @@ Two small borrowings:
 
 | # | Change | Where | Effort | Value |
 | --- | --- | --- | --- | --- |
-| 4.1 | S/R + book-wall context on the sweep | `analyzeWhale` (+ callers) | Medium | **Highest** |
+| 4.1 | S/R + book-wall context on the sweep — **shipped**, see [`whale-level-context.md`](whale-level-context.md) | `analyzeWhale` (+ callers) | Medium | **Highest** |
 | 4.2 | Regime awareness | `analyzeWhale` (+ callers) | Low | High |
 | 4.3 | Edge / participation / persistence gating | `whale-flow.ts` + `analyzeWhale` | Low | High |
 | 4.4 | Price-follow confirmation | `WhaleFlowTracker` (`BurstMemory`) | Low | High (kills the top false positive) |
 | 4.5 | Session-level baseline | `WhaleFlowTracker` | Low | Medium |
 | 4.6 | Event latch + journal | server/agent wiring | Medium | Medium |
 
-The first four are the ones that meaningfully change a decision, and three of them (4.2, 4.3,
-4.4) are small, self-contained edits with clear test coverage already scaffolded in
+4.1 is done. Of the five that remain, 4.2–4.4 are the ones that meaningfully change a decision,
+and all three are small, self-contained edits with clear test coverage already scaffolded in
 `shared/whale-flow.test.ts` and `src/lib/market-agents.test.ts`.
 
 ---

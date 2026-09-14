@@ -6691,6 +6691,100 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
+/* WaveTrend [LazyBear] — original inputs, palette and oscillator pane. */
+.wt-settings-modal {
+  width: min(520px, calc(100vw - 28px));
+}
+.wt-length-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.wt-length-fields .field,
+.wt-level-fields .field {
+  min-width: 0;
+}
+.wt-length-fields input,
+.wt-level-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.wt-level-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.wt-levels-note {
+  display: block;
+  margin-top: 10px;
+  color: #8290a4;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.wt-formula {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: #8290a4;
+}
+.wt-formula span {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.wt-formula b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: #c0c8d3;
+  text-align: right;
+}
+.wt-palette {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.wt-palette span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #99a5b7;
+  font-size: 10px;
+}
+.wt-palette i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #ffffff20;
+  flex-shrink: 0;
+}
+.wt-compatibility-note strong {
+  display: block;
+  color: #dfbd80;
+  margin-bottom: 5px;
+}
+.wt-compatibility-note a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: #b9ee82;
+}
+@media (max-width: 640px) {
+  .wt-settings-modal .modal-body {
+    padding: 16px;
+  }
+  .wt-length-fields,
+  .wt-level-fields {
+    gap: 8px;
+  }
+  .wt-length-fields .field,
+  .wt-level-fields .field {
+    font-size: 10px;
+  }
+}
+
 /* Smart Money Concepts — native price overlay and compact settings surface. */
 .smc-settings-modal {
   width: min(650px, calc(100vw - 28px));

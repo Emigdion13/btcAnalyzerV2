@@ -3,6 +3,7 @@ import { parseWorkspaceBackup, persistWorkspaceBackup } from './workspace-backup
 import type { WorkspaceBackup } from './workspace-backup'
 import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, DIVERGENCE_DEFAULTS, SMC_DEFAULTS } from './types'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
+import { WAVE_TREND_DEFAULTS } from './wave-trend'
 
 function backup(): WorkspaceBackup {
   return {
@@ -105,6 +106,54 @@ describe('workspace backups', () => {
       indicators: [{ ...originalIndicator, cmMacd: { ...CM_MACD_DEFAULTS, extra: 'ignored' } }],
     })
     expect(clean.indicators[0].cmMacd).toEqual(CM_MACD_DEFAULTS)
+  })
+  it('round-trips every WaveTrend input including negative levels', () => {
+    const saved = backup()
+    saved.indicators.push({
+      id: 'wt',
+      kind: 'wave-trend',
+      name: 'WaveTrend [LazyBear]',
+      period: 21,
+      color: '#008000',
+      visible: false,
+      waveTrend: {
+        channelLength: 21,
+        averageLength: 34,
+        obLevel1: 55,
+        obLevel2: 45,
+        osLevel1: -55,
+        osLevel2: -45,
+      },
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+  })
+  it('rejects malformed WaveTrend inputs and strips unrecognized properties on import', () => {
+    const original = backup()
+    const indicator = {
+      id: 'wt',
+      kind: 'wave-trend' as const,
+      name: 'WaveTrend [LazyBear]',
+      period: 10,
+      color: '#008000',
+      visible: true,
+    }
+    for (const waveTrend of [
+      [],
+      {},
+      { ...WAVE_TREND_DEFAULTS, channelLength: 0 },
+      { ...WAVE_TREND_DEFAULTS, averageLength: 1.5 },
+      { ...WAVE_TREND_DEFAULTS, obLevel1: 2001 ** 4 },
+      { ...WAVE_TREND_DEFAULTS, osLevel2: null },
+      { ...WAVE_TREND_DEFAULTS, obLevel2: false },
+    ])
+      expect(() =>
+        parseWorkspaceBackup({ ...original, indicators: [{ ...indicator, waveTrend }] }),
+      ).toThrow(/WaveTrend/)
+    const clean = parseWorkspaceBackup({
+      ...original,
+      indicators: [{ ...indicator, waveTrend: { ...WAVE_TREND_DEFAULTS, extra: 'ignored' } }],
+    })
+    expect(clean.indicators[0].waveTrend).toEqual(WAVE_TREND_DEFAULTS)
   })
   it('round-trips MACD divergence settings on both MACD kinds and rejects malformed values', () => {
     const saved = backup()

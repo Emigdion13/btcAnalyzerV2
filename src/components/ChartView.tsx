@@ -964,9 +964,16 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           crosshairMarkerVisible: false,
           priceFormat: { type: 'price' as const, precision: 2, minMove: 0.01 },
         }
+        // Every non-line Pine style is drawn by the native renderer so that
+        // histogram widths, marker coordinates and area fills stay in chart space.
+        const style = plot.style ?? 'line'
         const line = (
-          plot.style === 'histogram' || plot.style === 'circles'
-            ? chart.addCustomSeries(new IndicatorPlotSeries(plot.style), base, pane)
+          style !== 'line'
+            ? chart.addCustomSeries(
+                new IndicatorPlotSeries(style),
+                { ...base, transp: plot.transp ?? 0 },
+                pane,
+              )
             : chart.addSeries(
                 LineSeries,
                 {
@@ -3075,9 +3082,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               .filter(
                 (ind) =>
                   !ind.visible ||
+                  // Oscillators with their own pane legend are listed there, not here.
                   (ind.kind !== 'rsi' &&
                     ind.kind !== 'macd' &&
                     ind.kind !== 'cm-ult-macd' &&
+                    ind.kind !== 'wave-trend' &&
                     !(
                       ind.kind === 'custom' &&
                       customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')

@@ -127,3 +127,18 @@ export function createTa() {
   return { sma, ema, rsi, stdev, highest, lowest, crossover }
 }
 export const ta = createTa()
+
+/**
+ * Legacy Pine v1/v2 ema(): seeded from the first value instead of an SMA seed.
+ * Kept separate from `ta.ema` so the Studio's SMA-seeded behavior never changes.
+ */
+export function pineEma(values: number[], length: number): number[] {
+  if (!Number.isInteger(length) || length < 1 || length > 2000)
+    throw new Error('EMA length must be an integer between 1 and 2000.')
+  const alpha = 2 / (length + 1)
+  let previous = values[0]
+  return values.map((value, i) => {
+    previous = i === 0 ? value : alpha * value + (1 - alpha) * previous
+    return previous
+  })
+}

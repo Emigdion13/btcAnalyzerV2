@@ -33,12 +33,32 @@ const sample = (
 })
 function drawing() {
   const colors: string[] = []
+  const strokes: string[] = []
+  const alphas: number[] = []
   const context = {
     fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    globalAlpha: 1,
     beginPath: vi.fn(),
+    closePath: vi.fn(),
     ellipse: vi.fn(),
-    fill: vi.fn(() => colors.push(context.fillStyle)),
-    fillRect: vi.fn(() => colors.push(context.fillStyle)),
+    fill: vi.fn(() => {
+      colors.push(context.fillStyle)
+      alphas.push(context.globalAlpha)
+    }),
+    fillRect: vi.fn(() => {
+      colors.push(context.fillStyle)
+      alphas.push(context.globalAlpha)
+    }),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(() => {
+      strokes.push(context.strokeStyle)
+      alphas.push(context.globalAlpha)
+    }),
+    save: vi.fn(),
+    restore: vi.fn(),
   }
   const target = {
     useBitmapCoordinateSpace: (draw: (scope: unknown) => void) =>
@@ -49,7 +69,7 @@ function drawing() {
       }),
   } as unknown as Parameters<ICustomSeriesPaneRenderer['draw']>[0]
   const priceToY = (price: number) => (50 - price) as Coordinate
-  return { context, target, priceToY, colors }
+  return { context, target, priceToY, colors, strokes, alphas }
 }
 
 describe('CM plot rendering', () => {
@@ -97,6 +117,93 @@ describe('CM plot rendering', () => {
     hist.destroy()
     hist.renderer().draw(draw.target, draw.priceToY, false)
     expect(draw.context.fillRect).not.toHaveBeenCalled()
+  })
+  it('draws legacy Pine cross markers centered on the value, in the bar color', () => {
+    const renderer = new IndicatorPlotSeries('cross')
+    renderer.update(sample(10), { ...renderer.defaultOptions(), lineWidth: 2 })
+    const draw = drawing()
+    renderer.renderer().draw(draw.target, draw.priceToY, false)
+    // Two diagonal strokes per bar, sized by the plot width and centered on the value.
+    expect(draw.context.moveTo.mock.calls).toEqual([
+      [16, 56],
+      [24, 56],
+      [36, 116],
+      [44, 116],
+    ])
+    expect(draw.context.lineTo.mock.calls).toEqual([
+      [24, 64],
+      [16, 64],
+      [44, 124],
+      [36, 124],
+    ])
+    expect(draw.context.stroke).toHaveBeenCalledTimes(2)
+    expect(draw.strokes).toEqual(['#00ffff', '#800000'])
+    expect(draw.context.fillRect).not.toHaveBeenCalled()
+    expect(draw.context.ellipse).not.toHaveBeenCalled()
+  })
+  it('fills an area from the zero line at the Pine transparency and strokes its edge', () => {
+    const renderer = new IndicatorPlotSeries('area')
+    const data = sample(10)
+    renderer.update(data, {
+      ...renderer.defaultOptions(),
+      color: '#0000ff',
+      lineWidth: 1,
+      transp: 80,
+    })
+    const draw = drawing()
+    renderer.renderer().draw(draw.target, draw.priceToY, false)
+    // Polygon: zero → every value → back to zero, then the line on top.
+    expect(draw.context.moveTo.mock.calls).toEqual([
+      [20, 100],
+      [20, 60],
+    ])
+    expect(draw.context.lineTo.mock.calls).toEqual([
+      [20, 60],
+      [40, 120],
+      [40, 100],
+      [40, 120],
+    ])
+    expect(draw.context.closePath).toHaveBeenCalledTimes(1)
+    expect(draw.colors).toEqual(['#0000ff'])
+    expect(draw.alphas[0]).toBeCloseTo(0.2, 12) // transp 80 → 20% opacity
+    expect(draw.alphas[1]).toBe(1)
+    expect(draw.strokes).toEqual(['#0000ff'])
+    expect(draw.context.save).toHaveBeenCalled()
+    expect(draw.context.restore).toHaveBeenCalled()
+    expect(draw.context.globalAlpha).toBe(1) // Never leave the canvas transparent.
+  })
+  it('fills an opaque area by default and skips bars without a value', () => {
+    const renderer = new IndicatorPlotSeries('area')
+    const data = sample(10)
+    const whitespace = [
+      ...data.bars,
+      {
+        x: 30,
+        time: 2 as UTCTimestamp,
+        originalData: { time: 2 as UTCTimestamp } as never,
+        barColor: '#ffffff',
+      },
+    ]
+    data.bars = whitespace as typeof data.bars
+    data.visibleRange = { from: 0, to: whitespace.length }
+    renderer.update(data, renderer.defaultOptions())
+    const draw = drawing()
+    renderer.renderer().draw(draw.target, draw.priceToY, false)
+    expect(draw.alphas).toEqual([1, 1]) // No transp → an opaque fill.
+    expect(draw.context.lineTo.mock.calls).toEqual([
+      [20, 60],
+      [40, 120],
+      [40, 100],
+      [40, 120],
+    ])
+  })
+  it('includes zero in area autoscaling but not as a marker value', () => {
+    const area = new IndicatorPlotSeries('area')
+    const cross = new IndicatorPlotSeries('cross')
+    expect(area.priceValueBuilder({ time: 0 as UTCTimestamp, value: 10 })).toEqual([0, 10])
+    expect(cross.priceValueBuilder({ time: 0 as UTCTimestamp, value: -20 })).toEqual([-20])
+    expect(area.isWhitespace({ time: 0 as UTCTimestamp })).toBe(true)
+    expect(area.isWhitespace({ time: 0 as UTCTimestamp, value: 0 })).toBe(false)
   })
   it('aligns Pine segment colors without shifting histogram/dot colors or times', () => {
     const candles: Candle[] = Array.from({ length: 4 }, (_, i) => ({

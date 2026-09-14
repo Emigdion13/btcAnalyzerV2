@@ -7,6 +7,7 @@ import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
+import { isWaveTrendSettings } from './wave-trend'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -111,6 +112,7 @@ function indicator(value: unknown): Indicator {
       'pivot-points-missed-reversals',
       'coinbase-strike',
       'tux-ema-scalper',
+      'wave-trend',
       'vwap',
       'volume',
       'custom',
@@ -257,6 +259,19 @@ function indicator(value: unknown): Indicator {
       sellColor: settings.sellColor,
     }
     result.period = result.tuxEmaScalper.emaLength
+  }
+  if (kind === 'wave-trend' && i.waveTrend !== undefined) {
+    const settings = i.waveTrend
+    if (!isWaveTrendSettings(settings)) invalid('WaveTrend settings')
+    result.waveTrend = {
+      channelLength: settings.channelLength,
+      averageLength: settings.averageLength,
+      obLevel1: settings.obLevel1,
+      obLevel2: settings.obLevel2,
+      osLevel1: settings.osLevel1,
+      osLevel2: settings.osLevel2,
+    }
+    result.period = result.waveTrend.channelLength
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

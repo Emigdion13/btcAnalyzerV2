@@ -95,7 +95,7 @@ All endpoints are read-only. Product syntax, catalog availability, intervals, sa
 - **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
 - **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
 - **Timeframe peek:** a floating window onto any other resolution — while you trade 1m it draws the last candles of, say, 15m _including the bar still forming_, with a countdown to that timeframe's close, a resolution dropdown, and an auto mode that follows the chart.
-- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, **TUX EMA Scalper+SuperTrend (3, 7, 20, close)** with EMA-cross BUY/SELL arrows and green/pink SuperTrend context, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
+- **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, **WaveTrend [LazyBear] (10, 21)**, **TUX EMA Scalper+SuperTrend (3, 7, 20, close)** with EMA-cross BUY/SELL arrows and green/pink SuperTrend context, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
 - **Indicator Studio:** highlighted JavaScript editor, named numeric inputs, custom price overlays and oscillator panes, templates, a saved-script library, and compilation feedback.
 - **Drawings:** price-pane trend lines, horizontal levels, rectangles, Fibonacci retracements, measurements, and text notes. Undo/redo, visibility, locking, and an object tree. Drawings are scoped to symbol + timeframe.
 - **Order-book depth & zone strength:** live support/resistance walls constructed from the resting `level2` book, plus a per-zone strength reading (`STRONG/MED/WEAK`) on every SMC order block, FVG, and SR box — how much of each price-action level the book is actually funding right now. A floating readout shows walls, totals, and near-mid bid/ask imbalance. Live on Coinbase (panel + overlay); demo mode shows the overlay over an explicitly synthetic book.
@@ -172,6 +172,16 @@ The original's scalping gates — close beyond EMA 9 and VWAP, RSI past 50, and 
 
 See [the calculation contract, the one documented correction, and provenance](docs/chile-reversal.md).
 
+## WaveTrend [LazyBear] (10, 21)
+
+Atlas includes **WaveTrend [LazyBear]**, a faithful native port of LazyBear's open-source Pine v1 script (`study(title="WaveTrend [LazyBear]", shorttitle="WT_LB")`), itself the TradingView port of the TS/MT WaveTrend oscillator.
+
+Add it from **Indicators → WaveTrend [LazyBear]**. On each candle's `hlc3`, the port reproduces the published recurrence in order: `esa = ema(ap, 10)`, `d = ema(|ap − esa|, 10)`, `ci = (ap − esa) / (0.015 × d)`, **WT1** `= ema(ci, 21)`, **WT2** `= sma(WT1, 4)`, and the difference between them. Both EMAs use legacy Pine seeding (the first observation is the first value, `alpha = 2/(length+1)` afterwards), not Atlas's SMA-seeded Studio EMA. WT1 plots green, WT2 plots as the original's legacy dotted `style=3` markers, and `WT1 − WT2` fills from zero in transparent blue, exactly as published. The ±60 and ±53 overbought/oversold levels are drawn as the original's solid (level 1) and dotted (level 2) reference lines, in the original Pine colors.
+
+The six published inputs — **Channel Length 10**, **Average Length 21** and the four levels — are editable and persist like every other indicator. The **4**-bar signal and the **0.015** channel scale are hard-coded in the original, so they are not inputs. The open bar repaints, because `hlc3` includes the forming candle: treat the last value as provisional.
+
+See [the calculation contract, the flat-channel convention, and provenance](docs/wave-trend.md).
+
 ## Write a custom indicator
 
 Open **Indicator Studio**, edit the script, and select **Add to chart** (Ctrl/⌘ + Enter).
@@ -239,6 +249,7 @@ src/
     indicator-runtime.ts       Self-contained technical-analysis helpers
     indicators.ts              Built-in plot calculations and script templates
     cm-ult-macd.ts              Original CM MACD math, inputs, colors and MTF projection
+    wave-trend.ts               LazyBear WaveTrend math, inputs, colors and area/cross plots
     macd-divergence.ts          Histogram pivots and regular/hidden divergence detection
     smart-money-concepts.ts     Independent SMC pivots, BOS/CHoCH, OB/FVG and overlay models
     sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests

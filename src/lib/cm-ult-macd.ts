@@ -4,7 +4,8 @@
  * Reference/provenance and historical lookahead caveats: docs/cm-ult-macd.md.
  */
 import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase'
-import { ta } from './indicator-runtime'
+import { pineEma, ta } from './indicator-runtime'
+import { waveTrendIndicatorLabel } from './wave-trend'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
 import { chileReversalIndicatorLabel, chileReversalSettings } from './chile-reversal'
@@ -103,6 +104,7 @@ export function indicatorLabel(indicator: Indicator): string {
     return pivotPointsMissedReversalsIndicatorLabel(indicator)
   if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
   if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
+  if (indicator.kind === 'wave-trend') return waveTrendIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }
 /**
@@ -139,17 +141,8 @@ export function requestedIndicatorTimeframes(
   ].sort()
 }
 
-/** Pine ema() seeds from the first close. Do NOT change the Studio's SMA-seeded ta.ema. */
-export function pineEma(values: number[], length: number): number[] {
-  if (!Number.isInteger(length) || length < 1 || length > 2000)
-    throw new Error('EMA length must be an integer between 1 and 2000.')
-  const alpha = 2 / (length + 1)
-  let previous = values[0]
-  return values.map((value, i) => {
-    previous = i === 0 ? value : alpha * value + (1 - alpha) * previous
-    return previous
-  })
-}
+/** Re-exported so existing callers keep importing the Pine-seeded EMA from here. */
+export { pineEma }
 function nativeValues(candles: Candle[], settings: CmMacdSettings) {
   const closes = candles.map((c) => c.close)
   const fast = pineEma(closes, settings.fastLength)

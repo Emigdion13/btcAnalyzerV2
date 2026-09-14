@@ -15,6 +15,7 @@ import {
   ExternalLink,
   FileCode2,
   FolderOpen,
+  Gauge,
   Keyboard,
   Layers,
   LockKeyhole,
@@ -44,6 +45,7 @@ import type {
 import { DEFAULT_SETTINGS } from '../lib/types'
 import { formatPrice, formatChange, changeClass, quoteCurrency, compactNumber } from '../lib/market'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
+import { isRsiMeterIndicator } from '../lib/rsi-hud'
 import { divergenceSettings, isDivergenceSettings } from '../lib/macd-divergence'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
@@ -285,8 +287,13 @@ export function IndicatorLibrary({
           </div>
           <div className="indicator-catalog">
             {catalog.map((entry) => {
+              // The RSI meter's own hidden indicator is not "added": it backs the floating
+              // window, not the chart. Add stays live so it promotes to a real pane.
               const existing = indicators.some(
-                (i) => i.kind === entry.kind && i.period === entry.period,
+                (i) =>
+                  i.kind === entry.kind &&
+                  i.period === entry.period &&
+                  !(isRsiMeterIndicator(i) && !i.visible),
               )
               return (
                 <div className="indicator-catalog-row" key={entry.kind}>
@@ -1165,6 +1172,11 @@ export function DocsDialog({
                   icon: PictureInPicture2,
                   title: '05 · Keep another timeframe in view',
                   text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar.',
+                },
+                {
+                  icon: Gauge,
+                  title: '06 · Read the RSI without giving up a pane',
+                  text: 'The toolbar RSI button opens a floating RSI meter — the reading, its change and the 30/50/70 zones — with no oscillator pane of its own. It shares one length with the RSI indicator, so adding RSI from the library turns that same setting into a pane.',
                 },
               ].map((item) => (
                 <div key={item.title}>

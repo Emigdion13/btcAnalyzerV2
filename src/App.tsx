@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Focus,
+  Gauge,
   Grid2X2,
   HelpCircle,
   Keyboard,
@@ -96,6 +97,13 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
+import {
+  isRsiMeterIndicator,
+  promotedRsiMeterIndicator,
+  rsiMeterVisible,
+  withRsiMeterIndicator,
+  withoutRsiMeterIndicator,
+} from './lib/rsi-hud'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -273,6 +281,13 @@ export default function App() {
     TIMEFRAME_PEEK_DEFAULTS,
   )
   const peekSettings = useMemo(() => timeframePeekSettings(peekStored), [peekStored])
+  // The floating RSI meter: a window on the chart instead of a whole oscillator pane.
+  // null means "never chosen", which defers to the default; a real choice wins over it either way.
+  const [rsiMeterPreference, setRsiMeterPreference] = useLocalState<boolean | null>(
+    'rsi-meter-visible',
+    null,
+  )
+  const rsiMeterOpen = rsiMeterVisible(rsiMeterPreference)
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
   )
@@ -577,6 +592,17 @@ export default function App() {
     return () => cancelAnimationFrame(frame)
   }, [rangeCommand, timeframe, hasData])
 
+  // The RSI meter is a window, but it reads its period from an RSI indicator: keep one on the
+  // chart while it is open — hidden, so it draws no pane of its own — and drop the window's own
+  // when it closes. Keyed on whether an RSI exists, so taking the RSI pane off the chart leaves
+  // the window reading a shared, editable period instead of a default.
+  const hasRsiIndicator = indicators.some((indicator) => indicator.kind === 'rsi')
+  useEffect(() => {
+    setIndicators((previous) =>
+      rsiMeterOpen ? withRsiMeterIndicator(previous) : withoutRsiMeterIndicator(previous),
+    )
+  }, [rsiMeterOpen, hasRsiIndicator, setIndicators])
+
   useEffect(() => {
     if (!customIndicators.length || autoInput.candles.length < 2) return
     const controller = new AbortController()
@@ -791,6 +817,10 @@ export default function App() {
       previous.map((i) => (i.id === id ? { ...i, visible: !i.visible } : i)),
     )
   const removeIndicator = (id: string) => {
+    // Removing the RSI meter's own indicator is a choice about the window, not just the chart:
+    // close the window too, so it is not silently re-added on the next render.
+    const removed = indicators.find((i) => i.id === id)
+    if (removed && isRsiMeterIndicator(removed)) setRsiMeterPreference(false)
     setIndicators((previous) => previous.filter((i) => i.id !== id))
     setComputed((previous) => {
       if (!(id in previous)) return previous
@@ -806,7 +836,17 @@ export default function App() {
   }
   const addBuiltIn = (kind: Indicator['kind']) => {
     const item = INDICATOR_CATALOG.find((i) => i.kind === kind)
-    if (!item || indicators.some((i) => i.kind === kind && i.period === item.period)) return
+    if (!item) return
+    // Adding RSI while the meter's hidden indicator is on the chart: promote that one to a pane
+    // rather than silently refusing a second RSI of the same period.
+    const promoted =
+      kind === 'rsi' ? promotedRsiMeterIndicator(indicators, item.period, uid()) : null
+    if (promoted) {
+      setIndicators(promoted)
+      notify(`RSI ${item.period} pane added.`)
+      return
+    }
+    if (indicators.some((i) => i.kind === kind && i.period === item.period)) return
     if (indicators.length >= 16) {
       notify('The chart supports up to 16 indicators. Remove one to add another.', 'error')
       return
@@ -1336,6 +1376,16 @@ export default function App() {
                   {peekVisible ? 'Hide timeframe peek window' : 'Show timeframe peek window'}
                 </MenuItem>
                 <MenuItem
+                  icon={Gauge}
+                  selected={rsiMeterOpen}
+                  onClick={() => {
+                    setRsiMeterPreference(!rsiMeterOpen)
+                    close()
+                  }}
+                >
+                  {rsiMeterOpen ? 'Hide RSI meter' : 'Show RSI meter'}
+                </MenuItem>
+                <MenuItem
                   icon={Layers}
                   selected={bookBoxVisible}
                   onClick={() => {
@@ -1355,6 +1405,7 @@ export default function App() {
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
                     setPeekPreference(null)
+                    setRsiMeterPreference(null)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
                   }}
@@ -1553,6 +1604,15 @@ export default function App() {
               <PictureInPicture2 size={17} strokeWidth={1.5} />
               <span>Peek</span>
             </button>
+            <button
+              className={`toolbar-button rsi-meter-toggle ${rsiMeterOpen ? 'active' : ''}`}
+              onClick={() => setRsiMeterPreference(!rsiMeterOpen)}
+              title="Floating RSI meter — the reading without the pane. RSI stays in the indicator library."
+              aria-pressed={rsiMeterOpen}
+            >
+              <Gauge size={17} strokeWidth={1.5} />
+              <span>RSI</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1683,6 +1743,7 @@ export default function App() {
                   onIndicatorRemove={removeIndicator}
                   onIndicatorRetry={() => setTimeframeRetry((n) => n + 1)}
                   replay={replayIndex !== null}
+                  rsiHud={rsiMeterOpen}
                   book={bookView}
                 />
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (

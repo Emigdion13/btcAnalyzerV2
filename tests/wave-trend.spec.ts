@@ -133,8 +133,12 @@ test('removes, restores and edits the oscillator on mobile without overflow', as
   await expect(page.locator(legend)).toHaveCount(0)
   await addFromLibrary(page, 'WaveTrend')
   await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
-  // The toolbar drops the Indicators button at phone width, so add it first.
+  // The toolbar drops the Indicators button at phone width, so add it first, and
+  // put the watchlist away: at 390px it would overlay the oscillator pane legend.
   await page.setViewportSize({ width: 390, height: 844 })
+  if (await page.locator('.side-panel').count())
+    await page.getByRole('button', { name: 'Toggle watchlist', exact: true }).click()
+  await expect(page.locator('.side-panel')).toHaveCount(0)
   await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
   await page.getByRole('button', { name: title, exact: true }).click()
   await page.getByRole('spinbutton', { name: 'Channel Length', exact: true }).fill('14')

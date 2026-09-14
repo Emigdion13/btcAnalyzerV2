@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -29,5 +31,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          { echo '### full e2e failure tail'; echo '```'; tail -n 200 e2e.log; echo '```'; } > body.md
+          { echo '### e2e failure tail on main (pre-existing check)'; echo '```'; tail -n 200 e2e.log; echo '```'; } > body.md
           gh pr comment 34 --repo Emigdion13/btcAnalyzerV2 --body-file body.md

@@ -23,15 +23,17 @@ export function DivergenceSettingsSection({
   numbers,
   onToggle,
   onNumber,
+  title = 'MACD histogram divergence',
 }: {
   settings: DivergenceSettings
   numbers: { pivotLookback: string; rangeLower: string; rangeUpper: string }
   onToggle: (key: 'showRegular' | 'showHidden' | 'showLines' | 'showLabels', value: boolean) => void
   onNumber: (key: 'pivotLookback' | 'rangeLower' | 'rangeUpper', value: string) => void
+  title?: string
 }) {
   return (
     <div className="settings-section">
-      <h3>MACD histogram divergence</h3>
+      <h3>{title}</h3>
       {TOGGLES.map(([key, label]) => (
         <label className="cm-input-toggle" key={key}>
           <input
@@ -73,7 +75,7 @@ export function DivergenceSettingsSection({
         ))}
       </div>
       <div className="info-box">
-        Divergence compares confirmed histogram pivots against price. Pivots only appear after the
+        Divergence compares confirmed pivots against price. Pivots only appear after the
         lookback bars close on both sides, so the newest bars are unconfirmed and can repaint.
       </div>
     </div>

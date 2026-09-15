@@ -16,15 +16,19 @@ import {
   oscHudScaleLabel,
   oscHudSpan,
   oscHudVisible,
+  rsiDivergenceHudModel,
+  rsiDivergenceVerdict,
   waveTrendHudModel,
   waveTrendVerdict,
+  OSC_HUD_WIDGETS,
 } from './osc-hud'
+import { RSI_DIVERGENCE_DEFAULTS } from './rsi-divergence'
 import { CM_COLORS } from './cm-ult-macd'
 import type { CmMacdValues } from './cm-ult-macd'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 import { WAVE_TREND_DEFAULTS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
-import type { Indicator, Timeframe } from './types'
+import type { Candle, Indicator, Timeframe } from './types'
 
 const times = (count: number, timeframe: Timeframe = '1m', start = 0): number[] =>
   Array.from({ length: count }, (_, index) => start + index * INTERVAL_SECONDS[timeframe])
@@ -396,5 +400,111 @@ describe('oscHudRequestedTimeframes — a window-only MTF MACD still gets its fe
       oscHudRequestedTimeframes([hidden], '15m', { 'cm-ult-macd': false, 'wave-trend': true }),
     ).toEqual([])
     expect(oscHudRequestedTimeframes([], '15m', open)).toEqual([])
+  })
+})
+
+describe('rsiDivergenceVerdict — divergence priority and overbought/oversold bands', () => {
+  it('prioritizes active divergence over price bands', () => {
+    const bullDiv = {
+      kind: 'regular-bullish' as const,
+      bullish: true,
+      hidden: false,
+      fromIndex: 10,
+      toIndex: 20,
+      fromValue: 25,
+      toValue: 28,
+      color: '#26a69a',
+      label: 'Bull',
+    }
+    const verdict = rsiDivergenceVerdict(28, 26, bullDiv, null, 20)
+    expect(verdict.text).toBe('▲ REGULAR BULL DIVERGENCE')
+    expect(verdict.tone).toBe('bull')
+
+    const bearDiv = {
+      kind: 'regular-bearish' as const,
+      bullish: false,
+      hidden: false,
+      fromIndex: 10,
+      toIndex: 20,
+      fromValue: 75,
+      toValue: 72,
+      color: '#ef5350',
+      label: 'Bear',
+    }
+    const bearVerdict = rsiDivergenceVerdict(72, 74, bearDiv, null, 20)
+    expect(bearVerdict.text).toBe('▼ REGULAR BEAR DIVERGENCE')
+    expect(bearVerdict.tone).toBe('bear')
+  })
+
+  it('reports overbought, oversold, and midline momentum when no divergence is present', () => {
+    expect(rsiDivergenceVerdict(75, 73, null, null, 20).tone).toBe('ob')
+    expect(rsiDivergenceVerdict(75, 73, null, null, 20).text).toBe('🔥 OVERBOUGHT')
+
+    expect(rsiDivergenceVerdict(25, 27, null, null, 20).tone).toBe('os')
+    expect(rsiDivergenceVerdict(25, 27, null, null, 20).text).toBe('⚡ OVERSOLD')
+
+    expect(rsiDivergenceVerdict(55, 53, null, null, 20).tone).toBe('bull')
+    expect(rsiDivergenceVerdict(55, 53, null, null, 20).text).toBe('▲ BULLISH MOMENTUM')
+
+    expect(rsiDivergenceVerdict(45, 47, null, null, 20).tone).toBe('bear')
+    expect(rsiDivergenceVerdict(45, 47, null, null, 20).text).toBe('▼ BEARISH MOMENTUM')
+  })
+
+  it('handles cold starts gracefully', () => {
+    expect(rsiDivergenceVerdict(null, null, null, null, 0).text).toBe('WARMING UP')
+  })
+})
+
+describe('rsiDivergenceHudModel — mini chart geometry and levels', () => {
+  it('builds a model with 70, 50, 30 levels and symmetric domain around 50', () => {
+    const candles: Candle[] = Array.from({ length: 40 }, (_, i) => ({
+      time: i * 60,
+      open: 100 + Math.sin(i / 2) * 5,
+      high: 105 + Math.sin(i / 2) * 5,
+      low: 95 + Math.sin(i / 2) * 5,
+      close: 100 + Math.sin(i / 2) * 5,
+      volume: 1000,
+    }))
+
+    const model = rsiDivergenceHudModel(
+      candles,
+      { period: 14, divergence: { ...RSI_DIVERGENCE_DEFAULTS.divergence } },
+      {
+        times: candles.map((c) => c.time),
+        timeframe: '1m',
+        bars: 20,
+        index: 39,
+      },
+    )
+
+    expect(model.kind).toBe('rsi-divergence')
+    expect(model.title).toBe('RSI Divergence')
+    expect(model.accent).toBe('#ad91e5')
+    expect(model.bars).toBe(20)
+    expect(model.times).toHaveLength(20)
+
+    // Domain should be centered at 50
+    expect((model.domain.min + model.domain.max) / 2).toBeCloseTo(50, 1)
+
+    // Levels should include 70, 50, 30
+    const levelValues = model.levels.map((l) => l.value)
+    expect(levelValues).toContain(70)
+    expect(levelValues).toContain(50)
+    expect(levelValues).toContain(30)
+
+    // Traces includes primary RSI line
+    expect(model.traces.some((t) => t.title === 'RSI')).toBe(true)
+    expect(model.readouts[0].label).toBe('RSI')
+    expect(model.readouts[1].label).toBe('Delta')
+    expect(model.readouts[2].label).toBe('Div')
+  })
+
+  it('exposes widget config matching the osc-hud contract', () => {
+    const widget = OSC_HUD_WIDGETS['rsi-divergence']
+    expect(widget.kind).toBe('rsi-divergence')
+    expect(widget.button).toBe('RSI Div')
+    expect(widget.visibilityKey).toBe('osc-hud-visible:rsi-divergence')
+    expect(widget.positionKey).toBe('osc-hud-pos:rsi-divergence')
+    expect(widget.minimizedKey).toBe('osc-hud-min:rsi-divergence')
   })
 })

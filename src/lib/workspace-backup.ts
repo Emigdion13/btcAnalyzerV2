@@ -105,6 +105,7 @@ function indicator(value: unknown): Indicator {
       'sma',
       'bb',
       'rsi',
+      'rsi-divergence',
       'macd',
       'cm-ult-macd',
       'smart-money-concepts',
@@ -146,9 +147,9 @@ function indicator(value: unknown): Indicator {
     }
     result.period = result.cmMacd.fastLength
   }
-  if ((kind === 'macd' || kind === 'cm-ult-macd') && i.divergence !== undefined) {
+  if ((kind === 'macd' || kind === 'cm-ult-macd' || kind === 'rsi-divergence') && i.divergence !== undefined) {
     const settings = i.divergence
-    if (!isDivergenceSettings(settings)) invalid('MACD divergence settings')
+    if (!isDivergenceSettings(settings)) invalid('divergence settings')
     result.divergence = {
       showRegular: settings.showRegular,
       showHidden: settings.showHidden,

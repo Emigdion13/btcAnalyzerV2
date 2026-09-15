@@ -606,7 +606,7 @@ function StandardIndicatorSettingsDialog({
         onSubmit={(e) => {
           e.preventDefault()
           let divChange: Pick<Indicator, 'divergence'> = {}
-          if (indicator.kind === 'macd') {
+          if (indicator.kind === 'macd' || indicator.kind === 'rsi-divergence') {
             const div = {
               ...divergence,
               pivotLookback: Number(divNumbers.pivotLookback),
@@ -664,9 +664,15 @@ function StandardIndicatorSettingsDialog({
             lines are shown.
           </div>
         )}
-        {indicator.kind === 'macd' && (
+        {indicator.kind === 'rsi-divergence' && (
+          <div className="info-box">
+            Wilder RSI with overbought (70), midline (50), and oversold (30) levels.
+          </div>
+        )}
+        {(indicator.kind === 'macd' || indicator.kind === 'rsi-divergence') && (
           <>
             <DivergenceSettingsSection
+              title={indicator.kind === 'rsi-divergence' ? 'RSI divergence' : 'MACD histogram divergence'}
               settings={divergence}
               numbers={divNumbers}
               onToggle={(key, value) => setDivergence({ ...divergence, [key]: value })}
@@ -1102,6 +1108,7 @@ const SHORTCUTS = [
   ['Timeframe peek window', 'Alt P'],
   ['CM MACD window', 'Alt M'],
   ['WaveTrend window', 'Alt W'],
+  ['RSI Divergence window', 'Alt D'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

@@ -10,6 +10,7 @@ import type { Locator, Page } from '@playwright/test'
  */
 const CM_WINDOW = 'CM_Ult_MacD_MTF window'
 const WAVE_WINDOW = 'WaveTrend [LazyBear] window'
+const RSI_DIV_WINDOW = 'RSI Divergence window'
 
 async function openDemoChart(page: Page) {
   await page.goto('/?source=demo&interval=1m')
@@ -21,6 +22,9 @@ function cmWindow(page: Page): Locator {
 }
 function waveWindow(page: Page): Locator {
   return page.getByRole('region', { name: WAVE_WINDOW })
+}
+function rsiDivWindow(page: Page): Locator {
+  return page.getByRole('region', { name: RSI_DIV_WINDOW })
 }
 
 /** The oscillator pane a window borrows its settings from, when it is on the chart. */
@@ -34,21 +38,28 @@ test('both windows open on a fresh chart and show twenty minutes of bars', async
   await openDemoChart(page)
   const cm = cmWindow(page)
   const wave = waveWindow(page)
+  const rsiDiv = rsiDivWindow(page)
 
   await expect(cm).toBeVisible()
   await expect(wave).toBeVisible()
+  await expect(rsiDiv).toBeVisible()
   // A 1m chart: twenty bars is exactly the twenty minutes that was asked for.
   await expect(cm).toContainText('20 bars')
   await expect(cm).toContainText('20 min')
   await expect(wave).toContainText('20 bars / 20 min')
+  await expect(rsiDiv).toContainText('20 bars / 20 min')
 
   // Zoomed, and honest about where the settings come from: CM_Ult_MacD_MTF ships on a new
   // workspace, so its window reads that indicator; WaveTrend does not, so it says it is on
   // defaults and offers the pane.
   await expect(cm).toContainText('your indicator')
   await expect(wave).toContainText('default settings')
+  await expect(rsiDiv).toContainText('default settings')
   await expect(
     wave.getByRole('button', { name: 'Add the WaveTrend [LazyBear] pane to the chart' }),
+  ).toBeVisible()
+  await expect(
+    rsiDiv.getByRole('button', { name: 'Add the RSI Divergence pane to the chart' }),
   ).toBeVisible()
 
   // The mini chart is drawn, not described. Counts rather than visibility on purpose: a flat
@@ -81,8 +92,10 @@ test('each toolbar button owns its window, remembers the choice, and leaves the 
   await openDemoChart(page)
   const cmToggle = page.locator('.toolbar-button.cm-hud-toggle')
   const waveToggle = page.locator('.toolbar-button.wave-hud-toggle')
+  const rsiDivToggle = page.locator('.toolbar-button.rsi-div-hud-toggle')
   await expect(cmToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(waveToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(rsiDivToggle).toHaveAttribute('aria-pressed', 'true')
 
   await cmToggle.click()
   await expect(cmWindow(page)).toBeHidden()
@@ -90,6 +103,7 @@ test('each toolbar button owns its window, remembers the choice, and leaves the 
   await expect(pane(page, 'cm-ult-macd')).toBeVisible()
   // …and not the other window either.
   await expect(waveWindow(page)).toBeVisible()
+  await expect(rsiDivWindow(page)).toBeVisible()
 
   await page.reload()
   await expect(cmWindow(page)).toBeHidden()

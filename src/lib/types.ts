@@ -13,6 +13,7 @@ export type IndicatorKind =
   | 'sma'
   | 'bb'
   | 'rsi'
+  | 'rsi-divergence'
   | 'macd'
   | 'cm-ult-macd'
   | 'smart-money-concepts'
@@ -509,7 +510,7 @@ export interface Indicator {
   inputValues?: Record<string, number>
   scriptId?: string
   cmMacd?: CmMacdSettings
-  /** MACD histogram divergence overlay, valid for `macd` and `cm-ult-macd`. */
+  /** Divergence overlay, valid for `macd`, `cm-ult-macd`, and `rsi-divergence`. */
   divergence?: DivergenceSettings
   smc?: SmartMoneyConceptsSettings
   sr?: SrBreaksRetestsSettings

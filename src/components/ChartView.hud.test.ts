@@ -21,6 +21,7 @@ const render = (
   overrides: {
     cmMacdHud?: boolean
     waveTrendHud?: boolean
+    rsiDivHud?: boolean
     indicators?: Indicator[]
   } = {},
 ) =>
@@ -52,6 +53,7 @@ const render = (
       replay: false,
       cmMacdHud: overrides.cmMacdHud ?? true,
       waveTrendHud: overrides.waveTrendHud ?? true,
+      rsiDivHud: overrides.rsiDivHud,
       onOscHudClose: noop,
       onIndicatorAdd: noop,
     } as never),
@@ -78,6 +80,13 @@ describe('the chart hands both oscillator windows their own view', () => {
     const markup = render({ cmMacdHud: false })
     expect(markup).not.toContain('osc-hud-cm-ult-macd')
     expect(markup).toContain('aria-label="WaveTrend [LazyBear] window"')
+  })
+
+  it('opens the RSI Divergence window when rsiDivHud is set', () => {
+    const markup = render({ rsiDivHud: true })
+    expect(markup).toContain('aria-label="RSI Divergence window"')
+    expect(markup).toContain('data-testid="osc-hud-rsi-divergence"')
+    expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(3)
   })
 
   it('says which settings each window is using, and offers the matching control', () => {

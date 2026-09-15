@@ -56,8 +56,9 @@ import { formatNotional } from '../../shared/whale-flow'
 import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { rsiMeterPeriod } from '../lib/rsi-hud'
 import { calculateWaveTrend, waveTrendSettings, WAVE_TREND_DEFAULTS } from '../lib/wave-trend'
-import { clampOscHudBars, cmMacdHudModel, oscHudBars, waveTrendHudModel } from '../lib/osc-hud'
+import { clampOscHudBars, cmMacdHudModel, oscHudBars, rsiDivergenceHudModel, waveTrendHudModel } from '../lib/osc-hud'
 import type { OscHudKind } from '../lib/osc-hud'
+import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
 import {
   calculateCmMacd,
   cmMacdResolution,
@@ -156,6 +157,7 @@ interface Props {
    */
   cmMacdHud?: boolean
   waveTrendHud?: boolean
+  rsiDivHud?: boolean
   /** Closing a window from its own card is the same choice as its toolbar button. */
   onOscHudClose?: (kind: OscHudKind) => void
   /** Lets a window offer the pane whose settings it is borrowing. */
@@ -492,12 +494,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         .map((indicator) => {
           const settings = divergenceSettings(indicator)
           const histogram =
-            macdHistogram(candles, indicator, {
-              timeframe,
-              timeframes: indicatorTimeframes,
-              replay,
-              realtimeFrom,
-            }) ?? []
+            indicator.kind === 'rsi-divergence'
+              ? ta.rsi(candles.map((c) => c.close), indicator.period || 14)
+              : (macdHistogram(candles, indicator, {
+                  timeframe,
+                  timeframes: indicatorTimeframes,
+                  replay,
+                  realtimeFrom,
+                }) ?? [])
           return {
             indicator,
             settings,
@@ -1349,6 +1353,42 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       hoverIndex,
       hovered,
       waveHudIndicator,
+    ],
+  )
+  const rsiDivHudIndicator =
+    indicators.find((indicator) => indicator.kind === 'rsi-divergence') ?? null
+  const rsiDivHudSettings = useMemo(
+    () => ({
+      period: rsiDivHudIndicator?.period ?? RSI_DIVERGENCE_DEFAULTS.period,
+      divergence: rsiDivHudIndicator
+        ? divergenceSettings(rsiDivHudIndicator)
+        : { ...RSI_DIVERGENCE_DEFAULTS.divergence },
+    }),
+    [rsiDivHudIndicator],
+  )
+  const rsiDivHudBars = oscHudBars(timeframe, oscHudBarsOverride['rsi-divergence'])
+  const rsiDivHudModel = useMemo(
+    () =>
+      props.rsiDivHud
+        ? rsiDivergenceHudModel(candles, rsiDivHudSettings, {
+            times: candleTimes,
+            timeframe,
+            bars: rsiDivHudBars,
+            index: hoverIndex,
+            hovered: hovered !== null,
+            settingsSource: rsiDivHudIndicator ? 'chart' : 'defaults',
+          })
+        : null,
+    [
+      props.rsiDivHud,
+      candles,
+      rsiDivHudSettings,
+      candleTimes,
+      timeframe,
+      rsiDivHudBars,
+      hoverIndex,
+      hovered,
+      rsiDivHudIndicator,
     ],
   )
   const smcNotice = (indicator: Indicator) => {
@@ -3197,6 +3237,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   !ind.visible ||
                   // Oscillators with their own pane legend are listed there, not here.
                   (ind.kind !== 'rsi' &&
+                    ind.kind !== 'rsi-divergence' &&
                     ind.kind !== 'macd' &&
                     ind.kind !== 'cm-ult-macd' &&
                     ind.kind !== 'wave-trend' &&
@@ -3438,6 +3479,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('wave-trend')}
+        />
+      )}
+      {props.rsiDivHud && rsiDivHudModel && (
+        <OscHudCard
+          model={rsiDivHudModel}
+          dock="rsi-div"
+          indicator={rsiDivHudIndicator}
+          bars={rsiDivHudBars}
+          onZoom={(delta) => zoomOscHud('rsi-divergence', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('rsi-divergence')}
         />
       )}
       {generated.map(({ indicator, plots }) => {

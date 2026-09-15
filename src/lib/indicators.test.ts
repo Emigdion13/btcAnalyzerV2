@@ -60,7 +60,7 @@ describe('built-in chart indicators', () => {
     for (const plot of plots) {
       expect(plot.values).toHaveLength(candles.length)
       expect(plot.values.every((v) => v === null || Number.isFinite(v))).toBe(true)
-      if (item.kind === 'rsi')
+      if (item.kind === 'rsi' || item.kind === 'rsi-divergence')
         expect(plot.values.filter((v) => v !== null).every((v) => v! >= 0 && v! <= 100)).toBe(true)
     }
   })

@@ -176,6 +176,15 @@ describe('workspace backups', () => {
       visible: true,
       divergence: { ...DIVERGENCE_DEFAULTS },
     })
+    saved.indicators.push({
+      id: 'rsi-div-1',
+      kind: 'rsi-divergence',
+      name: 'RSI Divergence',
+      period: 14,
+      color: '#ad91e5',
+      visible: true,
+      divergence: { ...DIVERGENCE_DEFAULTS },
+    })
     expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
 
     const original = backup()

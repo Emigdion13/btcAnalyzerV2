@@ -7413,6 +7413,10 @@ input[type='color']::-webkit-color-swatch {
   top: 146px;
   right: calc(var(--osc-hud-width) + 18px);
 }
+.osc-hud-card.dock-rsi-div {
+  top: 146px;
+  right: calc(var(--osc-hud-width) * 2 + 26px);
+}
 /* Minimized cards shrink to their content, so the row tightens rather than leaving a hole. */
 .osc-hud-card.is-minimized {
   width: auto;
@@ -7723,6 +7727,10 @@ input[type='color']::-webkit-color-swatch {
   }
   .osc-hud-card.dock-wave {
     top: 296px;
+    right: 6px;
+  }
+  .osc-hud-card.dock-rsi-div {
+    top: 460px;
     right: 6px;
   }
   .osc-hud-plot {
@@ -8677,6 +8685,13 @@ input[type='color']::-webkit-color-swatch {
 }
 .wave-hud-toggle.active svg {
   color: #8fb6ff;
+}
+.rsi-div-hud-toggle.active {
+  background: #231b2f;
+  color: #ad91e5;
+}
+.rsi-div-hud-toggle.active svg {
+  color: #ad91e5;
 }
 @media (max-width: 1180px) {
   .peek-box {

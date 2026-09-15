@@ -304,18 +304,28 @@ export default function App() {
     OSC_HUD_WIDGETS['wave-trend'].visibilityKey,
     null,
   )
+  const [rsiDivHudPreference, setRsiDivHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['rsi-divergence'].visibilityKey,
+    null,
+  )
   const cmHudOpen = oscHudVisible(cmHudPreference)
   const waveHudOpen = oscHudVisible(waveHudPreference)
+  const rsiDivHudOpen = oscHudVisible(rsiDivHudPreference)
   const oscHudOpen = useMemo(
-    () => ({ 'cm-ult-macd': cmHudOpen, 'wave-trend': waveHudOpen }),
-    [cmHudOpen, waveHudOpen],
+    () => ({ 'cm-ult-macd': cmHudOpen, 'wave-trend': waveHudOpen, 'rsi-divergence': rsiDivHudOpen }),
+    [cmHudOpen, waveHudOpen, rsiDivHudOpen],
   )
   const toggleOscHud = useCallback(
     (kind: OscHudKind) => {
-      const set = kind === 'cm-ult-macd' ? setCmHudPreference : setWaveHudPreference
+      const set =
+        kind === 'cm-ult-macd'
+          ? setCmHudPreference
+          : kind === 'wave-trend'
+            ? setWaveHudPreference
+            : setRsiDivHudPreference
       set((current) => !oscHudVisible(current))
     },
-    [setCmHudPreference, setWaveHudPreference],
+    [setCmHudPreference, setWaveHudPreference, setRsiDivHudPreference],
   )
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
@@ -903,9 +913,11 @@ export default function App() {
                     ? 'TUX EMA Scalper+SuperTrend'
                     : item.kind === 'wave-trend'
                       ? 'WaveTrend [LazyBear]'
-                      : item.short === 'VOL'
-                        ? 'Volume'
-                        : item.short,
+                      : item.kind === 'rsi-divergence'
+                        ? 'RSI Divergence'
+                        : item.short === 'VOL'
+                          ? 'Volume'
+                          : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -913,6 +925,7 @@ export default function App() {
           ? { cmMacd: { ...CM_MACD_DEFAULTS }, divergence: { ...DIVERGENCE_DEFAULTS } }
           : {}),
         ...(kind === 'macd' ? { divergence: { ...DIVERGENCE_DEFAULTS } } : {}),
+        ...(kind === 'rsi-divergence' ? { divergence: { ...DIVERGENCE_DEFAULTS } } : {}),
         ...(kind === 'smart-money-concepts' ? { smc: { ...SMC_DEFAULTS } } : {}),
         ...(kind === 'sr-breaks-retests' ? { sr: { ...SR_BREAKS_RETESTS_DEFAULTS } } : {}),
         ...(kind === 'pivot-points-missed-reversals'
@@ -1326,6 +1339,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleOscHud('wave-trend')
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        cmd.toggleOscHud('rsi-divergence')
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1451,6 +1468,16 @@ export default function App() {
                   }}
                 >
                   {waveHudOpen ? 'Hide WaveTrend window' : 'Show WaveTrend window'}
+                </MenuItem>
+                <MenuItem
+                  icon={TrendingUp}
+                  selected={rsiDivHudOpen}
+                  onClick={() => {
+                    toggleOscHud('rsi-divergence')
+                    close()
+                  }}
+                >
+                  {rsiDivHudOpen ? 'Hide RSI Divergence window' : 'Show RSI Divergence window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -1698,6 +1725,15 @@ export default function App() {
               <Spline size={17} strokeWidth={1.5} />
               <span>WaveTrend</span>
             </button>
+            <button
+              className={`toolbar-button osc-hud-toggle rsi-div-hud-toggle ${rsiDivHudOpen ? 'active' : ''}`}
+              onClick={() => toggleOscHud('rsi-divergence')}
+              title="Floating RSI Divergence window — the last 20 minutes, zoomed (Alt D)"
+              aria-pressed={rsiDivHudOpen}
+            >
+              <TrendingUp size={17} strokeWidth={1.5} />
+              <span>RSI Div</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1831,6 +1867,7 @@ export default function App() {
                   rsiHud={rsiMeterOpen}
                   cmMacdHud={cmHudOpen}
                   waveTrendHud={waveHudOpen}
+                  rsiDivHud={rsiDivHudOpen}
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}

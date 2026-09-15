@@ -8,6 +8,7 @@ import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reve
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
 import { isWaveTrendSettings } from './wave-trend'
+import { isWilliamsVixFixSettings } from './cm-williams-vix-fix'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
@@ -108,6 +109,7 @@ function indicator(value: unknown): Indicator {
       'rsi-divergence',
       'macd',
       'cm-ult-macd',
+      'cm-williams-vix-fix',
       'smart-money-concepts',
       'sr-breaks-retests',
       'pivot-points-missed-reversals',
@@ -273,6 +275,21 @@ function indicator(value: unknown): Indicator {
       osLevel2: settings.osLevel2,
     }
     result.period = result.waveTrend.channelLength
+  }
+  if (kind === 'cm-williams-vix-fix' && i.williamsVixFix !== undefined) {
+    const settings = i.williamsVixFix
+    if (!isWilliamsVixFixSettings(settings)) invalid('Williams VIX Fix settings')
+    result.williamsVixFix = {
+      pd: settings.pd,
+      bbl: settings.bbl,
+      mult: settings.mult,
+      lb: settings.lb,
+      ph: settings.ph,
+      pl: settings.pl,
+      showHighRange: settings.showHighRange,
+      showStdDevLine: settings.showStdDevLine,
+    }
+    result.period = result.williamsVixFix.pd
   }
   if (kind === 'custom') {
     result.source = text(i.source, 40000, 'custom source', true)

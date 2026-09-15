@@ -22,6 +22,7 @@ const render = (
     cmMacdHud?: boolean
     waveTrendHud?: boolean
     rsiDivHud?: boolean
+    vixFixHud?: boolean
     indicators?: Indicator[]
   } = {},
 ) =>
@@ -54,6 +55,7 @@ const render = (
       cmMacdHud: overrides.cmMacdHud ?? true,
       waveTrendHud: overrides.waveTrendHud ?? true,
       rsiDivHud: overrides.rsiDivHud,
+      vixFixHud: overrides.vixFixHud,
       onOscHudClose: noop,
       onIndicatorAdd: noop,
     } as never),
@@ -86,6 +88,15 @@ describe('the chart hands both oscillator windows their own view', () => {
     const markup = render({ rsiDivHud: true })
     expect(markup).toContain('aria-label="RSI Divergence window"')
     expect(markup).toContain('data-testid="osc-hud-rsi-divergence"')
+    expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(3)
+  })
+
+  it('opens the Williams VIX Fix window when vixFixHud is set', () => {
+    const markup = render({ vixFixHud: true })
+    expect(markup).toContain('aria-label="CM_Williams_Vix_Fix window"')
+    expect(markup).toContain('data-testid="osc-hud-cm-williams-vix-fix"')
+    expect(markup).toContain('WVF (22, 20, 2, 50, 0.85, 1.01)')
+    expect(markup).toContain('Add the CM_Williams_Vix_Fix pane to the chart')
     expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(3)
   })
 

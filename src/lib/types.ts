@@ -16,6 +16,7 @@ export type IndicatorKind =
   | 'rsi-divergence'
   | 'macd'
   | 'cm-ult-macd'
+  | 'cm-williams-vix-fix'
   | 'smart-money-concepts'
   | 'sr-breaks-retests'
   | 'pivot-points-missed-reversals'
@@ -60,6 +61,29 @@ export interface WaveTrendSettings {
   obLevel2: number
   osLevel1: number
   osLevel2: number
+}
+
+/**
+ * Published inputs of ChrisMoody's CM_Williams_Vix_Fix (short title
+ * `CM_Williams_Vix_Fix`, legend `(22, 20, 2, 50, 0.85, 1.01)`).
+ */
+export interface WilliamsVixFixSettings {
+  /** `pd` — lookback for the highest close in the Williams VIX Fix ratio. */
+  pd: number
+  /** `bbl` — Bollinger length of the WVF average and deviation. */
+  bbl: number
+  /** `mult` — Bollinger standard-deviation multiplier (Pine minval 1, maxval 5). */
+  mult: number
+  /** `lb` — lookback for the percentile range-high / range-low. */
+  lb: number
+  /** `ph` — highest percentile factor applied to the highest WVF. */
+  ph: number
+  /** `pl` — lowest percentile factor applied to the lowest WVF. */
+  pl: number
+  /** `hp` — draw the orange percentile range-high / range-low lines. */
+  showHighRange: boolean
+  /** `sd` — draw the aqua Bollinger upper band line. */
+  showStdDevLine: boolean
 }
 
 export interface CmMacdSettings {
@@ -521,6 +545,7 @@ export interface Indicator {
   nextPivot?: NextPivotSettings
   chileReversal?: ChileReversalSettings
   waveTrend?: WaveTrendSettings
+  williamsVixFix?: WilliamsVixFixSettings
 }
 export interface SavedScript {
   id: string

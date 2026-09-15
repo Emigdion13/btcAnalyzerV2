@@ -49,6 +49,7 @@ import { isRsiMeterIndicator } from '../lib/rsi-hud'
 import { divergenceSettings, isDivergenceSettings } from '../lib/macd-divergence'
 import { CoinIcon, EmptyState, IconButton, Modal, Sparkline, Toggle } from './ui'
 import { CmMacdSettingsDialog } from './CmMacdSettingsDialog'
+import { CmWilliamsVixFixSettingsDialog } from './CmWilliamsVixFixSettingsDialog'
 import { DivergenceSettingsSection } from './DivergenceSettingsSection'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
@@ -536,6 +537,8 @@ export function IndicatorSettingsDialog(props: {
   onEditSource: () => void
 }) {
   if (props.indicator.kind === 'cm-ult-macd') return <CmMacdSettingsDialog {...props} />
+  if (props.indicator.kind === 'cm-williams-vix-fix')
+    return <CmWilliamsVixFixSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
   if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
@@ -1109,6 +1112,7 @@ const SHORTCUTS = [
   ['CM MACD window', 'Alt M'],
   ['WaveTrend window', 'Alt W'],
   ['RSI Divergence window', 'Alt D'],
+  ['CM Williams VIX Fix window', 'Alt V'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],
@@ -1182,7 +1186,7 @@ export function DocsDialog({
                 {
                   icon: PictureInPicture2,
                   title: '05 · Keep another timeframe in view',
-                  text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar.',
+                  text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar Floating selector.',
                 },
                 {
                   icon: Gauge,

@@ -14,6 +14,19 @@ async function openDemoChart(page: Page, timeframe = '1m') {
   return peek
 }
 
+/**
+ * The floating windows live behind one toolbar selector. Its menu stays open across picks —
+ * several windows can be flipped in one visit — so this opens it only when it is closed.
+ */
+async function openFloatingMenu(page: Page) {
+  const menu = page.locator('.floating-picker .dropdown-menu')
+  if (!(await menu.isVisible())) {
+    await page.getByRole('button', { name: /^Floating/ }).click()
+    await expect(menu).toBeVisible()
+  }
+  return menu
+}
+
 test('peeks at another timeframe and states the ratio to the chart', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -45,7 +58,8 @@ test('minimizes, hides, and remembers the window across a reload', async ({ page
   await expect(peek.locator('.peek-bar')).toHaveCount(12)
   await peek.getByRole('button', { name: 'More candles in the peek window' }).click()
 
-  await page.getByRole('button', { name: /^Peek/ }).click()
+  await openFloatingMenu(page)
+  await page.locator('.menu-item.floating-peek').click()
   await expect(peek).toBeHidden()
   await page.reload()
   await expect(page.getByTestId('timeframe-peek')).toBeHidden()

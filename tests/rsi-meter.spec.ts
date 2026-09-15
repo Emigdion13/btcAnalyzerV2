@@ -14,6 +14,19 @@ async function openDemoChart(page: Page) {
   return meter
 }
 
+/**
+ * The floating windows live behind one toolbar selector. Its menu stays open across picks —
+ * several windows can be flipped in one visit — so this opens it only when it is closed.
+ */
+async function openFloatingMenu(page: Page) {
+  const menu = page.locator('.floating-picker .dropdown-menu')
+  if (!(await menu.isVisible())) {
+    await page.getByRole('button', { name: /^Floating/ }).click()
+    await expect(menu).toBeVisible()
+  }
+  return menu
+}
+
 /** The RSI oscillator pane, when RSI is on the chart as a real indicator. */
 function rsiPane(page: Page) {
   return page.locator('.oscillator-legend[data-indicator="rsi"]')
@@ -37,24 +50,26 @@ test('toggles the RSI meter without touching the RSI pane, and remembers the cho
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const meter = await openDemoChart(page)
-  const toggle = page.locator('.toolbar-button.rsi-meter-toggle')
+  const item = page.locator('.menu-item.floating-rsi-meter')
 
   // A fresh workspace ships RSI as a real indicator, so the pane and the window agree.
   await expect(meter).toContainText('RSI 14')
   await expect(rsiPane(page)).toBeVisible()
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await openFloatingMenu(page)
+  await expect(item).toHaveClass(/selected/)
 
-  // The button owns the window only: your indicator keeps its pane.
-  await toggle.click()
+  // The selector owns the window only: your indicator keeps its pane.
+  await item.click()
   await expect(meter).toBeHidden()
   await expect(rsiPane(page)).toBeVisible()
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(item).not.toHaveClass(/selected/)
 
   await page.reload()
   await expect(page.getByRole('region', { name: 'RSI Meter' })).toBeHidden()
   await expect(rsiPane(page)).toBeVisible()
 
-  await toggle.click()
+  await openFloatingMenu(page)
+  await item.click()
   const reopened = page.getByRole('region', { name: 'RSI Meter' })
   await expect(reopened).toBeVisible()
   await expect(reopened).toContainText('RSI 14')
@@ -104,7 +119,12 @@ test('RSI stays an indicator you can add, promoting the meter’s hidden one to 
   // adding it promotes that indicator instead of refusing a same-length twin.
   await page.getByRole('button', { name: /^Indicators/ }).click()
   await page.getByRole('textbox', { name: 'Search indicators' }).fill('Relative Strength')
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  // The divergence entry's description matches the same search, so pick the row that is the
+  // RSI indicator itself instead of the first Add button the search happens to surface.
+  const rsiRow = page
+    .locator('.indicator-catalog-row')
+    .filter({ has: page.getByRole('heading', { name: /^Relative Strength Index/ }) })
+  await rsiRow.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
 
   await expect(rsiPane(page)).toHaveCount(1)

@@ -17,6 +17,19 @@ async function openDemoChart(page: Page) {
   await expect(page.locator('canvas').first()).toBeVisible()
 }
 
+/**
+ * The floating windows live behind one toolbar selector. Its menu stays open across picks —
+ * several windows can be flipped in one visit — so this opens it only when it is closed.
+ */
+async function openFloatingMenu(page: Page) {
+  const menu = page.locator('.floating-picker .dropdown-menu')
+  if (!(await menu.isVisible())) {
+    await page.getByRole('button', { name: /^Floating/ }).click()
+    await expect(menu).toBeVisible()
+  }
+  return menu
+}
+
 function cmWindow(page: Page): Locator {
   return page.getByRole('region', { name: CM_WINDOW })
 }
@@ -84,26 +97,28 @@ test('both windows open on a fresh chart and show twenty minutes of bars', async
   expect(errors).toEqual([])
 })
 
-test('each toolbar button owns its window, remembers the choice, and leaves the pane alone', async ({
+test('the floating selector owns each window, remembers the choice, and leaves the pane alone', async ({
   page,
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await openDemoChart(page)
-  const cmToggle = page.locator('.toolbar-button.cm-hud-toggle')
-  const waveToggle = page.locator('.toolbar-button.wave-hud-toggle')
-  const rsiDivToggle = page.locator('.toolbar-button.rsi-div-hud-toggle')
-  await expect(cmToggle).toHaveAttribute('aria-pressed', 'true')
-  await expect(waveToggle).toHaveAttribute('aria-pressed', 'true')
-  await expect(rsiDivToggle).toHaveAttribute('aria-pressed', 'true')
+  const cmItem = page.locator('.menu-item.floating-cm-macd')
+  const waveItem = page.locator('.menu-item.floating-wave-trend')
+  const rsiDivItem = page.locator('.menu-item.floating-rsi-div')
+  await openFloatingMenu(page)
+  await expect(cmItem).toHaveClass(/selected/)
+  await expect(waveItem).toHaveClass(/selected/)
+  await expect(rsiDivItem).toHaveClass(/selected/)
 
-  await cmToggle.click()
+  await cmItem.click()
   await expect(cmWindow(page)).toBeHidden()
   // The window is a view: closing it must not touch the indicator it reads.
   await expect(pane(page, 'cm-ult-macd')).toBeVisible()
   // …and not the other window either.
   await expect(waveWindow(page)).toBeVisible()
   await expect(rsiDivWindow(page)).toBeVisible()
+  await expect(cmItem).not.toHaveClass(/selected/)
 
   await page.reload()
   await expect(cmWindow(page)).toBeHidden()
@@ -113,14 +128,18 @@ test('each toolbar button owns its window, remembers the choice, and leaves the 
     ),
   ).toBe(false)
 
-  await cmToggle.click()
+  await openFloatingMenu(page)
+  await cmItem.click()
   await expect(cmWindow(page)).toBeVisible()
   await expect(cmWindow(page)).toContainText('20 bars')
 
-  // Closing from the card itself is the same choice as the button, not a second preference.
+  // Closing from the card itself is the same choice as the selector item, not a second
+  // preference. The open menu drops over the window's own controls, so dismiss it first.
+  await page.keyboard.press('Escape')
   await waveWindow(page).getByRole('button', { name: 'Hide WaveTrend [LazyBear] window' }).click()
   await expect(waveWindow(page)).toBeHidden()
-  await expect(waveToggle).toHaveAttribute('aria-pressed', 'false')
+  await openFloatingMenu(page)
+  await expect(waveItem).not.toHaveClass(/selected/)
   expect(errors).toEqual([])
 })
 

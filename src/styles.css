@@ -2737,6 +2737,10 @@ button {
 .chart-toolbar .dropdown-menu {
   min-width: 180px;
 }
+/* The floating selector's items carry shortcut hints, so its menu is a little wider. */
+.floating-picker .dropdown-menu {
+  min-width: 212px;
+}
 .editor-filename .dropdown-menu {
   top: auto;
   bottom: calc(100% + 10px);
@@ -4414,16 +4418,12 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span,
-  .chart-toolbar .osc-hud-toggle > span {
+  .chart-toolbar .floating-picker-toggle > span {
     display: none;
   }
   .alert-toolbar-button,
   .replay-button,
-  .peek-toggle,
-  .rsi-meter-toggle,
-  .osc-hud-toggle {
+  .floating-picker-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .toolbar-separator:first-child {
@@ -4535,16 +4535,12 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span,
-  .chart-toolbar .osc-hud-toggle > span {
+  .chart-toolbar .floating-picker-toggle > span {
     display: inline;
   }
   .alert-toolbar-button,
   .replay-button,
-  .peek-toggle,
-  .rsi-meter-toggle,
-  .osc-hud-toggle {
+  .floating-picker-toggle {
     padding: 0 6px !important;
   }
   .editor-inspiration {
@@ -4737,14 +4733,10 @@ input[type='color']::-webkit-color-swatch {
   }
   .chart-toolbar .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
-  .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span,
-  .chart-toolbar .osc-hud-toggle > span {
+  .chart-toolbar .floating-picker-toggle > span {
     display: none !important;
   }
-  .chart-toolbar .peek-toggle,
-  .chart-toolbar .rsi-meter-toggle,
-  .chart-toolbar .osc-hud-toggle {
+  .chart-toolbar .floating-picker-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .icon-button:nth-child(2),
@@ -5052,16 +5044,22 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar .indicator-button > svg {
     width: 17px;
   }
-  /* The meter stays reachable from the workspace menu: this row cannot take another
-     button without overflowing the viewport. */
-  .chart-toolbar .alert-toolbar-button,
-  .chart-toolbar .rsi-meter-toggle,
-  .chart-toolbar .osc-hud-toggle {
+  /* The alert button gives way at phone width, but the floating selector stays: it is one
+     icon where five buttons used to be, so every window stays reachable through it. */
+  .chart-toolbar .alert-toolbar-button {
     display: none;
   }
   .chart-toolbar .replay-button,
-  .chart-toolbar .peek-toggle {
+  .chart-toolbar .floating-picker-toggle {
     padding: 0 4px !important;
+  }
+  .chart-toolbar .floating-picker-toggle > svg:last-child {
+    display: none;
+  }
+  /* The trigger sits near the right edge here, so the menu opens leftward from it. */
+  .floating-picker .dropdown-menu {
+    left: auto;
+    right: 0;
   }
   .chart-toolbar-right > .toolbar-separator {
     display: none;
@@ -8656,41 +8654,48 @@ input[type='color']::-webkit-color-swatch {
   font-size: 9px;
   color: var(--text);
 }
-.peek-toggle.active {
+/* The floating selector's trigger lights up while any window is up; the count says how many. */
+.floating-picker-toggle.active {
   background: #1d2a26;
   color: #8fd9c4;
 }
-.peek-toggle.active svg {
+.floating-picker-toggle.active svg {
   color: #8fd9c4;
 }
-/* The RSI meter button carries the indicator's own colour when the window is open. */
-.rsi-meter-toggle.active {
+/* Inside the menu, each checked window keeps the colour its old toolbar button carried. */
+.menu-item.floating-peek.selected {
+  background: #1d2a26;
+  color: #8fd9c4;
+}
+.menu-item.floating-peek.selected > svg {
+  color: #8fd9c4;
+}
+.menu-item.floating-rsi-meter.selected {
   background: #221d33;
   color: #c4b1fd;
 }
-.rsi-meter-toggle.active svg {
+.menu-item.floating-rsi-meter.selected > svg {
   color: #c4b1fd;
 }
-/* Same for the two oscillator windows, each in its indicator's colour. */
-.cm-hud-toggle.active {
+.menu-item.floating-cm-macd.selected {
   background: #1c2418;
   color: #b8e88a;
 }
-.cm-hud-toggle.active svg {
+.menu-item.floating-cm-macd.selected > svg {
   color: #b8e88a;
 }
-.wave-hud-toggle.active {
+.menu-item.floating-wave-trend.selected {
   background: #16212f;
   color: #8fb6ff;
 }
-.wave-hud-toggle.active svg {
+.menu-item.floating-wave-trend.selected > svg {
   color: #8fb6ff;
 }
-.rsi-div-hud-toggle.active {
+.menu-item.floating-rsi-div.selected {
   background: #231b2f;
   color: #ad91e5;
 }
-.rsi-div-hud-toggle.active svg {
+.menu-item.floating-rsi-div.selected > svg {
   color: #ad91e5;
 }
 @media (max-width: 1180px) {

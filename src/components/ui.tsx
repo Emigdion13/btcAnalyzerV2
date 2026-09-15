@@ -241,6 +241,7 @@ export function MenuItem({
   selected,
   shortcut,
   danger,
+  className = '',
 }: {
   children: ReactNode
   onClick: () => void
@@ -248,11 +249,12 @@ export function MenuItem({
   selected?: boolean
   shortcut?: string
   danger?: boolean
+  className?: string
 }) {
   return (
     <button
       type="button"
-      className={`menu-item ${selected ? 'selected' : ''} ${danger ? 'danger' : ''}`}
+      className={`menu-item ${selected ? 'selected' : ''} ${danger ? 'danger' : ''} ${className}`}
       onClick={onClick}
     >
       {Icon && <Icon size={16} strokeWidth={1.6} />}

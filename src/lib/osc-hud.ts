@@ -299,6 +299,17 @@ function windowStart(length: number, bars: number): number {
   return Math.max(0, length - bars)
 }
 
+/**
+ * Gaps for the mini chart: null, undefined and anything not finite all mean "no value here".
+ * A borrowed series can carry a NaN — a synthetic asset with no price yet, or a zero-divided-by-
+ * zero in the channel index — and one NaN in a point list is enough to drop the whole polyline,
+ * so it becomes a gap instead of a coordinate.
+ */
+const finite = (values: (number | null)[]): (number | null)[] =>
+  values.map((value) =>
+    value === null || value === undefined || !Number.isFinite(value) ? null : value,
+  )
+
 const trim = (value: number | null): string => (value === null ? '—' : formatPrice(value))
 
 /** Change from one bar to the next, in the unit the indicator itself is quoted in. */
@@ -420,12 +431,18 @@ export function cmMacdHudModel(
   const start = windowStart(input.times.length, input.bars)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
-  const macd = cut(values.macd)
-  const signal = cut(values.signal)
-  const histogram = cut(values.histogram)
+  const macd = finite(cut(values.macd))
+  const signal = finite(cut(values.signal))
+  const histogram = finite(cut(values.histogram))
+  // Colour is decided against the previous bar of the full series, across the window edge: a bar
+  // is aqua because it rose, and the bar it rose from can sit outside the twenty minutes.
   const colors = cut(
     values.histogram.map((value, index) =>
-      cmHistogramColor(value, values.histogram[index - 1] ?? null, settings.histogramColorChange),
+      cmHistogramColor(
+        Number.isFinite(value) ? value : null,
+        Number.isFinite(values.histogram[index - 1]) ? values.histogram[index - 1] : null,
+        settings.histogramColorChange,
+      ),
     ),
   )
   const domain = oscHudDomain([
@@ -552,9 +569,9 @@ export function waveTrendHudModel(
   const start = windowStart(input.times.length, input.bars)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
-  const wt1 = cut(values.wt1)
-  const wt2 = cut(values.wt2)
-  const diff = cut(values.diff)
+  const wt1 = finite(cut(values.wt1))
+  const wt2 = finite(cut(values.wt2))
+  const diff = finite(cut(values.diff))
   const domain = oscHudDomain([wt1, wt2, diff])
   const activeIndex = input.index - start
   const at = (source: (number | null)[]) =>

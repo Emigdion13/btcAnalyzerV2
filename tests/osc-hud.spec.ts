@@ -51,11 +51,22 @@ test('both windows open on a fresh chart and show twenty minutes of bars', async
     wave.getByRole('button', { name: 'Add the WaveTrend [LazyBear] pane to the chart' }),
   ).toBeVisible()
 
-  // The mini chart is drawn, not described: a histogram for the MACD, lines for the wave.
-  await expect(cm.locator('.osc-hud-histogram rect').first()).toBeVisible()
-  await expect(cm.locator('.osc-hud-svg polyline').first()).toBeVisible()
-  await expect(wave.locator('.osc-hud-svg polyline').first()).toBeVisible()
-  await expect(wave.locator('.osc-hud-svg path').first()).toBeVisible()
+  // The mini chart is drawn, not described. Counts rather than visibility on purpose: a flat
+  // stretch of an oscillator is a zero-height bounding box, and a zero-height box is what
+  // Playwright calls invisible — so "it painted" is the claim, and "it painted every bar" is the
+  // proof, while a NaN coordinate still fails the shape below.
+  await expect(cm.locator('.osc-hud-histogram rect')).toHaveCount(20)
+  await expect(cm.locator('.osc-hud-svg polyline')).toHaveCount(2)
+  await expect(wave.locator('.osc-hud-svg polyline')).toHaveCount(2)
+  await expect(wave.locator('.osc-hud-svg path')).toHaveCount(1)
+  await expect(cm.locator('.osc-hud-svg polyline').first()).not.toHaveAttribute(
+    'points',
+    /NaN|undefined/,
+  )
+  await expect(wave.locator('.osc-hud-svg polyline').first()).not.toHaveAttribute(
+    'points',
+    /NaN|undefined/,
+  )
   await expect(cm.locator('.osc-hud-verdict')).toContainText(
     /CROSS|ABOVE SIGNAL|BELOW SIGNAL|WARMING/,
   )

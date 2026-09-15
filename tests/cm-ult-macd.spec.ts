@@ -124,9 +124,13 @@ test('hides, restores, removes and finds the clone by its original author', asyn
   await expect(page.locator('.cm-oscillator-legend')).toHaveCount(0)
   await page.getByRole('button', { name: /^Indicators/ }).click()
   await page.getByRole('textbox', { name: 'Search indicators', exact: true }).fill('ChrisMoody')
-  await expect(page.locator('.indicator-catalog-row')).toHaveCount(1)
-  await expect(page.locator('.indicator-catalog-row')).toContainText('CM_Ult_MacD_MTF')
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  // Both of ChrisMoody's clones share the author search, so pick the MACD row by its
+  // heading instead of the first Add button the search happens to surface.
+  await expect(page.locator('.indicator-catalog-row')).toHaveCount(2)
+  const cmMacdRow = page
+    .locator('.indicator-catalog-row')
+    .filter({ has: page.getByRole('heading', { name: /^CM_Ult_MacD_MTF/ }) })
+  await cmMacdRow.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
   await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
   await page.getByRole('button', { name: '5m timeframe', exact: true }).click()

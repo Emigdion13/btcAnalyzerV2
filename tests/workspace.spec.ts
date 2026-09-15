@@ -53,8 +53,13 @@ test('searches, adds watchlist assets, and respects a shared chart URL', async (
 test('adds and customizes built-in indicators', async ({ page }) => {
   await page.getByRole('button', { name: /^Indicators/ }).click()
   await page.getByRole('textbox', { name: 'Search indicators' }).fill('Bollinger')
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Added', exact: true })).toBeDisabled()
+  // The VIX Fix description names its Bollinger band, so the search matches two rows;
+  // pick the Bands row by its heading instead of the first Add button surfaced.
+  const bbRow = page
+    .locator('.indicator-catalog-row')
+    .filter({ has: page.getByRole('heading', { name: /^Bollinger Bands/ }) })
+  await bbRow.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(bbRow.getByRole('button', { name: 'Added', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
   await page.getByRole('button', { name: 'BB 20', exact: true }).click()
   await page.getByRole('spinbutton', { name: 'Length', exact: false }).fill('32')

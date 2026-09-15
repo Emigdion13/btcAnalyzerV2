@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
+  AppWindow,
   ArrowDownToLine,
   Bell,
   BellPlus,
@@ -1376,6 +1377,15 @@ export default function App() {
   }, [])
 
   const indicatorToEdit = indicators.find((i) => i.id === editingIndicator)
+  // How many floating windows are up — the selector's trigger carries the number, and lights
+  // up while any of them is open.
+  const openFloatingCount =
+    (peekVisible ? 1 : 0) +
+    (rsiMeterOpen ? 1 : 0) +
+    (cmHudOpen ? 1 : 0) +
+    (waveHudOpen ? 1 : 0) +
+    (rsiDivHudOpen ? 1 : 0) +
+    (vixFixHudOpen ? 1 : 0)
   return (
     <div className={`app ${focusMode ? 'focus-mode' : ''}`}>
       <input
@@ -1723,60 +1733,86 @@ export default function App() {
               <SkipBack size={16} strokeWidth={1.5} />
               <span>Replay</span>
             </button>
-            <button
-              className={`toolbar-button peek-toggle ${peekVisible ? 'active' : ''}`}
-              onClick={() => setPeekPreference(!peekVisible)}
-              title="Floating window onto another timeframe (Alt P)"
-              aria-pressed={peekVisible}
+            {/* Every floating window lives behind one selector, so the toolbar spends its width
+                on the chart instead of five toggles. The count says how many windows are up, and
+                the menu stays open across clicks — several windows can be flipped in one visit. */}
+            <Dropdown
+              className="floating-picker"
+              trigger={(open) => (
+                <button
+                  className={`toolbar-button floating-picker-toggle ${openFloatingCount > 0 ? 'active' : ''}`}
+                  title="Floating windows — the timeframe peek, the RSI meter, and the oscillator windows"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                >
+                  <AppWindow size={17} strokeWidth={1.5} />
+                  <span>Floating</span>
+                  {openFloatingCount > 0 && (
+                    <span className="toolbar-count">{openFloatingCount}</span>
+                  )}
+                  <ChevronDown size={10} />
+                </button>
+              )}
             >
-              <PictureInPicture2 size={17} strokeWidth={1.5} />
-              <span>Peek</span>
-            </button>
-            <button
-              className={`toolbar-button rsi-meter-toggle ${rsiMeterOpen ? 'active' : ''}`}
-              onClick={() => setRsiMeterPreference(!rsiMeterOpen)}
-              title="Floating RSI meter — the reading without the pane. RSI stays in the indicator library."
-              aria-pressed={rsiMeterOpen}
-            >
-              <Gauge size={17} strokeWidth={1.5} />
-              <span>RSI</span>
-            </button>
-            <button
-              className={`toolbar-button osc-hud-toggle cm-hud-toggle ${cmHudOpen ? 'active' : ''}`}
-              onClick={() => toggleOscHud('cm-ult-macd')}
-              title="Floating CM_Ult_MacD_MTF window — the last 20 minutes, zoomed (Alt M)"
-              aria-pressed={cmHudOpen}
-            >
-              <ChartColumnBig size={17} strokeWidth={1.5} />
-              <span>CM MACD</span>
-            </button>
-            <button
-              className={`toolbar-button osc-hud-toggle wave-hud-toggle ${waveHudOpen ? 'active' : ''}`}
-              onClick={() => toggleOscHud('wave-trend')}
-              title="Floating WaveTrend [LazyBear] window — the last 20 minutes, zoomed (Alt W)"
-              aria-pressed={waveHudOpen}
-            >
-              <Spline size={17} strokeWidth={1.5} />
-              <span>WaveTrend</span>
-            </button>
-            <button
-              className={`toolbar-button osc-hud-toggle rsi-div-hud-toggle ${rsiDivHudOpen ? 'active' : ''}`}
-              onClick={() => toggleOscHud('rsi-divergence')}
-              title="Floating RSI Divergence window — the last 20 minutes, zoomed (Alt D)"
-              aria-pressed={rsiDivHudOpen}
-            >
-              <TrendingUp size={17} strokeWidth={1.5} />
-              <span>RSI Div</span>
-            </button>
-            <button
-              className={`toolbar-button osc-hud-toggle vix-fix-hud-toggle ${vixFixHudOpen ? 'active' : ''}`}
-              onClick={() => toggleOscHud('cm-williams-vix-fix')}
-              title="Floating CM_Williams_Vix_Fix window — the last 20 minutes, zoomed (Alt V)"
-              aria-pressed={vixFixHudOpen}
-            >
-              <Flame size={17} strokeWidth={1.5} />
-              <span>VIX Fix</span>
-            </button>
+              {() => (
+                <>
+                  <div className="menu-label">FLOATING WINDOWS</div>
+                  <MenuItem
+                    className="floating-peek"
+                    icon={PictureInPicture2}
+                    selected={peekVisible}
+                    shortcut="Alt P"
+                    onClick={() => setPeekPreference(!peekVisible)}
+                  >
+                    Timeframe peek
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-rsi-meter"
+                    icon={Gauge}
+                    selected={rsiMeterOpen}
+                    onClick={() => setRsiMeterPreference(!rsiMeterOpen)}
+                  >
+                    RSI meter
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-cm-macd"
+                    icon={ChartColumnBig}
+                    selected={cmHudOpen}
+                    shortcut="Alt M"
+                    onClick={() => toggleOscHud('cm-ult-macd')}
+                  >
+                    CM MACD
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-wave-trend"
+                    icon={Spline}
+                    selected={waveHudOpen}
+                    shortcut="Alt W"
+                    onClick={() => toggleOscHud('wave-trend')}
+                  >
+                    WaveTrend
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-rsi-div"
+                    icon={TrendingUp}
+                    selected={rsiDivHudOpen}
+                    shortcut="Alt D"
+                    onClick={() => toggleOscHud('rsi-divergence')}
+                  >
+                    RSI divergence
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-vix-fix"
+                    icon={Flame}
+                    selected={vixFixHudOpen}
+                    shortcut="Alt V"
+                    onClick={() => toggleOscHud('cm-williams-vix-fix')}
+                  >
+                    VIX Fix
+                  </MenuItem>
+                </>
+              )}
+            </Dropdown>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton

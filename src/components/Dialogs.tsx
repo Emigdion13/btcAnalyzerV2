@@ -1186,7 +1186,7 @@ export function DocsDialog({
                 {
                   icon: PictureInPicture2,
                   title: '05 · Keep another timeframe in view',
-                  text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar.',
+                  text: 'The floating Peek window shows the last candles of any other interval — the forming one included — so a 1m chart can watch 15m. Press Alt P or use the toolbar Floating selector.',
                 },
                 {
                   icon: Gauge,

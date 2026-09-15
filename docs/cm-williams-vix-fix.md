@@ -62,7 +62,7 @@ and neither does Atlas.
 
 ## Floating window
 
-The toolbar **VIX Fix** button (Alt V) opens the last twenty minutes of the
+The toolbar **Floating** selector's VIX Fix item (Alt V) opens the last twenty minutes of the
 same values the pane plots, at their own one-sided scale from zero — WVF never
 goes negative, so a symmetric oscillator scale would waste half the card. The
 histogram keeps the lime/gray rule, the aqua upper band and the orange

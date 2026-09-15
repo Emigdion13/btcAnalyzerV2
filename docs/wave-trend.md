@@ -22,6 +22,16 @@ are untouched.
 | Over Sold Level 2   | -53     | Dotted green reference line (legacy `style=3`)                   |
 
 All six inputs and visibility persist locally and survive validated workspace export/import.
+
+### Floating window
+
+The toolbar **WaveTrend** button (or **Alt W**) opens a floating window with the last twenty minutes
+of these values, autoscaled to the window's own extremes and symmetric about zero. It plots the same
+`wt1`, dotted `wt2` and blue `wt1 - wt2` area with the same `0.015` scale — no second formula, and
+no re-tuned smoothing. Because the scale is the window's, the 53/60 reference lines appear only when
+the wave gets close enough for them to be inside the frame; the readout underneath states the value
+for whichever bar the crosshair is on, so an overbought reading while hovering history is labelled as
+history.
 **Original defaults** restores the published values. Atlas supports integer lengths 1–2000 and
 levels within ±100000. The published script hard-codes two values that are therefore not inputs:
 the **4**-bar signal average `sma(wt1, 4)` and the **0.015** channel scale. Arbitrary Pine

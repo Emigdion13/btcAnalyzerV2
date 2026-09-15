@@ -7,6 +7,7 @@ import {
   Camera,
   CandlestickChart,
   ChartArea,
+  ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ChartNoAxesCombined,
   ChevronDown,
@@ -45,6 +46,7 @@ import {
   Share2,
   SkipBack,
   SkipForward,
+  Spline,
   SlidersHorizontal,
   Square,
   TextCursorInput,
@@ -105,6 +107,8 @@ import {
   withRsiMeterIndicator,
   withoutRsiMeterIndicator,
 } from './lib/rsi-hud'
+import { OSC_HUD_WIDGETS, oscHudRequestedTimeframes, oscHudVisible } from './lib/osc-hud'
+import type { OscHudKind } from './lib/osc-hud'
 import { runIndicator } from './lib/script-runner'
 import { downloadFile, readStored, uid, useLocalState, writeStored } from './lib/storage'
 import type {
@@ -289,6 +293,30 @@ export default function App() {
     null,
   )
   const rsiMeterOpen = rsiMeterVisible(rsiMeterPreference)
+  // The two floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and of
+  // WaveTrend, zoomed to their own scale instead of a full-height pane. Same contract as the RSI
+  // meter — null means "never chosen" and a real choice from the toolbar wins over the default.
+  const [cmHudPreference, setCmHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['cm-ult-macd'].visibilityKey,
+    null,
+  )
+  const [waveHudPreference, setWaveHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['wave-trend'].visibilityKey,
+    null,
+  )
+  const cmHudOpen = oscHudVisible(cmHudPreference)
+  const waveHudOpen = oscHudVisible(waveHudPreference)
+  const oscHudOpen = useMemo(
+    () => ({ 'cm-ult-macd': cmHudOpen, 'wave-trend': waveHudOpen }),
+    [cmHudOpen, waveHudOpen],
+  )
+  const toggleOscHud = useCallback(
+    (kind: OscHudKind) => {
+      const set = kind === 'cm-ult-macd' ? setCmHudPreference : setWaveHudPreference
+      set((current) => !oscHudVisible(current))
+    },
+    [setCmHudPreference, setWaveHudPreference],
+  )
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
   )
@@ -409,8 +437,13 @@ export default function App() {
   const peekActive = peekVisible && replayIndex === null
   const indicatorTimeframes = useMemo(
     () =>
-      requestedIndicatorTimeframes(indicators, timeframe, [...(peekActive ? [peekTimeframe] : [])]),
-    [indicators, timeframe, peekActive, peekTimeframe],
+      requestedIndicatorTimeframes(indicators, timeframe, [
+        ...(peekActive ? [peekTimeframe] : []),
+        // A window-only CM MACD on another resolution cannot be computed from chart candles, so
+        // its source feed has to be asked for here: the visible-indicator walk above misses it.
+        ...oscHudRequestedTimeframes(indicators, timeframe, oscHudOpen),
+      ]),
+    [indicators, timeframe, peekActive, peekTimeframe, oscHudOpen],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
     () =>
@@ -1220,6 +1253,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    toggleOscHud,
     draft,
     modal,
     confirmation,
@@ -1233,6 +1267,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    toggleOscHud,
     draft,
     modal,
     confirmation,
@@ -1282,6 +1317,14 @@ export default function App() {
       if (event.altKey && !mod && (event.key.toLowerCase() === 'p' || event.code === 'KeyP')) {
         event.preventDefault()
         cmd.togglePeek()
+      }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'm') {
+        event.preventDefault()
+        cmd.toggleOscHud('cm-ult-macd')
+      }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        cmd.toggleOscHud('wave-trend')
       }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
@@ -1388,6 +1431,26 @@ export default function App() {
                   }}
                 >
                   {rsiMeterOpen ? 'Hide RSI meter' : 'Show RSI meter'}
+                </MenuItem>
+                <MenuItem
+                  icon={ChartColumnBig}
+                  selected={cmHudOpen}
+                  onClick={() => {
+                    toggleOscHud('cm-ult-macd')
+                    close()
+                  }}
+                >
+                  {cmHudOpen ? 'Hide CM MACD window' : 'Show CM MACD window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Spline}
+                  selected={waveHudOpen}
+                  onClick={() => {
+                    toggleOscHud('wave-trend')
+                    close()
+                  }}
+                >
+                  {waveHudOpen ? 'Hide WaveTrend window' : 'Show WaveTrend window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -1617,6 +1680,24 @@ export default function App() {
               <Gauge size={17} strokeWidth={1.5} />
               <span>RSI</span>
             </button>
+            <button
+              className={`toolbar-button osc-hud-toggle cm-hud-toggle ${cmHudOpen ? 'active' : ''}`}
+              onClick={() => toggleOscHud('cm-ult-macd')}
+              title="Floating CM_Ult_MacD_MTF window — the last 20 minutes, zoomed (Alt M)"
+              aria-pressed={cmHudOpen}
+            >
+              <ChartColumnBig size={17} strokeWidth={1.5} />
+              <span>CM MACD</span>
+            </button>
+            <button
+              className={`toolbar-button osc-hud-toggle wave-hud-toggle ${waveHudOpen ? 'active' : ''}`}
+              onClick={() => toggleOscHud('wave-trend')}
+              title="Floating WaveTrend [LazyBear] window — the last 20 minutes, zoomed (Alt W)"
+              aria-pressed={waveHudOpen}
+            >
+              <Spline size={17} strokeWidth={1.5} />
+              <span>WaveTrend</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1748,6 +1829,10 @@ export default function App() {
                   onIndicatorRetry={() => setTimeframeRetry((n) => n + 1)}
                   replay={replayIndex !== null}
                   rsiHud={rsiMeterOpen}
+                  cmMacdHud={cmHudOpen}
+                  waveTrendHud={waveHudOpen}
+                  onOscHudClose={toggleOscHud}
+                  onIndicatorAdd={addBuiltIn}
                   book={bookView}
                 />
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (

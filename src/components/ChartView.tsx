@@ -55,7 +55,16 @@ import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/o
 import { formatNotional } from '../../shared/whale-flow'
 import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { rsiMeterPeriod } from '../lib/rsi-hud'
-import { cmMacdResolution, cmMacdSettings, indicatorLabel } from '../lib/cm-ult-macd'
+import { calculateWaveTrend, waveTrendSettings, WAVE_TREND_DEFAULTS } from '../lib/wave-trend'
+import { clampOscHudBars, cmMacdHudModel, oscHudBars, waveTrendHudModel } from '../lib/osc-hud'
+import type { OscHudKind } from '../lib/osc-hud'
+import {
+  calculateCmMacd,
+  cmMacdResolution,
+  cmMacdSettings,
+  CM_MACD_DEFAULTS,
+  indicatorLabel,
+} from '../lib/cm-ult-macd'
 import type { IndicatorTimeframes } from '../lib/cm-ult-macd'
 import {
   detectMacdDivergences,
@@ -101,9 +110,10 @@ import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
 import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
-import { uid } from '../lib/storage'
+import { uid, useLocalState } from '../lib/storage'
 import { ChartMessagePlate, ChartMessageText, SrBreakLabel } from './ChartMessage'
 import { CoinIcon, IconButton } from './ui'
+import { OscHudCard } from './OscHudCard'
 
 export interface ChartHandle {
   fit: () => void
@@ -139,6 +149,17 @@ interface Props {
   replay: boolean
   /** Floating RSI meter. The toolbar button owns it; the RSI pane stays the indicator's job. */
   rsiHud?: boolean
+  /**
+   * Floating CM_Ult_MacD_MTF and WaveTrend windows: the last twenty minutes of each, zoomed to
+   * their own scale. Like the RSI meter, the toolbar buttons own the windows and the indicators
+   * stay in the library — the windows only read the settings your chart already carries.
+   */
+  cmMacdHud?: boolean
+  waveTrendHud?: boolean
+  /** Closing a window from its own card is the same choice as its toolbar button. */
+  onOscHudClose?: (kind: OscHudKind) => void
+  /** Lets a window offer the pane whose settings it is borrowing. */
+  onIndicatorAdd?: (kind: Indicator['kind']) => void
   /** Resting-liquidity depth view of the charted product; zone chips and walls need it. */
   book?: OrderBookView | null
 }
@@ -1238,6 +1259,98 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ? `Warming up · ${data.length}/${s.signalLength} source candles`
       : ''
   }
+  // The two floating oscillator windows. They are views, not second opinions: each reads the
+  // chart's own indicator (a hidden one included, so a pane you switched off still sets the
+  // lengths) and falls back to the published defaults when the chart carries none, then draws the
+  // last twenty minutes of those values at their own scale.
+  const cmHudIndicator = indicators.find((indicator) => indicator.kind === 'cm-ult-macd') ?? null
+  const waveHudIndicator = indicators.find((indicator) => indicator.kind === 'wave-trend') ?? null
+  const cmHudSettings = useMemo(
+    () => (cmHudIndicator ? cmMacdSettings(cmHudIndicator) : CM_MACD_DEFAULTS),
+    [cmHudIndicator],
+  )
+  const waveHudSettings = useMemo(
+    () => (waveHudIndicator ? waveTrendSettings(waveHudIndicator) : WAVE_TREND_DEFAULTS),
+    [waveHudIndicator],
+  )
+  const candleTimes = useMemo(() => candles.map((candle) => candle.time), [candles])
+  // Zoom is a per-window preference: the default is twenty minutes of the chart's own bars, and
+  // ±4 bars is enough of a step that you can widen for a wave or tighten for the last few ticks.
+  const [oscHudBarsOverride, setOscHudBarsOverride] = useLocalState<
+    Partial<Record<OscHudKind, number>>
+  >('osc-hud-bars', {})
+  const cmHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-ult-macd'])
+  const waveHudBars = oscHudBars(timeframe, oscHudBarsOverride['wave-trend'])
+  const zoomOscHud = (kind: OscHudKind, delta: number) =>
+    setOscHudBarsOverride((previous) => ({
+      ...previous,
+      [kind]: clampOscHudBars(oscHudBars(timeframe, previous[kind]) + delta, timeframe),
+    }))
+  // An alt-timeframe MACD with no source candles has nothing honest to draw; say so with the same
+  // words the pane uses rather than showing an empty box.
+  const cmHudNotice = props.cmMacdHud && cmHudIndicator ? cmNotice(cmHudIndicator) : ''
+  const cmHudModel = useMemo(
+    () =>
+      props.cmMacdHud
+        ? cmMacdHudModel(
+            calculateCmMacd(candles, cmHudSettings, {
+              timeframe,
+              timeframes: indicatorTimeframes,
+              replay,
+              realtimeFrom,
+            }),
+            cmHudSettings,
+            {
+              times: candleTimes,
+              timeframe,
+              bars: cmHudBars,
+              index: hoverIndex,
+              hovered: hovered !== null,
+              note: cmHudNotice,
+              settingsSource: cmHudIndicator ? 'chart' : 'defaults',
+            },
+          )
+        : null,
+    [
+      props.cmMacdHud,
+      candles,
+      cmHudSettings,
+      timeframe,
+      indicatorTimeframes,
+      replay,
+      realtimeFrom,
+      candleTimes,
+      cmHudBars,
+      hoverIndex,
+      hovered,
+      cmHudIndicator,
+      cmHudNotice,
+    ],
+  )
+  const waveHudModel = useMemo(
+    () =>
+      props.waveTrendHud
+        ? waveTrendHudModel(calculateWaveTrend(candles, waveHudSettings), waveHudSettings, {
+            times: candleTimes,
+            timeframe,
+            bars: waveHudBars,
+            index: hoverIndex,
+            hovered: hovered !== null,
+            settingsSource: waveHudIndicator ? 'chart' : 'defaults',
+          })
+        : null,
+    [
+      props.waveTrendHud,
+      candles,
+      waveHudSettings,
+      candleTimes,
+      timeframe,
+      waveHudBars,
+      hoverIndex,
+      hovered,
+      waveHudIndicator,
+    ],
+  )
   const smcNotice = (indicator: Indicator) => {
     const settings = smcSettings(indicator)
     const resolution = settings.fvgTimeframe
@@ -3302,6 +3415,30 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             )}
           </div>
         </div>
+      )}
+      {props.cmMacdHud && cmHudModel && (
+        <OscHudCard
+          model={cmHudModel}
+          dock="cm"
+          indicator={cmHudIndicator}
+          bars={cmHudBars}
+          onZoom={(delta) => zoomOscHud('cm-ult-macd', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('cm-ult-macd')}
+        />
+      )}
+      {props.waveTrendHud && waveHudModel && (
+        <OscHudCard
+          model={waveHudModel}
+          dock="wave"
+          indicator={waveHudIndicator}
+          bars={waveHudBars}
+          onZoom={(delta) => zoomOscHud('wave-trend', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('wave-trend')}
+        />
       )}
       {generated.map(({ indicator, plots }) => {
         const pane = indicatorSeries.current.get(indicator.id)?.pane ?? 0

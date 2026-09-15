@@ -19,7 +19,7 @@ interface Props {
   /** Everything the card shows, computed by the chart from the same values its pane plots. */
   model: OscHudModel
   /** Which corner of the chart the card rests in before you drag it. */
-  dock: 'cm' | 'wave'
+  dock: 'cm' | 'wave' | 'rsi-div'
   /** The indicator the card reads, when the chart has one. */
   indicator: Indicator | null
   onEditIndicator: (indicator: Indicator) => void

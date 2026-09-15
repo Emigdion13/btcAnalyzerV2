@@ -2,12 +2,11 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { OscHudCard } from './OscHudCard'
-import { cmMacdHudModel, oscHudGeometry, waveTrendHudModel } from '../lib/osc-hud'
-import { CM_MACD_DEFAULTS, CM_COLORS } from '../lib/cm-ult-macd'
-import { WAVE_TREND_DEFAULTS, WT_COLORS } from '../lib/wave-trend'
-import type { CmMacdValues } from '../lib/cm-ult-macd'
-import type { WaveTrendValues } from '../lib/wave-trend'
-import type { Indicator, Timeframe } from '../lib/types'
+import { cmMacdHudModel, oscHudGeometry, rsiDivergenceHudModel, waveTrendHudModel } from '../lib/osc-hud'
+import { CM_MACD_DEFAULTS, CM_COLORS, type CmMacdValues } from '../lib/cm-ult-macd'
+import { WAVE_TREND_DEFAULTS, WT_COLORS, type WaveTrendValues } from '../lib/wave-trend'
+import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
+import type { Candle, Indicator, Timeframe } from '../lib/types'
 
 const times = (count: number, step = 60): number[] =>
   Array.from({ length: count }, (_, index) => index * step)
@@ -172,5 +171,29 @@ describe('the floating oscillator card', () => {
     expect(rising.verdict.detail).toContain('MACD')
     // And the readouts are the numbers themselves, not a description of them.
     expect(rising.readouts.map((readout) => readout.label)).toEqual(['MACD', 'Signal', 'Hist'])
+  })
+
+  it('renders an RSI Divergence card with its levels, readouts, and add pane button', () => {
+    const candles: Candle[] = Array.from({ length: 30 }, (_, index) => ({
+      time: index * 60,
+      open: 100,
+      high: 102,
+      low: 98,
+      close: 100 + Math.sin(index / 3) * 5,
+      volume: 100,
+    }))
+    const rsiModel = rsiDivergenceHudModel(candles, RSI_DIVERGENCE_DEFAULTS, {
+      times: times(30),
+      timeframe: '1m',
+      bars: 20,
+      index: 29,
+    })
+    const markup = card(rsiModel, { dock: 'rsi-div' })
+    expect(markup).toContain('aria-label="RSI Divergence window"')
+    expect(markup).toContain('data-testid="osc-hud-rsi-divergence"')
+    expect(markup).toContain('RSI')
+    expect(markup).toContain('Delta')
+    expect(markup).toContain('Div')
+    expect(markup).toContain('Add the RSI Divergence pane to the chart')
   })
 })

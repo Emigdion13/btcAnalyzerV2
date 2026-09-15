@@ -24,12 +24,15 @@ import type { CmMacdValues } from './cm-ult-macd'
 import { WT_COLORS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
 import { formatPrice } from './market'
-import type { CmMacdSettings, Indicator, Timeframe, WaveTrendSettings } from './types'
+import { ta } from './indicator-runtime'
+import { detectMacdDivergences } from './macd-divergence'
+import type { Divergence } from './macd-divergence'
+import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, WaveTrendSettings } from './types'
 
-/** The two windows, keyed by the indicator kind they mirror. */
-export type OscHudKind = Extract<Indicator['kind'], 'cm-ult-macd' | 'wave-trend'>
+/** The three windows, keyed by the indicator kind they mirror. */
+export type OscHudKind = Extract<Indicator['kind'], 'cm-ult-macd' | 'wave-trend' | 'rsi-divergence'>
 
-export const OSC_HUD_KINDS: OscHudKind[] = ['cm-ult-macd', 'wave-trend']
+export const OSC_HUD_KINDS: OscHudKind[] = ['cm-ult-macd', 'wave-trend', 'rsi-divergence']
 
 /**
  * How far back a window looks, in chart minutes. Twenty is a scalper's "what is happening right
@@ -87,6 +90,15 @@ export const OSC_HUD_WIDGETS: Record<OscHudKind, OscHudWidget> = {
     visibilityKey: 'osc-hud-visible:wave-trend',
     positionKey: 'osc-hud-pos:wave-trend',
     minimizedKey: 'osc-hud-min:wave-trend',
+  },
+  'rsi-divergence': {
+    kind: 'rsi-divergence',
+    title: 'RSI Divergence',
+    button: 'RSI Div',
+    accent: '#ad91e5',
+    visibilityKey: 'osc-hud-visible:rsi-divergence',
+    positionKey: 'osc-hud-pos:rsi-divergence',
+    minimizedKey: 'osc-hud-min:rsi-divergence',
   },
 }
 
@@ -680,6 +692,195 @@ export function waveTrendHudModel(
 }
 
 /**
+ * Verdict logic for RSI Divergence:
+ * Priority: confirmed divergence on the bar, then recent divergence (within 3 bars),
+ * then overbought (>= 70), oversold (<= 30), and lastly midline momentum (>= 50 or < 50).
+ */
+export function rsiDivergenceVerdict(
+  activeRsi: number | null,
+  previousRsi: number | null,
+  activeDiv: Divergence | null,
+  recentDiv: Divergence | null,
+  currentIndex: number,
+): OscHudVerdict {
+  if (activeRsi === null)
+    return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
+  if (activeDiv) {
+    const tone = activeDiv.bullish ? 'bull' : 'bear'
+    const name = activeDiv.hidden ? 'HIDDEN' : 'REGULAR'
+    const side = activeDiv.bullish ? 'BULL' : 'BEAR'
+    return {
+      text: `${activeDiv.bullish ? '▲' : '▼'} ${name} ${side} DIVERGENCE`,
+      tone,
+      detail: `${activeDiv.label} · RSI ${activeRsi.toFixed(1)}`,
+    }
+  }
+  if (recentDiv && currentIndex - recentDiv.toIndex <= 3) {
+    const barsAgo = currentIndex - recentDiv.toIndex
+    const tone = recentDiv.bullish ? 'bull' : 'bear'
+    return {
+      text: `${recentDiv.bullish ? '▲' : '▼'} ${recentDiv.label.toUpperCase()} (${barsAgo}b ago)`,
+      tone,
+      detail: `${recentDiv.kind} · RSI ${activeRsi.toFixed(1)}`,
+    }
+  }
+  if (activeRsi >= 70) {
+    return {
+      text: '🔥 OVERBOUGHT',
+      tone: 'ob',
+      detail: `RSI ${activeRsi.toFixed(1)} ≥ 70`,
+    }
+  }
+  if (activeRsi <= 30) {
+    return {
+      text: '⚡ OVERSOLD',
+      tone: 'os',
+      detail: `RSI ${activeRsi.toFixed(1)} ≤ 30`,
+    }
+  }
+  const rising = previousRsi !== null ? activeRsi > previousRsi : null
+  if (activeRsi >= 50) {
+    return {
+      text: '▲ BULLISH MOMENTUM',
+      tone: 'bull',
+      detail: `RSI ${activeRsi.toFixed(1)} ≥ 50${rising !== null ? ` · ${rising ? 'rising' : 'falling'}` : ''}`,
+    }
+  }
+  return {
+    text: '▼ BEARISH MOMENTUM',
+    tone: 'bear',
+    detail: `RSI ${activeRsi.toFixed(1)} < 50${rising !== null ? ` · ${rising ? 'rising' : 'falling'}` : ''}`,
+  }
+}
+
+/**
+ * The RSI Divergence window: Wilder RSI line, 70/50/30 levels, divergence dots, and momentum verdict.
+ */
+export function rsiDivergenceHudModel(
+  candles: Candle[],
+  settings: { period: number; divergence: DivergenceSettings },
+  input: OscHudModelInput,
+): OscHudModel {
+  const start = windowStart(input.times.length, input.bars)
+  const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
+  const times = cut(input.times)
+  const close = candles.map((c) => c.close)
+  const fullRsi = ta.rsi(close, settings.period)
+  const fullDivs = detectMacdDivergences(candles, fullRsi, settings.divergence)
+  const rsi = finite(cut(fullRsi))
+
+  const valid = rsi.filter((v): v is number => v !== null)
+  const rawMin = valid.length ? Math.min(...valid) : 50
+  const rawMax = valid.length ? Math.max(...valid) : 50
+  const maxDev = Math.max(25, Math.abs(rawMax - 50), Math.abs(50 - rawMin))
+  const paddedDev = Math.min(50, Math.ceil(maxDev * 1.15))
+  const domain: OscHudDomain = {
+    min: Math.max(0, 50 - paddedDev),
+    max: Math.min(100, 50 + paddedDev),
+  }
+
+  const activeIndex = input.index - start
+  const at = (source: (number | null)[]) =>
+    activeIndex >= 0 && activeIndex < source.length ? (source[activeIndex] ?? null) : null
+  const activeRsi = at(rsi)
+  const previousIndex = activeIndex - 1
+  const before = (source: (number | null)[]) =>
+    previousIndex >= 0 && previousIndex < source.length ? (source[previousIndex] ?? null) : null
+  const previousRsi = before(rsi)
+
+  const activeDiv =
+    input.index >= 0 ? (fullDivs.find((d) => d.toIndex === input.index) ?? null) : null
+  const recentDiv =
+    input.index >= 0 ? (fullDivs.filter((d) => d.toIndex <= input.index).at(-1) ?? null) : null
+
+  const levels = oscHudLevels(
+    [
+      { value: 70, color: '#ef5350', label: '70', dashed: false },
+      { value: 50, color: '#6b7280', label: '50', dashed: true },
+      { value: 30, color: '#26a69a', label: '30', dashed: false },
+    ],
+    domain,
+  )
+
+  const traces: OscHudTrace[] = [
+    {
+      title: 'RSI',
+      color: '#ad91e5',
+      values: rsi,
+      width: 2,
+      style: 'line',
+      z: 2,
+    },
+  ]
+
+  const divDots = rsi.map((val, idx) => {
+    const fullIdx = start + idx
+    const match = fullDivs.find((d) => d.toIndex === fullIdx)
+    return match && val !== null ? val : null
+  })
+  if (divDots.some((v) => v !== null)) {
+    traces.push({
+      title: 'Divergence',
+      color: '#ffffff',
+      values: divDots,
+      width: 3.4,
+      style: 'dots',
+      z: 3,
+    })
+  }
+
+  const delta =
+    activeRsi !== null && previousIndex >= 0
+      ? oscHudDelta(rsi, activeIndex)
+      : { delta: null, text: null }
+
+  const divReadoutText = activeDiv
+    ? activeDiv.label
+    : recentDiv && input.index - recentDiv.toIndex <= 5
+      ? `${recentDiv.label} (${input.index - recentDiv.toIndex}b)`
+      : 'None'
+
+  const divReadoutColor = activeDiv
+    ? activeDiv.color
+    : recentDiv && input.index - recentDiv.toIndex <= 5
+      ? recentDiv.color
+      : undefined
+
+  return {
+    kind: 'rsi-divergence',
+    title: OSC_HUD_WIDGETS['rsi-divergence'].title,
+    subtitle: `RSI ${settings.period} · lookback ${settings.divergence.pivotLookback}`,
+    accent: OSC_HUD_WIDGETS['rsi-divergence'].accent,
+    times,
+    traces,
+    levels,
+    domain,
+    activeIndex: activeIndex >= 0 && activeIndex < times.length ? activeIndex : null,
+    hovered: !!input.hovered,
+    bars: times.length,
+    spanLabel: oscHudSpan(times.length, input.timeframe),
+    readouts: [
+      { label: 'RSI', value: activeRsi !== null ? activeRsi.toFixed(1) : '—', color: '#ad91e5' },
+      {
+        label: 'Delta',
+        value: delta.text ?? '—',
+        color: delta.delta !== null ? (delta.delta >= 0 ? '#26a69a' : '#ef5350') : undefined,
+        title: delta.text ? `Bar over bar: ${delta.text}` : undefined,
+      },
+      {
+        label: 'Div',
+        value: divReadoutText,
+        color: divReadoutColor,
+      },
+    ],
+    verdict: rsiDivergenceVerdict(activeRsi, previousRsi, activeDiv, recentDiv, input.index),
+    ready: rsi.some((v) => v !== null),
+    note: input.note ?? null,
+    settingsSource: input.settingsSource ?? 'defaults',
+  }
+}
+
+/**
  * Extra chart resolutions a window needs that the visible indicators do not: the CM window is
  * useful even when its indicator is switched off, and an alt-timeframe CM MACD cannot be computed
  * from chart candles at all. `requestedIndicatorTimeframes` only walks visible indicators, so the
@@ -688,7 +889,7 @@ export function waveTrendHudModel(
 export function oscHudRequestedTimeframes(
   indicators: Indicator[],
   chart: Timeframe,
-  open: Record<OscHudKind, boolean>,
+  open: Partial<Record<OscHudKind, boolean>>,
 ): Timeframe[] {
   if (!open['cm-ult-macd']) return []
   const source = indicators.find((indicator) => indicator.kind === 'cm-ult-macd')

@@ -1,6 +1,7 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
 import { calculateWaveTrend, waveTrendPlots, waveTrendSettings } from './wave-trend'
+import { rsiDivergencePlots } from './rsi-divergence'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
 import type { IndicatorContext } from './cm-ult-macd'
@@ -91,6 +92,16 @@ export const INDICATOR_CATALOG: {
     name: 'Relative Strength Index',
     short: 'RSI',
     description: 'Measure momentum and spot overbought or oversold levels.',
+    category: 'Momentum',
+    period: 14,
+    color: '#ad91e5',
+  },
+  {
+    kind: 'rsi-divergence',
+    name: 'RSI Divergence',
+    short: 'RSI Div',
+    description:
+      'Relative Strength Index (Wilder) with regular and hidden divergence detection between RSI pivots and price extremes.',
     category: 'Momentum',
     period: 14,
     color: '#ad91e5',
@@ -266,6 +277,10 @@ export function builtInPlots(
   if (kind === 'ema') return [plot(ta.ema(close, period), `EMA ${period}`)]
   if (kind === 'sma') return [plot(ta.sma(close, period), `SMA ${period}`)]
   if (kind === 'rsi') return [plot(ta.rsi(close, period), `RSI ${period}`, 'oscillator')]
+  if (kind === 'rsi-divergence') {
+    const rsi = ta.rsi(close, period)
+    return rsiDivergencePlots({ rsi }, indicator)
+  }
   if (kind === 'bb') {
     const mean = ta.sma(close, period),
       dev = ta.stdev(close, period)

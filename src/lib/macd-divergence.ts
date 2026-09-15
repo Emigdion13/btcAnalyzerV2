@@ -46,7 +46,12 @@ export function divergenceSettings(indicator: Indicator): DivergenceSettings {
     : { ...DIVERGENCE_DEFAULTS }
 }
 export function divergenceEnabled(indicator: Indicator): boolean {
-  if (indicator.kind !== 'macd' && indicator.kind !== 'cm-ult-macd') return false
+  if (
+    indicator.kind !== 'macd' &&
+    indicator.kind !== 'cm-ult-macd' &&
+    indicator.kind !== 'rsi-divergence'
+  )
+    return false
   if (!indicator.divergence) return false
   const s = divergenceSettings(indicator)
   return s.showRegular || s.showHidden

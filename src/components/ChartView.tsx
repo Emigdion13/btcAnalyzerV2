@@ -56,7 +56,12 @@ import { formatNotional } from '../../shared/whale-flow'
 import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { rsiMeterPeriod } from '../lib/rsi-hud'
 import { calculateWaveTrend, waveTrendSettings, WAVE_TREND_DEFAULTS } from '../lib/wave-trend'
-import { clampOscHudBars, cmMacdHudModel, oscHudBars, rsiDivergenceHudModel, waveTrendHudModel } from '../lib/osc-hud'
+import {
+  calculateWilliamsVixFix,
+  CM_WILLIAMS_VIX_FIX_DEFAULTS,
+  williamsVixFixSettings,
+} from '../lib/cm-williams-vix-fix'
+import { clampOscHudBars, cmMacdHudModel, oscHudBars, rsiDivergenceHudModel, waveTrendHudModel, williamsVixFixHudModel } from '../lib/osc-hud'
 import type { OscHudKind } from '../lib/osc-hud'
 import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
 import {
@@ -151,13 +156,15 @@ interface Props {
   /** Floating RSI meter. The toolbar button owns it; the RSI pane stays the indicator's job. */
   rsiHud?: boolean
   /**
-   * Floating CM_Ult_MacD_MTF and WaveTrend windows: the last twenty minutes of each, zoomed to
-   * their own scale. Like the RSI meter, the toolbar buttons own the windows and the indicators
-   * stay in the library — the windows only read the settings your chart already carries.
+   * Floating CM_Ult_MacD_MTF, WaveTrend, RSI Divergence and CM_Williams_Vix_Fix windows: the last
+   * twenty minutes of each, zoomed to their own scale. Like the RSI meter, the toolbar buttons own
+   * the windows and the indicators stay in the library — the windows only read the settings your
+   * chart already carries.
    */
   cmMacdHud?: boolean
   waveTrendHud?: boolean
   rsiDivHud?: boolean
+  vixFixHud?: boolean
   /** Closing a window from its own card is the same choice as its toolbar button. */
   onOscHudClose?: (kind: OscHudKind) => void
   /** Lets a window offer the pane whose settings it is borrowing. */
@@ -1263,12 +1270,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ? `Warming up · ${data.length}/${s.signalLength} source candles`
       : ''
   }
-  // The two floating oscillator windows. They are views, not second opinions: each reads the
+  // The floating oscillator windows. They are views, not second opinions: each reads the
   // chart's own indicator (a hidden one included, so a pane you switched off still sets the
   // lengths) and falls back to the published defaults when the chart carries none, then draws the
   // last twenty minutes of those values at their own scale.
   const cmHudIndicator = indicators.find((indicator) => indicator.kind === 'cm-ult-macd') ?? null
   const waveHudIndicator = indicators.find((indicator) => indicator.kind === 'wave-trend') ?? null
+  const vixFixHudIndicator =
+    indicators.find((indicator) => indicator.kind === 'cm-williams-vix-fix') ?? null
   const cmHudSettings = useMemo(
     () => (cmHudIndicator ? cmMacdSettings(cmHudIndicator) : CM_MACD_DEFAULTS),
     [cmHudIndicator],
@@ -1276,6 +1285,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const waveHudSettings = useMemo(
     () => (waveHudIndicator ? waveTrendSettings(waveHudIndicator) : WAVE_TREND_DEFAULTS),
     [waveHudIndicator],
+  )
+  const vixFixHudSettings = useMemo(
+    () =>
+      vixFixHudIndicator
+        ? williamsVixFixSettings(vixFixHudIndicator)
+        : CM_WILLIAMS_VIX_FIX_DEFAULTS,
+    [vixFixHudIndicator],
   )
   const candleTimes = useMemo(() => candles.map((candle) => candle.time), [candles])
   // Zoom is a per-window preference: the default is twenty minutes of the chart's own bars, and
@@ -1285,6 +1301,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   >('osc-hud-bars', {})
   const cmHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-ult-macd'])
   const waveHudBars = oscHudBars(timeframe, oscHudBarsOverride['wave-trend'])
+  const vixFixHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-williams-vix-fix'])
   const zoomOscHud = (kind: OscHudKind, delta: number) =>
     setOscHudBarsOverride((previous) => ({
       ...previous,
@@ -1365,6 +1382,34 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         : { ...RSI_DIVERGENCE_DEFAULTS.divergence },
     }),
     [rsiDivHudIndicator],
+  )
+  const vixFixHudModel = useMemo(
+    () =>
+      props.vixFixHud
+        ? williamsVixFixHudModel(
+            calculateWilliamsVixFix(candles, vixFixHudSettings),
+            vixFixHudSettings,
+            {
+              times: candleTimes,
+              timeframe,
+              bars: vixFixHudBars,
+              index: hoverIndex,
+              hovered: hovered !== null,
+              settingsSource: vixFixHudIndicator ? 'chart' : 'defaults',
+            },
+          )
+        : null,
+    [
+      props.vixFixHud,
+      candles,
+      vixFixHudSettings,
+      candleTimes,
+      timeframe,
+      vixFixHudBars,
+      hoverIndex,
+      hovered,
+      vixFixHudIndicator,
+    ],
   )
   const rsiDivHudBars = oscHudBars(timeframe, oscHudBarsOverride['rsi-divergence'])
   const rsiDivHudModel = useMemo(
@@ -3241,6 +3286,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                     ind.kind !== 'macd' &&
                     ind.kind !== 'cm-ult-macd' &&
                     ind.kind !== 'wave-trend' &&
+                    ind.kind !== 'cm-williams-vix-fix' &&
                     !(
                       ind.kind === 'custom' &&
                       customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')
@@ -3491,6 +3537,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('rsi-divergence')}
+        />
+      )}
+      {props.vixFixHud && vixFixHudModel && (
+        <OscHudCard
+          model={vixFixHudModel}
+          dock="vix-fix"
+          indicator={vixFixHudIndicator}
+          bars={vixFixHudBars}
+          onZoom={(delta) => zoomOscHud('cm-williams-vix-fix', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('cm-williams-vix-fix')}
         />
       )}
       {generated.map(({ indicator, plots }) => {

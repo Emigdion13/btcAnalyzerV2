@@ -7378,9 +7378,10 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
-/* Floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and WaveTrend, zoomed
-   to their own scale. Same furniture as the RSI meter — drag by the header, minimize, and the
-   toolbar button owns whether they exist at all — with a mini chart where the meter is. */
+/* Floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend, RSI
+   Divergence and CM_Williams_Vix_Fix, zoomed to their own scale. Same furniture as the RSI
+   meter — drag by the header, minimize, and the toolbar button owns whether they exist at
+   all — with a mini chart where the meter is. */
 /* The width drives the dock maths below: the second window sits to the LEFT of the first, so the
    pair stays in one row. Stacking them vertically would reach down into the timeframe peek
    window's corner, and a window you cannot click is worse than a window you have to drag. */
@@ -7416,6 +7417,10 @@ input[type='color']::-webkit-color-swatch {
 .osc-hud-card.dock-rsi-div {
   top: 146px;
   right: calc(var(--osc-hud-width) * 2 + 26px);
+}
+.osc-hud-card.dock-vix-fix {
+  top: 146px;
+  right: calc(var(--osc-hud-width) * 3 + 34px);
 }
 /* Minimized cards shrink to their content, so the row tightens rather than leaving a hole. */
 .osc-hud-card.is-minimized {
@@ -7731,6 +7736,10 @@ input[type='color']::-webkit-color-swatch {
   }
   .osc-hud-card.dock-rsi-div {
     top: 460px;
+    right: 6px;
+  }
+  .osc-hud-card.dock-vix-fix {
+    top: 624px;
     right: 6px;
   }
   .osc-hud-plot {
@@ -8692,6 +8701,13 @@ input[type='color']::-webkit-color-swatch {
 }
 .rsi-div-hud-toggle.active svg {
   color: #ad91e5;
+}
+.vix-fix-hud-toggle.active {
+  background: #12261c;
+  color: #4ade80;
+}
+.vix-fix-hud-toggle.active svg {
+  color: #4ade80;
 }
 @media (max-width: 1180px) {
   .peek-box {

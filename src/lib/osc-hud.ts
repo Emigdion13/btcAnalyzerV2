@@ -1,7 +1,7 @@
 /**
- * Two floating windows for the oscillators you watch all day: the last twenty minutes of
- * CM_Ult_MacD_MTF and of WaveTrend [LazyBear], drawn as their own little chart instead of
- * squeezed into a full-height pane at the bottom of the screen.
+ * Floating windows for the oscillators you watch all day: the last twenty minutes of
+ * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence and CM_Williams_Vix_Fix, drawn as
+ * their own little chart instead of squeezed into a full-height pane at the bottom of the screen.
  *
  * Everything here is the arithmetic the cards render from — which bars belong in the window, how
  * the y-scale is chosen, what the numbers and the call are for the bar the crosshair is on. No
@@ -10,9 +10,9 @@
  * Two rules shape the design:
  *
  * 1. The window is a _view of the indicator_, never a second opinion about it. Values come from
- *    `calculateCmMacd` / `calculateWaveTrend` over the chart's own candles, so a widget and a
- *    pane on the same chart can never disagree, and the settings the pane uses are the settings
- *    the widget uses.
+ *    `calculateCmMacd` / `calculateWaveTrend` / `calculateWilliamsVixFix` over the chart's own
+ *    candles, so a widget and a pane on the same chart can never disagree, and the settings the
+ *    pane uses are the settings the widget uses.
  * 2. "Zoomed" is an autoscaling rule, not a fixed scale: the y range is the largest absolute value
  *    in the window, padded. Oscillators are read around zero, so the scale is symmetric about it —
  *    that keeps the histogram's sign honest at any zoom, and the WaveTrend 53/60 levels walk into
@@ -23,16 +23,26 @@ import { CM_COLORS, cmHistogramColor, cmMacdSettings } from './cm-ult-macd'
 import type { CmMacdValues } from './cm-ult-macd'
 import { WT_COLORS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
+import { WVF_COLORS } from './cm-williams-vix-fix'
+import type { WilliamsVixFixValues } from './cm-williams-vix-fix'
 import { formatPrice } from './market'
 import { ta } from './indicator-runtime'
 import { detectMacdDivergences } from './macd-divergence'
 import type { Divergence } from './macd-divergence'
-import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, WaveTrendSettings } from './types'
+import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, WaveTrendSettings, WilliamsVixFixSettings } from './types'
 
-/** The three windows, keyed by the indicator kind they mirror. */
-export type OscHudKind = Extract<Indicator['kind'], 'cm-ult-macd' | 'wave-trend' | 'rsi-divergence'>
+/** The four windows, keyed by the indicator kind they mirror. */
+export type OscHudKind = Extract<
+  Indicator['kind'],
+  'cm-ult-macd' | 'wave-trend' | 'rsi-divergence' | 'cm-williams-vix-fix'
+>
 
-export const OSC_HUD_KINDS: OscHudKind[] = ['cm-ult-macd', 'wave-trend', 'rsi-divergence']
+export const OSC_HUD_KINDS: OscHudKind[] = [
+  'cm-ult-macd',
+  'wave-trend',
+  'rsi-divergence',
+  'cm-williams-vix-fix',
+]
 
 /**
  * How far back a window looks, in chart minutes. Twenty is a scalper's "what is happening right
@@ -52,7 +62,7 @@ export const OSC_HUD_MAX_BARS = 48
 /** One step on the zoom stepper. Small, because a 20-bar window is already tight. */
 export const OSC_HUD_BAR_STEP = 4
 
-/** Both windows start open: they are the reason this widget set exists, and one keystroke hides them. */
+/** Every window starts open: they are the reason this widget set exists, and one keystroke hides them. */
 export const OSC_HUD_DEFAULT_VISIBLE = true
 
 /** Share of the window's own magnitude left as air above and below the extremes. */
@@ -99,6 +109,15 @@ export const OSC_HUD_WIDGETS: Record<OscHudKind, OscHudWidget> = {
     visibilityKey: 'osc-hud-visible:rsi-divergence',
     positionKey: 'osc-hud-pos:rsi-divergence',
     minimizedKey: 'osc-hud-min:rsi-divergence',
+  },
+  'cm-williams-vix-fix': {
+    kind: 'cm-williams-vix-fix',
+    title: 'CM_Williams_Vix_Fix',
+    button: 'VIX Fix',
+    accent: '#4ade80',
+    visibilityKey: 'osc-hud-visible:cm-williams-vix-fix',
+    positionKey: 'osc-hud-pos:cm-williams-vix-fix',
+    minimizedKey: 'osc-hud-min:cm-williams-vix-fix',
   },
 }
 
@@ -875,6 +894,173 @@ export function rsiDivergenceHudModel(
     ],
     verdict: rsiDivergenceVerdict(activeRsi, previousRsi, activeDiv, recentDiv, input.index),
     ready: rsi.some((v) => v !== null),
+    note: input.note ?? null,
+    settingsSource: input.settingsSource ?? 'defaults',
+  }
+}
+
+/**
+ * ChrisMoody's call: a lime bar — WVF at or above its Bollinger upper band or its percentile
+ * range-high — is the fear spike the indicator exists to find. Below that, closeness to the
+ * nearest trigger is the fact worth naming, and anything else is a quiet tape.
+ */
+export function williamsVixFixVerdict(
+  wvf: number | null,
+  upperBand: number | null,
+  rangeHigh: number | null,
+  previousWvf: number | null,
+  green: boolean,
+  previousGreen: boolean | null,
+): OscHudVerdict {
+  if (wvf === null)
+    return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
+  const fixed = (value: number) => value.toFixed(2)
+  if (green) {
+    const triggers: string[] = []
+    if (upperBand !== null && wvf >= upperBand) triggers.push(`upper ${fixed(upperBand)}`)
+    if (rangeHigh !== null && wvf >= rangeHigh) triggers.push(`range-high ${fixed(rangeHigh)}`)
+    const detail = triggers.length ? `WVF ${fixed(wvf)} ≥ ${triggers.join(' + ')}` : `WVF ${fixed(wvf)}`
+    if (previousGreen === true) return { text: '▲ BOTTOM SIGNAL HOLDS', tone: 'bull', detail }
+    return { text: '▲ POTENTIAL BOTTOM', tone: 'bull', detail }
+  }
+  const triggers: { name: string; value: number }[] = []
+  if (upperBand !== null) triggers.push({ name: 'upper', value: upperBand })
+  if (rangeHigh !== null) triggers.push({ name: 'range-high', value: rangeHigh })
+  const nearest = triggers.length
+    ? triggers.reduce((a, b) => (a.value <= b.value ? a : b))
+    : null
+  const direction =
+    previousWvf === null
+      ? ''
+      : wvf > previousWvf
+        ? ' · rising'
+        : wvf < previousWvf
+          ? ' · falling'
+          : ' · level'
+  if (!nearest)
+    return {
+      text: '— QUIET',
+      tone: 'flat',
+      detail: `WVF ${fixed(wvf)} · bands warming up${direction}`,
+    }
+  // A non-green bar sits below every trigger, and WVF never goes negative, so the nearest
+  // trigger is always positive here and the ratio is the honest distance to a spike.
+  const ratio = nearest.value > 0 ? wvf / nearest.value : 1
+  if (ratio >= 0.85)
+    return {
+      text: '⚠ NEAR TRIGGER',
+      tone: 'os',
+      detail: `WVF ${fixed(wvf)} · ${Math.round(ratio * 100)}% of ${nearest.name} ${fixed(nearest.value)}`,
+    }
+  return {
+    text: '— QUIET',
+    tone: 'flat',
+    detail: `WVF ${fixed(wvf)} · trigger ${nearest.name} ${fixed(nearest.value)}${direction}`,
+  }
+}
+
+/**
+ * The Williams VIX Fix window: the lime/gray fear histogram rising from zero, with the Bollinger
+ * upper band and the percentile range-high exactly when the pane draws them — the same toggles,
+ * the same values. The scale is one-sided: WVF lives at and above zero, so a symmetric
+ * zero-centred window would waste half the card on values the series never takes. The range-low
+ * stays out of the window: no bottom signal ever references it.
+ */
+export function williamsVixFixHudModel(
+  values: WilliamsVixFixValues,
+  settings: WilliamsVixFixSettings,
+  input: OscHudModelInput,
+): OscHudModel {
+  const start = windowStart(input.times.length, input.bars)
+  const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
+  const times = cut(input.times)
+  const wvf = finite(cut(values.wvf))
+  const upperBand = finite(cut(values.upperBand))
+  const rangeHigh = finite(cut(values.rangeHigh))
+  const green = cut(values.isGreen)
+  let bound = 0
+  for (const series of [wvf, upperBand, rangeHigh]) {
+    for (const value of series) {
+      if (value !== null && Number.isFinite(value)) bound = Math.max(bound, value)
+    }
+  }
+  if (!(bound > 0)) bound = 1
+  const domain: OscHudDomain = { min: 0, max: bound * (1 + OSC_HUD_EDGE_PADDING) }
+
+  const activeIndex = input.index - start
+  const at = (source: (number | null)[]) =>
+    activeIndex >= 0 && activeIndex < source.length ? (source[activeIndex] ?? null) : null
+  const activeWvf = at(wvf)
+  const activeUpper = at(upperBand)
+  const activeRange = at(rangeHigh)
+  const activeGreen =
+    activeIndex >= 0 && activeIndex < green.length ? (green[activeIndex] ?? false) : false
+  // The previous bar can sit outside the window, so it is read from the full series.
+  const rawPreviousWvf = input.index > 0 ? values.wvf[input.index - 1] : null
+  const previousWvf =
+    rawPreviousWvf !== null && rawPreviousWvf !== undefined && Number.isFinite(rawPreviousWvf)
+      ? rawPreviousWvf
+      : null
+  const previousGreen = input.index > 0 ? (values.isGreen[input.index - 1] ?? null) : null
+
+  const traces: OscHudTrace[] = []
+  if (settings.showStdDevLine) {
+    traces.push({
+      title: 'Upper Band',
+      color: WVF_COLORS.aqua,
+      values: upperBand,
+      width: 1.5,
+      style: 'line',
+      z: 1,
+    })
+  }
+  if (settings.showHighRange) {
+    traces.push({
+      title: 'Range High',
+      color: WVF_COLORS.orange,
+      values: rangeHigh,
+      width: 1.5,
+      style: 'line',
+      z: 1,
+    })
+  }
+
+  const fixed = (value: number | null) => (value === null ? '—' : value.toFixed(2))
+  return {
+    kind: 'cm-williams-vix-fix',
+    title: OSC_HUD_WIDGETS['cm-williams-vix-fix'].title,
+    subtitle: `WVF (${settings.pd}, ${settings.bbl}, ${settings.mult}, ${settings.lb}, ${settings.ph}, ${settings.pl})`,
+    accent: OSC_HUD_WIDGETS['cm-williams-vix-fix'].accent,
+    times,
+    traces,
+    histogram: {
+      values: wvf,
+      colors: green.map((isGreen) => (isGreen ? WVF_COLORS.lime : WVF_COLORS.gray)),
+    },
+    levels: oscHudLevels([{ value: 0, color: WVF_COLORS.gray, label: '0', dashed: false }], domain),
+    domain,
+    activeIndex: activeIndex >= 0 && activeIndex < times.length ? activeIndex : null,
+    hovered: !!input.hovered,
+    bars: times.length,
+    spanLabel: oscHudSpan(times.length, input.timeframe),
+    readouts: [
+      {
+        label: 'WVF',
+        value: fixed(activeWvf),
+        color: activeWvf === null ? undefined : activeGreen ? WVF_COLORS.lime : WVF_COLORS.gray,
+      },
+      { label: 'Upper', value: fixed(activeUpper), color: WVF_COLORS.aqua },
+      { label: 'RangeHi', value: fixed(activeRange), color: WVF_COLORS.orange },
+    ],
+    verdict: williamsVixFixVerdict(
+      activeWvf,
+      activeUpper,
+      activeRange,
+      previousWvf,
+      activeGreen,
+      previousGreen,
+    ),
+    ready: wvf.some((value) => value !== null),
     note: input.note ?? null,
     settingsSource: input.settingsSource ?? 'defaults',
   }

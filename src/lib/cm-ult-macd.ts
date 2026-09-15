@@ -6,6 +6,7 @@
 import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase'
 import { pineEma, ta } from './indicator-runtime'
 import { waveTrendIndicatorLabel } from './wave-trend'
+import { williamsVixFixIndicatorLabel } from './cm-williams-vix-fix'
 import { rsiDivergenceIndicatorLabel } from './rsi-divergence'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
@@ -106,6 +107,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
   if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
   if (indicator.kind === 'wave-trend') return waveTrendIndicatorLabel(indicator)
+  if (indicator.kind === 'cm-williams-vix-fix') return williamsVixFixIndicatorLabel(indicator)
   if (indicator.kind === 'rsi-divergence') return rsiDivergenceIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`
 }

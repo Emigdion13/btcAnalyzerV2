@@ -18,6 +18,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Flame,
   Focus,
   Gauge,
   Grid2X2,
@@ -91,6 +92,7 @@ import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
+import { CM_WILLIAMS_VIX_FIX_DEFAULTS } from './lib/cm-williams-vix-fix'
 import { WAVE_TREND_DEFAULTS } from './lib/wave-trend'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
@@ -293,9 +295,10 @@ export default function App() {
     null,
   )
   const rsiMeterOpen = rsiMeterVisible(rsiMeterPreference)
-  // The two floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and of
-  // WaveTrend, zoomed to their own scale instead of a full-height pane. Same contract as the RSI
-  // meter — null means "never chosen" and a real choice from the toolbar wins over the default.
+  // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
+  // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
+  // pane. Same contract as the RSI meter — null means "never chosen" and a real choice from the
+  // toolbar wins over the default.
   const [cmHudPreference, setCmHudPreference] = useLocalState<boolean | null>(
     OSC_HUD_WIDGETS['cm-ult-macd'].visibilityKey,
     null,
@@ -308,12 +311,22 @@ export default function App() {
     OSC_HUD_WIDGETS['rsi-divergence'].visibilityKey,
     null,
   )
+  const [vixFixHudPreference, setVixFixHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['cm-williams-vix-fix'].visibilityKey,
+    null,
+  )
   const cmHudOpen = oscHudVisible(cmHudPreference)
   const waveHudOpen = oscHudVisible(waveHudPreference)
   const rsiDivHudOpen = oscHudVisible(rsiDivHudPreference)
+  const vixFixHudOpen = oscHudVisible(vixFixHudPreference)
   const oscHudOpen = useMemo(
-    () => ({ 'cm-ult-macd': cmHudOpen, 'wave-trend': waveHudOpen, 'rsi-divergence': rsiDivHudOpen }),
-    [cmHudOpen, waveHudOpen, rsiDivHudOpen],
+    () => ({
+      'cm-ult-macd': cmHudOpen,
+      'wave-trend': waveHudOpen,
+      'rsi-divergence': rsiDivHudOpen,
+      'cm-williams-vix-fix': vixFixHudOpen,
+    }),
+    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen],
   )
   const toggleOscHud = useCallback(
     (kind: OscHudKind) => {
@@ -322,10 +335,12 @@ export default function App() {
           ? setCmHudPreference
           : kind === 'wave-trend'
             ? setWaveHudPreference
-            : setRsiDivHudPreference
+            : kind === 'rsi-divergence'
+              ? setRsiDivHudPreference
+              : setVixFixHudPreference
       set((current) => !oscHudVisible(current))
     },
-    [setCmHudPreference, setWaveHudPreference, setRsiDivHudPreference],
+    [setCmHudPreference, setWaveHudPreference, setRsiDivHudPreference, setVixFixHudPreference],
   )
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
@@ -915,9 +930,11 @@ export default function App() {
                       ? 'WaveTrend [LazyBear]'
                       : item.kind === 'rsi-divergence'
                         ? 'RSI Divergence'
-                        : item.short === 'VOL'
-                          ? 'Volume'
-                          : item.short,
+                        : item.kind === 'cm-williams-vix-fix'
+                          ? 'CM_Williams_Vix_Fix'
+                          : item.short === 'VOL'
+                            ? 'Volume'
+                            : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -936,6 +953,9 @@ export default function App() {
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
         ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
         ...(kind === 'wave-trend' ? { waveTrend: { ...WAVE_TREND_DEFAULTS } } : {}),
+        ...(kind === 'cm-williams-vix-fix'
+          ? { williamsVixFix: { ...CM_WILLIAMS_VIX_FIX_DEFAULTS } }
+          : {}),
       },
     ])
     notify(`${item.name} added to chart.`)
@@ -1343,6 +1363,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleOscHud('rsi-divergence')
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        cmd.toggleOscHud('cm-williams-vix-fix')
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1478,6 +1502,16 @@ export default function App() {
                   }}
                 >
                   {rsiDivHudOpen ? 'Hide RSI Divergence window' : 'Show RSI Divergence window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Flame}
+                  selected={vixFixHudOpen}
+                  onClick={() => {
+                    toggleOscHud('cm-williams-vix-fix')
+                    close()
+                  }}
+                >
+                  {vixFixHudOpen ? 'Hide VIX Fix window' : 'Show VIX Fix window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -1734,6 +1768,15 @@ export default function App() {
               <TrendingUp size={17} strokeWidth={1.5} />
               <span>RSI Div</span>
             </button>
+            <button
+              className={`toolbar-button osc-hud-toggle vix-fix-hud-toggle ${vixFixHudOpen ? 'active' : ''}`}
+              onClick={() => toggleOscHud('cm-williams-vix-fix')}
+              title="Floating CM_Williams_Vix_Fix window — the last 20 minutes, zoomed (Alt V)"
+              aria-pressed={vixFixHudOpen}
+            >
+              <Flame size={17} strokeWidth={1.5} />
+              <span>VIX Fix</span>
+            </button>
             <div className="chart-toolbar-right">
               <span className="toolbar-separator" />
               <IconButton
@@ -1868,6 +1911,7 @@ export default function App() {
                   cmMacdHud={cmHudOpen}
                   waveTrendHud={waveHudOpen}
                   rsiDivHud={rsiDivHudOpen}
+                  vixFixHud={vixFixHudOpen}
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}

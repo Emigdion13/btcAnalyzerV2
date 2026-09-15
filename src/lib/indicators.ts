@@ -1,6 +1,11 @@
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
 import { calculateWaveTrend, waveTrendPlots, waveTrendSettings } from './wave-trend'
+import {
+  calculateWilliamsVixFix,
+  williamsVixFixPlots,
+  williamsVixFixSettings,
+} from './cm-williams-vix-fix'
 import { rsiDivergencePlots } from './rsi-divergence'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
@@ -187,6 +192,16 @@ export const INDICATOR_CATALOG: {
     color: '#008000',
   },
   {
+    kind: 'cm-williams-vix-fix',
+    name: 'CM_Williams_Vix_Fix',
+    short: 'VIX Fix',
+    description:
+      'ChrisMoody’s market-bottom finder: Larry Williams’ synthetic VIX as a lime/gray fear histogram (22), with the Bollinger upper band and the percentile range lines. Defaults (22, 20, 2, 50, 0.85, 1.01).',
+    category: 'Volatility',
+    period: 22,
+    color: '#00ff00',
+  },
+  {
     kind: 'chile-reversal',
     name: 'Chile Reversal',
     short: 'Chile Reversal',
@@ -236,6 +251,10 @@ export function builtInPlots(
   if (indicator.kind === 'wave-trend') {
     const settings = waveTrendSettings(indicator)
     return waveTrendPlots(calculateWaveTrend(candles, settings), settings)
+  }
+  if (indicator.kind === 'cm-williams-vix-fix') {
+    const settings = williamsVixFixSettings(indicator)
+    return williamsVixFixPlots(calculateWilliamsVixFix(candles, settings), settings)
   }
   if (indicator.kind === 'coinbase-strike') {
     // The active strike is a native dotted price-scale marker in ChartView, not a historical

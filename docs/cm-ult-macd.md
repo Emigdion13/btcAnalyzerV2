@@ -8,6 +8,14 @@ New workspaces include the indicator. Existing saved workspaces are not overwrit
 
 The original default title is **CM_Ult_MacD_MTF (60, 12, 26, 9)**. **60 does not, by itself, force a one-hour calculation.** It is the stored alternate-resolution input. The original **Use Current Chart Resolution?** switch defaults to **checked**. Uncheck it and leave **60 · 1 hour** selected to calculate a fixed hourly MACD on, for example, a 5m or 15m chart. The pane badge explicitly shows the effective resolution.
 
+**The floating CM MACD window** (toolbar **CM MACD**, or **Alt M**) is a view of the same
+calculation, not a second one: the window shows the last twenty minutes of the chart's bars at the
+lengths, resolution switch and colour switches of the indicator on the chart — or the published
+defaults when the chart carries none, in which case **Add the pane** on the window is what makes
+them editable. `security()` semantics are unchanged there, so an alternate-resolution window shows
+the projected value per chart bar, exactly like the pane, and it says so when its source feed has no
+candles yet.
+
 | Original input                                    | Default | Behavior                                                                    |
 | ------------------------------------------------- | ------- | --------------------------------------------------------------------------- |
 | Use Current Chart Resolution?                     | Checked | Follow the price chart’s resolution                                         |

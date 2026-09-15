@@ -4415,13 +4415,15 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
   .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span {
+  .chart-toolbar .rsi-meter-toggle > span,
+  .chart-toolbar .osc-hud-toggle > span {
     display: none;
   }
   .alert-toolbar-button,
   .replay-button,
   .peek-toggle,
-  .rsi-meter-toggle {
+  .rsi-meter-toggle,
+  .osc-hud-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .toolbar-separator:first-child {
@@ -4534,13 +4536,15 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar:has(+ .chart-workspace-body) .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
   .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span {
+  .chart-toolbar .rsi-meter-toggle > span,
+  .chart-toolbar .osc-hud-toggle > span {
     display: inline;
   }
   .alert-toolbar-button,
   .replay-button,
   .peek-toggle,
-  .rsi-meter-toggle {
+  .rsi-meter-toggle,
+  .osc-hud-toggle {
     padding: 0 6px !important;
   }
   .editor-inspiration {
@@ -4734,11 +4738,13 @@ input[type='color']::-webkit-color-swatch {
   .chart-toolbar .alert-toolbar-button > span,
   .chart-toolbar .replay-button > span,
   .chart-toolbar .peek-toggle > span,
-  .chart-toolbar .rsi-meter-toggle > span {
+  .chart-toolbar .rsi-meter-toggle > span,
+  .chart-toolbar .osc-hud-toggle > span {
     display: none !important;
   }
   .chart-toolbar .peek-toggle,
-  .chart-toolbar .rsi-meter-toggle {
+  .chart-toolbar .rsi-meter-toggle,
+  .chart-toolbar .osc-hud-toggle {
     padding: 0 4px !important;
   }
   .chart-toolbar-right > .icon-button:nth-child(2),
@@ -5049,7 +5055,8 @@ input[type='color']::-webkit-color-swatch {
   /* The meter stays reachable from the workspace menu: this row cannot take another
      button without overflowing the viewport. */
   .chart-toolbar .alert-toolbar-button,
-  .chart-toolbar .rsi-meter-toggle {
+  .chart-toolbar .rsi-meter-toggle,
+  .chart-toolbar .osc-hud-toggle {
     display: none;
   }
   .chart-toolbar .replay-button,
@@ -7371,6 +7378,361 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
+/* Floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and WaveTrend, zoomed
+   to their own scale. Same furniture as the RSI meter — drag by the header, minimize, and the
+   toolbar button owns whether they exist at all — with a mini chart where the meter is. */
+/* The width drives the dock maths below: the second window sits to the LEFT of the first, so the
+   pair stays in one row. Stacking them vertically would reach down into the timeframe peek
+   window's corner, and a window you cannot click is worse than a window you have to drag. */
+.osc-hud-card {
+  --osc-hud-width: 288px;
+  position: absolute;
+  z-index: 6;
+  width: var(--osc-hud-width);
+  padding: 7px 9px 8px;
+  background: rgba(14, 19, 28, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(80, 95, 115, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  color: var(--text);
+  user-select: none;
+  transition:
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+/* Docked under the RSI meter, which owns the strip above (top: 34px, ~106px tall). */
+.osc-hud-card.dock-cm {
+  top: 146px;
+  right: 10px;
+}
+.osc-hud-card.dock-wave {
+  top: 146px;
+  right: calc(var(--osc-hud-width) + 18px);
+}
+/* Minimized cards shrink to their content, so the row tightens rather than leaving a hole. */
+.osc-hud-card.is-minimized {
+  width: auto;
+  padding: 5px 8px;
+}
+.osc-hud-card.is-dragging {
+  cursor: grabbing;
+  transition: none;
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.65),
+    0 0 20px rgba(144, 182, 255, 0.16);
+}
+/* The frame answers the call the indicator is making, the way the RSI meter's does. */
+.osc-hud-card.is-ob {
+  border-color: rgba(237, 103, 115, 0.6);
+  box-shadow:
+    0 0 16px rgba(237, 103, 115, 0.22),
+    inset 0 0 12px rgba(237, 103, 115, 0.07),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.osc-hud-card.is-os {
+  border-color: rgba(43, 185, 155, 0.6);
+  box-shadow:
+    0 0 16px rgba(43, 185, 155, 0.22),
+    inset 0 0 12px rgba(43, 185, 155, 0.07),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.osc-hud-card.is-bull {
+  border-color: rgba(185, 238, 130, 0.4);
+}
+.osc-hud-card.is-bear {
+  border-color: rgba(245, 166, 35, 0.4);
+}
+
+.osc-hud-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.osc-hud-grip {
+  flex-shrink: 0;
+  color: #556274;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.osc-hud-card:hover .osc-hud-grip {
+  opacity: 1;
+}
+.osc-hud-card.is-dragging .osc-hud-grip {
+  cursor: grabbing;
+  color: #90b6ff;
+}
+.osc-hud-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.osc-hud-card.is-ob .osc-hud-dot,
+.osc-hud-card.is-os .osc-hud-dot {
+  animation: rsi-pulse 1.6s infinite;
+}
+.osc-hud-title {
+  /* Long titles ellipsize instead of pushing the window controls out of the card. */
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #c9d5e3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.osc-hud-tag {
+  flex-shrink: 0;
+  font-size: 7.5px;
+  font-weight: 700;
+  padding: 1px 3.5px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+}
+.osc-hud-tag.is-live {
+  background: rgba(43, 185, 155, 0.18);
+  color: #2bb99b;
+}
+.osc-hud-tag.is-bar {
+  background: rgba(144, 182, 255, 0.18);
+  color: #90b6ff;
+}
+.osc-hud-head-space {
+  margin-left: auto;
+}
+.osc-hud-button {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 3px;
+  color: #728094;
+  transition: all 0.15s;
+}
+.osc-hud-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d9e2;
+}
+.osc-hud-button.is-close:hover {
+  color: #ed6773;
+}
+
+.osc-hud-sub {
+  margin: 1px 0 2px;
+  font-size: 8px;
+  letter-spacing: 0.2px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.osc-hud-plot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: stretch;
+}
+.osc-hud-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.osc-hud-cursor line {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.osc-hud-line {
+  shape-rendering: geometricPrecision;
+}
+.osc-hud-axis {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 8px;
+  line-height: 1.3;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.osc-hud-axis-mark {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgba(144, 182, 255, 0.14);
+  color: #cddcf3;
+  font-size: 8.5px;
+}
+.osc-hud-empty {
+  margin: 6px 0;
+  font-size: 9px;
+  color: var(--dim);
+}
+
+.osc-hud-readouts {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.osc-hud-readout {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.osc-hud-readout small {
+  font-size: 7px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.osc-hud-readout b {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.osc-hud-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+.osc-hud-verdict {
+  flex: 1;
+  min-width: 0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-align: center;
+  padding: 2.5px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.osc-hud-verdict.tone-bull,
+.osc-hud-min-verdict.tone-bull {
+  background: rgba(185, 238, 130, 0.14);
+  color: #b9ee82;
+}
+.osc-hud-verdict.tone-bear,
+.osc-hud-min-verdict.tone-bear {
+  background: rgba(245, 166, 35, 0.14);
+  color: #f5a623;
+}
+.osc-hud-verdict.tone-ob,
+.osc-hud-min-verdict.tone-ob {
+  background: rgba(237, 103, 115, 0.18);
+  color: #ed6773;
+}
+.osc-hud-verdict.tone-os,
+.osc-hud-min-verdict.tone-os {
+  background: rgba(43, 185, 155, 0.18);
+  color: #2bb99b;
+}
+.osc-hud-verdict.tone-flat,
+.osc-hud-min-verdict.tone-flat {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+.osc-hud-zoom {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--dim);
+}
+.osc-hud-zoom button {
+  display: flex;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--dim);
+}
+.osc-hud-zoom button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.osc-hud-min-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding-left: 16px;
+}
+.osc-hud-min-value {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.osc-hud-min-verdict {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Narrower and shorter viewports get a tighter pair; the mini chart scales with the card, so
+   shrinking the width shrinks the plot too and the row keeps clearing the peek window. */
+@media (max-height: 900px), (max-width: 1180px) {
+  .osc-hud-card {
+    --osc-hud-width: 250px;
+  }
+}
+@media (max-height: 760px), (max-width: 1000px) {
+  .osc-hud-card {
+    --osc-hud-width: 214px;
+    font-size: 9.5px;
+  }
+  .osc-hud-plot {
+    grid-template-columns: minmax(0, 1fr) 38px;
+    gap: 6px;
+  }
+}
+@media (max-width: 720px) {
+  /* One card per row from here down, because two 200px windows over a phone chart is not a view.
+     The peek window is closed by default at this width, so the stack has the room to itself. */
+  .osc-hud-card {
+    --osc-hud-width: min(206px, calc(100% - 12px));
+  }
+  .osc-hud-card.dock-cm {
+    top: 132px;
+    right: 6px;
+  }
+  .osc-hud-card.dock-wave {
+    top: 296px;
+    right: 6px;
+  }
+  .osc-hud-plot {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .osc-hud-axis {
+    display: none;
+  }
+}
+
 /* Floating whale-flow readout: transient large-sweep detection on the charted product. */
 .whale-box {
   position: fixed;
@@ -8300,6 +8662,21 @@ input[type='color']::-webkit-color-swatch {
 }
 .rsi-meter-toggle.active svg {
   color: #c4b1fd;
+}
+/* Same for the two oscillator windows, each in its indicator's colour. */
+.cm-hud-toggle.active {
+  background: #1c2418;
+  color: #b8e88a;
+}
+.cm-hud-toggle.active svg {
+  color: #b8e88a;
+}
+.wave-hud-toggle.active {
+  background: #16212f;
+  color: #8fb6ff;
+}
+.wave-hud-toggle.active svg {
+  color: #8fb6ff;
 }
 @media (max-width: 1180px) {
   .peek-box {

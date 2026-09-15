@@ -1,0 +1,180 @@
+import { expect, test } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
+
+/**
+ * The two floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and of
+ * WaveTrend [LazyBear], zoomed to their own scale instead of living in a full-height pane.
+ *
+ * Demo mode is deliberate — its candles are generated locally, so the windows' bars, numbers and
+ * shapes stay deterministic without touching the exchange.
+ */
+const CM_WINDOW = 'CM_Ult_MacD_MTF window'
+const WAVE_WINDOW = 'WaveTrend [LazyBear] window'
+
+async function openDemoChart(page: Page) {
+  await page.goto('/?source=demo&interval=1m')
+  await expect(page.locator('canvas').first()).toBeVisible()
+}
+
+function cmWindow(page: Page): Locator {
+  return page.getByRole('region', { name: CM_WINDOW })
+}
+function waveWindow(page: Page): Locator {
+  return page.getByRole('region', { name: WAVE_WINDOW })
+}
+
+/** The oscillator pane a window borrows its settings from, when it is on the chart. */
+function pane(page: Page, kind: string) {
+  return page.locator(`.oscillator-legend[data-indicator="${kind}"]`)
+}
+
+test('both windows open on a fresh chart and show twenty minutes of bars', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await openDemoChart(page)
+  const cm = cmWindow(page)
+  const wave = waveWindow(page)
+
+  await expect(cm).toBeVisible()
+  await expect(wave).toBeVisible()
+  // A 1m chart: twenty bars is exactly the twenty minutes that was asked for.
+  await expect(cm).toContainText('20 bars')
+  await expect(cm).toContainText('20 min')
+  await expect(wave).toContainText('20 bars / 20 min')
+
+  // Zoomed, and honest about where the settings come from: CM_Ult_MacD_MTF ships on a new
+  // workspace, so its window reads that indicator; WaveTrend does not, so it says it is on
+  // defaults and offers the pane.
+  await expect(cm).toContainText('your indicator')
+  await expect(wave).toContainText('default settings')
+  await expect(
+    wave.getByRole('button', { name: 'Add the WaveTrend [LazyBear] pane to the chart' }),
+  ).toBeVisible()
+
+  // The mini chart is drawn, not described. Counts rather than visibility on purpose: a flat
+  // stretch of an oscillator is a zero-height bounding box, and a zero-height box is what
+  // Playwright calls invisible — so "it painted" is the claim, and "it painted every bar" is the
+  // proof, while a NaN coordinate still fails the shape below.
+  await expect(cm.locator('.osc-hud-histogram rect')).toHaveCount(20)
+  await expect(cm.locator('.osc-hud-svg polyline')).toHaveCount(2)
+  await expect(wave.locator('.osc-hud-svg polyline')).toHaveCount(2)
+  await expect(wave.locator('.osc-hud-svg path')).toHaveCount(1)
+  await expect(cm.locator('.osc-hud-svg polyline').first()).not.toHaveAttribute(
+    'points',
+    /NaN|undefined/,
+  )
+  await expect(wave.locator('.osc-hud-svg polyline').first()).not.toHaveAttribute(
+    'points',
+    /NaN|undefined/,
+  )
+  await expect(cm.locator('.osc-hud-verdict')).toContainText(
+    /CROSS|ABOVE SIGNAL|BELOW SIGNAL|WARMING/,
+  )
+  expect(errors).toEqual([])
+})
+
+test('each toolbar button owns its window, remembers the choice, and leaves the pane alone', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await openDemoChart(page)
+  const cmToggle = page.locator('.toolbar-button.cm-hud-toggle')
+  const waveToggle = page.locator('.toolbar-button.wave-hud-toggle')
+  await expect(cmToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(waveToggle).toHaveAttribute('aria-pressed', 'true')
+
+  await cmToggle.click()
+  await expect(cmWindow(page)).toBeHidden()
+  // The window is a view: closing it must not touch the indicator it reads.
+  await expect(pane(page, 'cm-ult-macd')).toBeVisible()
+  // …and not the other window either.
+  await expect(waveWindow(page)).toBeVisible()
+
+  await page.reload()
+  await expect(cmWindow(page)).toBeHidden()
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('atlas.v1.osc-hud-visible:cm-ult-macd')!),
+    ),
+  ).toBe(false)
+
+  await cmToggle.click()
+  await expect(cmWindow(page)).toBeVisible()
+  await expect(cmWindow(page)).toContainText('20 bars')
+
+  // Closing from the card itself is the same choice as the button, not a second preference.
+  await waveWindow(page).getByRole('button', { name: 'Hide WaveTrend [LazyBear] window' }).click()
+  await expect(waveWindow(page)).toBeHidden()
+  await expect(waveToggle).toHaveAttribute('aria-pressed', 'false')
+  expect(errors).toEqual([])
+})
+
+test('the zoom stepper widens one window without touching the other, and is remembered', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await openDemoChart(page)
+  const cm = cmWindow(page)
+  await cm.getByRole('button', { name: 'More bars of CM_Ult_MacD_MTF in the window' }).click()
+  await expect(cm).toContainText('24 bars')
+  await expect(waveWindow(page)).toContainText('20 bars')
+
+  await cm.getByRole('button', { name: 'Fewer bars of CM_Ult_MacD_MTF in the window' }).click()
+  await cm.getByRole('button', { name: 'Fewer bars of CM_Ult_MacD_MTF in the window' }).click()
+  await expect(cm).toContainText('16 bars')
+  await expect(cm).toContainText('16 min')
+  // The floor keeps a readable window: eight bars is as far as it goes, and the button says so.
+  for (let i = 0; i < 4; i++) {
+    await cm.getByRole('button', { name: 'Fewer bars of CM_Ult_MacD_MTF in the window' }).click()
+  }
+  await expect(cm.locator('.osc-hud-zoom button').first()).toBeDisabled()
+  await expect(cm).toContainText('8 bars')
+
+  await page.reload()
+  await expect(cmWindow(page)).toContainText('8 bars')
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('atlas.v1.osc-hud-bars')!)),
+  ).toEqual({ 'cm-ult-macd': 8 })
+  expect(errors).toEqual([])
+})
+
+test('minimizing, dragging and adding the pane all behave like furniture you own', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await openDemoChart(page)
+  const wave = waveWindow(page)
+
+  // Minimized: the chart goes, the call stays, and the choice survives a reload.
+  await wave.getByRole('button', { name: 'Minimize WaveTrend [LazyBear] window' }).click()
+  await expect(wave.locator('.osc-hud-plot')).toHaveCount(0)
+  await expect(wave.locator('.osc-hud-min-row')).toBeVisible()
+  await page.reload()
+  await expect(waveWindow(page).locator('.osc-hud-min-row')).toBeVisible()
+  await waveWindow(page).getByRole('button', { name: 'Expand WaveTrend [LazyBear] window' }).click()
+  await expect(waveWindow(page).locator('.osc-hud-svg')).toBeVisible()
+
+  // Dragging the header moves the window, and it stays where it was put.
+  const before = await wave.boundingBox()
+  const header = wave.locator('.osc-hud-head')
+  const from = await header.boundingBox()
+  await page.mouse.move(from!.x + 20, from!.y + from!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from!.x - 180, from!.y + 90, { steps: 8 })
+  await page.mouse.up()
+  const after = await wave.boundingBox()
+  expect(after!.x).toBeLessThan(before!.x)
+  await expect(wave.locator('.osc-hud-svg')).toBeVisible()
+
+  // Adding the pane from the card: the window is now reading an indicator you own, and the
+  // settings button replaces the add button.
+  await wave.getByRole('button', { name: 'Add the WaveTrend [LazyBear] pane to the chart' }).click()
+  await expect(pane(page, 'wave-trend')).toBeVisible()
+  await expect(waveWindow(page)).toContainText('your indicator')
+  await waveWindow(page).getByRole('button', { name: 'Settings for WaveTrend [LazyBear]' }).click()
+  await expect(page.getByRole('dialog', { name: 'WaveTrend [LazyBear]' })).toBeVisible()
+  expect(errors).toEqual([])
+})

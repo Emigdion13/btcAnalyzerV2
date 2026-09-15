@@ -1100,6 +1100,8 @@ const SHORTCUTS = [
   ['Trend line', 'Alt T'],
   ['Horizontal line', 'Alt H'],
   ['Timeframe peek window', 'Alt P'],
+  ['CM MACD window', 'Alt M'],
+  ['WaveTrend window', 'Alt W'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

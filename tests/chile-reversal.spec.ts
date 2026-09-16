@@ -30,6 +30,10 @@ test('adds, renders, and persists the Chile Reversal overlay', async ({ page }) 
     )
     .toBeGreaterThan(0)
 
+  // Markers are ephemeral by default and the legend carries an eraser to wipe
+  // the ones on screen without waiting for them to fade.
+  await expect(page.getByRole('button', { name: 'Clear Chile Reversal markers' })).toBeVisible()
+
   await legend.click()
   const dialog = page.getByRole('dialog', { name: 'Chile Reversal' })
   await expect(dialog).toBeVisible()
@@ -37,6 +41,8 @@ test('adds, renders, and persists the Chile Reversal overlay', async ({ page }) 
   await expect(page.getByLabel('Pivot right')).toHaveValue('2')
   await expect(page.getByLabel('Max distance in ATR')).toHaveValue('2.5')
   await expect(page.getByLabel('Zone thickness in ATR')).toHaveValue('0.1')
+  await expect(page.getByLabel('Marker lifetime in seconds')).toHaveValue('60')
+  await expect(page.getByLabel('Marker fade in seconds')).toHaveValue('15')
 
   // Changing the profile re-renders and is reflected in the legend.
   await page.getByLabel('Pivot left').fill('3')

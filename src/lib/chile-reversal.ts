@@ -134,6 +134,10 @@ export function isChileReversalSettings(value: unknown): value is ChileReversalS
     int(s.pivotRight, 1, 5) &&
     num(s.maxDistanceAtr, 0.5, 6) &&
     num(s.zoneThicknessAtr, 0.03, 0.5) &&
+    // Optional so settings persisted before the marker lifetime existed keep
+    // validating; chileReversalSettings() fills the defaults in.
+    (s.markerTtlSeconds === undefined || num(s.markerTtlSeconds, 0, 3600)) &&
+    (s.markerFadeSeconds === undefined || num(s.markerFadeSeconds, 0, 600)) &&
     typeof s.showZones === 'boolean' &&
     typeof s.showBreaks === 'boolean' &&
     typeof s.requireConfirmation === 'boolean' &&
@@ -147,7 +151,11 @@ export function isChileReversalSettings(value: unknown): value is ChileReversalS
 
 export function chileReversalSettings(indicator: Indicator): ChileReversalSettings {
   const candidate = indicator.chileReversal
-  return isChileReversalSettings(candidate) ? candidate : { ...CHILE_REVERSAL_DEFAULTS }
+  // Defaults first, so a profile persisted before a field existed picks the new
+  // default instead of computing with `undefined`.
+  return isChileReversalSettings(candidate)
+    ? { ...CHILE_REVERSAL_DEFAULTS, ...candidate }
+    : { ...CHILE_REVERSAL_DEFAULTS }
 }
 
 export function chileReversalIndicatorLabel(indicator: Indicator): string {
@@ -538,6 +546,61 @@ export function displayedChileSignals(
     else collapsed.push(signal)
   }
   return collapsed.slice(-maxCount)
+}
+
+/**
+ * How far a Bounce/Reject/Break marker is through its lifetime. Markers are
+ * alerts, not annotations: each one prints when its bar closes, holds full
+ * strength for `ttlSeconds`, then fades to nothing over `fadeSeconds`. A
+ * `ttlSeconds` of 0 returns `null` — the pre-TTL behavior where markers stay
+ * until the count cap garbage-collects them.
+ */
+export interface ChileMarkerExpiry {
+  /** Seconds since the marker's bar closed; 0 while the bar is still forming. */
+  ageSeconds: number
+  /** True once the marker is past its fade and must not render at all. */
+  expired: boolean
+  /**
+   * CSS animation delay for the fade: `ttlSeconds - ageSeconds`. Positive while
+   * the marker still holds full strength, negative once it is mid-fade — the
+   * negative delay drops the animation into the fade at the right depth.
+   */
+  fadeDelaySeconds: number
+}
+
+export function chileMarkerExpiry(
+  signal: ChileSignal,
+  nowSeconds: number,
+  barSeconds: number,
+  ttlSeconds: number,
+  fadeSeconds: number,
+): ChileMarkerExpiry | null {
+  if (!(ttlSeconds > 0)) return null
+  const fade = Math.max(fadeSeconds, 0)
+  // The marker prints at its bar's close; before that the bar is still forming.
+  const printSeconds = signal.time + barSeconds
+  const ageSeconds = Math.max(0, nowSeconds - printSeconds)
+  return {
+    ageSeconds,
+    expired: ageSeconds >= ttlSeconds + fade,
+    fadeDelaySeconds: ttlSeconds - ageSeconds,
+  }
+}
+
+/**
+ * The second the marker clock reads "now". On a live feed the newest bar tracks
+ * wall-clock time, so markers age in real seconds and fade while you watch.
+ * Demo and replay data are pinned away from the wall clock, so their "now" is
+ * the close of the newest loaded bar — the data's own live edge, which only
+ * advances as bars stream in.
+ */
+export function chileMarkerNowSeconds(
+  wallNowSeconds: number,
+  lastCandleTime: number,
+  barSeconds: number,
+): number {
+  const edge = lastCandleTime + barSeconds
+  return Math.abs(wallNowSeconds - edge) <= barSeconds ? wallNowSeconds : edge
 }
 
 /** Pine `ta.ema` seeded from the first value (not the Studio's SMA-seeded ema). */

@@ -1033,6 +1033,29 @@ button {
 .chile-reversal-signal {
   pointer-events: none;
 }
+/* Bounce/Reject/Break markers are transient: full strength for their lifetime,
+   then a linear fade to nothing. The inline style sets the duration and delay
+   per marker — a negative delay resumes mid-fade for a marker that aged between
+   renders — and `both` holds opacity 1 during the delay and 0 after the end. */
+.chile-reversal-signal.chile-reversal-signal-expiring {
+  animation-name: chile-reversal-marker-fade;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes chile-reversal-marker-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chile-reversal-signal.chile-reversal-signal-expiring {
+    /* No animated motion: the marker simply vanishes when its lifetime is up. */
+    animation-duration: 1ms !important;
+  }
+}
 .chile-reversal-label,
 .tux-ema-scalper-label {
   /* Transparent in-chart message: readability comes from the halo, never a plate. */

@@ -66,4 +66,35 @@ describe('BarPulseBox', () => {
     )
     expect(html).toContain('CALIBRATING')
   })
+  it('renders the timeframe timing dropdown with chart option and all candle resolutions', () => {
+    const html = renderToStaticMarkup(
+      createElement(BarPulseBox, {
+        ...baseProps,
+        chartTimeframe: '15m',
+        selectedInterval: 'chart',
+      }),
+    )
+    expect(html).toContain('aria-label="Candle timeframe to analyze"')
+    expect(html).toContain('Chart (15m)')
+    expect(html).toContain('<option value="1m">1m</option>')
+    expect(html).toContain('<option value="3m">3m</option>')
+    expect(html).toContain('<option value="5m">5m</option>')
+    expect(html).toContain('<option value="15m">15m</option>')
+    expect(html).toContain('<option value="1h">1h</option>')
+    expect(html).toContain('<option value="4h">4h</option>')
+    expect(html).toContain('<option value="1D">1D</option>')
+    expect(html).toContain('<option value="1W">1W</option>')
+  })
+  it('reflects selected timing in the dropdown', () => {
+    const html = renderToStaticMarkup(
+      createElement(BarPulseBox, {
+        ...baseProps,
+        interval: '5m',
+        chartTimeframe: '15m',
+        selectedInterval: '5m',
+      }),
+    )
+    expect(html).toContain('BAR CLOSES IN · 5M')
+    expect(html).toContain('value="5m" selected=""')
+  })
 })

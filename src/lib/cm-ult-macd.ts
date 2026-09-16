@@ -3,7 +3,7 @@
  * NOT the V2 update and NOT the conventional EMA-signal MACD.
  * Reference/provenance and historical lookahead caveats: docs/cm-ult-macd.md.
  */
-import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase'
+import { bucketStart, INTERVAL_SECONDS, isInterval, type BarTape } from '../../shared/coinbase'
 import { pineEma, ta } from './indicator-runtime'
 import { waveTrendIndicatorLabel } from './wave-trend'
 import { williamsVixFixIndicatorLabel } from './cm-williams-vix-fix'
@@ -55,6 +55,7 @@ export interface IndicatorTimeframeData {
   state: ConnectionState
   message: string
   asOf: number
+  tape?: BarTape | null
 }
 export type IndicatorTimeframes = Partial<Record<Timeframe, IndicatorTimeframeData>>
 export interface IndicatorContext {

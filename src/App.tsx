@@ -105,6 +105,7 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
+import { candlePulseDefaultVisible } from './lib/floating-window'
 import {
   isRsiMeterIndicator,
   promotedRsiMeterIndicator,
@@ -268,7 +269,8 @@ export default function App() {
     'candle-pulse-visible',
     null,
   )
-  const pulseVisible = pulsePreference ?? window.innerWidth >= 640
+  const pulseVisible =
+    pulsePreference ?? candlePulseDefaultVisible(window.innerWidth, window.innerHeight)
   const [settings, setSettings] = useLocalState<ChartSettings>('chart-settings', DEFAULT_SETTINGS)
   const [indicators, setIndicators] = useLocalState<Indicator[]>('indicators', DEFAULT_INDICATORS)
   const [allDrawings, setAllDrawings] = useLocalState<Record<string, Drawing[]>>('drawings', {})

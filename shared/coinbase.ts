@@ -287,6 +287,8 @@ export interface StreamPayload {
    * (no snapshot yet / not subscribed), so the client clears rather than freezing a stale depth.
    */
   book?: OrderBookView
+  /** Taker-flow totals for the forming bar. Absent until the first side-bearing trade. */
+  tape?: BarTape
 }
 export const isProductId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Z0-9]{1,24}-USD$/.test(value)
@@ -503,6 +505,38 @@ export function parseTrade(value: Record<string, unknown>): MarketTrade | null {
     ? { product: value.product_id, id, time, price, size, takerSide }
     : null
 }
+/**
+ * Taker-flow totals for one forming bar, accumulated from the executed tape.
+ *
+ * `bought` / `sold` are the USD notionals executed INSIDE the bar by the taker (aggressor) —
+ * who actually crossed the spread — not resting orders and not a prediction. Trades whose
+ * side is missing or malformed still count toward the bar's volume but are excluded here, so
+ * `bought + sold` can be less than the bar's notional volume.
+ *
+ * A REST candle carries no last-trade ID, so the stream skips pre-receipt trades to avoid
+ * double-counting volume (the same guard as the bar's OHLCV). For that reason the counters
+ * restart from zero after every REST receipt/reconciliation: a tape is a running total over
+ * the trades observed since then, and the client should treat it as provisional, exactly like
+ * the bar it belongs to.
+ */
+export interface BarTape {
+  /** UTC bucket start of the bar the totals accumulate into. */
+  time: number
+  /** Taker-buy notional inside the bar, USD. */
+  bought: number
+  /** Taker-sell notional inside the bar, USD. */
+  sold: number
+}
+export function isBarTape(value: unknown): value is BarTape {
+  if (!value || typeof value !== 'object') return false
+  const t = value as BarTape
+  return (
+    typeof t.time === 'number' &&
+    Number.isInteger(t.time) &&
+    t.time >= 0 &&
+    [t.bought, t.sold].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+  )
+}
 /** Tracks provisional live bars, with ID deduplication and chronological open/close. */
 export class CandleTracker {
   bars: MarketCandle[]
@@ -510,10 +544,21 @@ export class CandleTracker {
   cutoff: number
   private ids = new Set<number>()
   private edges = new Map<number, { first: number; last: number }>()
+  /** Taker-flow totals for the latest observed bar bucket; null before any side-bearing trade. */
+  private tapeTime: number | null = null
+  private tapeBought = 0
+  private tapeSold = 0
   constructor(bars: MarketCandle[], interval: Interval, receivedAt: number) {
     this.bars = [...bars]
     this.interval = interval
     this.cutoff = receivedAt / 1000
+  }
+  /**
+   * Taker buy/sell notional inside the most recently traded bar bucket, or null while no
+   * side-bearing trade has been observed since the latest REST receipt.
+   */
+  get tape(): BarTape | null {
+    return this.tapeTime === null ? null : { time: this.tapeTime, bought: this.tapeBought, sold: this.tapeSold }
   }
   seed(bars: MarketCandle[], receivedAt: number) {
     this.bars = mergeCandles(this.bars, bars)
@@ -523,12 +568,28 @@ export class CandleTracker {
     this.cutoff = receivedAt / 1000
     this.edges.clear()
     this.ids.clear()
+    // The receipt boundary restarts the observed trade stream, so the bar tape restarts with it.
+    this.tapeTime = null
+    this.tapeBought = 0
+    this.tapeSold = 0
   }
   apply(trade: MarketTrade): boolean {
     if (trade.time < this.cutoff || this.ids.has(trade.id)) return false
     this.ids.add(trade.id)
     if (this.ids.size > 10000) this.ids.delete(this.ids.values().next().value!)
     const time = bucketStart(trade.time, this.interval)
+    // Bar tape: accumulate taker notional per bucket. A bucket change (including a late trade
+    // reopening an older bucket) restarts the totals, so the tape always describes ONE bar.
+    if (this.tapeTime !== time) {
+      this.tapeTime = time
+      this.tapeBought = 0
+      this.tapeSold = 0
+    }
+    if (trade.takerSide) {
+      const notional = trade.price * trade.size
+      if (trade.takerSide === 'buy') this.tapeBought += notional
+      else this.tapeSold += notional
+    }
     let index = this.bars.length - 1
     while (index >= 0 && this.bars[index].time > time) index--
     const previous = this.bars[index]?.time === time ? this.bars[index] : undefined

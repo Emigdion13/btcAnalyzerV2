@@ -6,6 +6,7 @@ import {
   CandleTracker,
   historyWindows,
   INTERVAL_SECONDS,
+  isBarTape,
   isCandle,
   isProductId,
   nativeGranularity,
@@ -178,5 +179,32 @@ describe('provisional live candle tracking', () => {
       }),
     ).toBeNull()
     expect(isCandle({})).toBe(false)
+  })
+  it('tracks the forming bar\'s taker tape per bucket, and restarts on roll and receipt', () => {
+    const tracker = new CandleTracker([bar(0, 10, 11, 2)], '1m', 30000)
+    expect(tracker.tape).toBeNull()
+    tracker.apply({ product: 'BTC-USD', id: 1, time: 50, price: 15, size: 2, takerSide: 'buy' })
+    expect(tracker.tape).toEqual({ time: 0, bought: 30, sold: 0 })
+    tracker.apply({ product: 'BTC-USD', id: 2, time: 55, price: 10, size: 1, takerSide: 'sell' })
+    expect(tracker.tape).toEqual({ time: 0, bought: 30, sold: 10 })
+    // A sideless trade still counts toward volume but never toward the tape.
+    tracker.apply({ product: 'BTC-USD', id: 3, time: 58, price: 12, size: 5 })
+    expect(tracker.tape).toEqual({ time: 0, bought: 30, sold: 10 })
+    expect(tracker.bars[0].volume).toBe(10)
+    // A trade in the next bucket restarts the totals — the tape always describes ONE bar.
+    tracker.apply({ product: 'BTC-USD', id: 4, time: 65, price: 13, size: 2, takerSide: 'buy' })
+    expect(tracker.tape).toEqual({ time: 60, bought: 26, sold: 0 })
+    // A REST receipt skips pre-receipt trades, so the observed stream — and the tape — restarts.
+    tracker.seed([bar(60, 13, 13, 1)], 200000)
+    expect(tracker.tape).toBeNull()
+    expect(tracker.apply({ product: 'BTC-USD', id: 5, time: 90, price: 13, size: 1 })).toBe(false)
+    expect(tracker.tape).toBeNull()
+  })
+  it('validates the tape wire shape', () => {
+    expect(isBarTape({ time: 60, bought: 1.5, sold: 0 })).toBe(true)
+    expect(isBarTape({ time: 60, bought: -1, sold: 0 })).toBe(false)
+    expect(isBarTape({ time: 1.5, bought: 1, sold: 0 })).toBe(false)
+    expect(isBarTape({ time: 60, bought: NaN, sold: 0 })).toBe(false)
+    expect(isBarTape(null)).toBe(false)
   })
 })

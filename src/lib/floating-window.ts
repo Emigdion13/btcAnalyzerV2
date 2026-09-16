@@ -143,3 +143,18 @@ export const agentDecisionDefaultVisible = (viewportWidth: number): boolean =>
   viewportWidth >= AGENT_DECISION_MIN_WIDTH
 export const agentDecisionDefaultMinimized = (width: number, height: number): boolean =>
   width < AGENT_DECISION_ROOMY_WIDTH || height < AGENT_DECISION_ROOMY_HEIGHT
+
+/**
+ * Where Candle Pulse starts.
+ *
+ * The HUD is taller than the other floating boxes, so it earns the same "roomy viewport" default
+ * as the AI decision window: it only starts open when there is clearly chart space it will not
+ * crowd (1050×940+), and it is one keystroke (Alt C) away in every viewport. This also keeps it
+ * off the chart while browser tests drive the default layout. An explicit show or hide wins over
+ * the default and is remembered.
+ */
+export const CANDLE_PULSE_ROOMY_WIDTH = 1050
+export const CANDLE_PULSE_ROOMY_HEIGHT = 940
+
+export const candlePulseDefaultVisible = (width: number, height: number): boolean =>
+  width >= CANDLE_PULSE_ROOMY_WIDTH && height >= CANDLE_PULSE_ROOMY_HEIGHT

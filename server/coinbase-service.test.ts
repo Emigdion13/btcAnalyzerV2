@@ -445,3 +445,71 @@ it('streams a whale burst and then drops it from the payload once it is over', a
   controller.abort()
   // Several 1 Hz pulses must elapse for the burst to appear, expire, and reappear.
 }, 20_000)
+
+it('streams the forming bar\'s taker tape and restarts it when the bar rolls', async () => {
+  const { rest } = fixture()
+  let socket: FakeSocket | undefined
+  const service = new CoinbaseService({
+    rest,
+    socketFactory: () => {
+      socket = new FakeSocket()
+      return socket as unknown as WebSocket
+    },
+  })
+  const api = createMarketApi(service)
+  const server = createServer((req, res) => {
+    if (!api.handle(req, res)) res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const controller = new AbortController()
+  closers.push(() => {
+    controller.abort()
+    api.close()
+    server.closeAllConnections()
+    server.close()
+  })
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  await fetch(`${origin}/api/coinbase/candles?product=BTC-USD&interval=1m&limit=50`)
+  const response = await fetch(`${origin}/api/coinbase/stream?product=BTC-USD&interval=1m`, {
+    signal: controller.signal,
+  })
+  const reader = response.body!.getReader(),
+    decoder = new TextDecoder()
+  await reader.read()
+
+  const readPayload = async (wants: string) => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const chunk = decoder.decode((await reader.read()).value)
+      const line = chunk
+        .split('\n')
+        .find((l) => l.startsWith('data: ') && l.includes(wants))
+      if (line) return JSON.parse(line.slice(6)) as Record<string, unknown>
+    }
+    return undefined
+  }
+  const match = (tradeId: number, timeSec: number, side: string, size: string) =>
+    socket!.emit({
+      type: 'match',
+      product_id: 'BTC-USD',
+      trade_id: tradeId,
+      price: '100',
+      size,
+      time: new Date(timeSec * 1000).toISOString(),
+      side,
+    })
+
+  // All three trades land after the REST receipt cutoff; the first two share one 1m bucket.
+  const nowSec = Math.floor(Date.now() / 1000)
+  const bucketA = (Math.floor(nowSec / 60) + 1) * 60
+  // A taker BUY (3 BTC at $100) arrives as maker side 'sell'.
+  match(700, bucketA + 1, 'sell', '3')
+  match(701, bucketA + 30, 'buy', '2')
+  let payload = await readPayload('"tape"')
+  expect(payload?.tape).toEqual({ time: bucketA, bought: 300, sold: 200 })
+
+  // The next trade rolls the bar: the totals restart for the new bucket.
+  match(702, bucketA + 61, 'sell', '1')
+  payload = await readPayload(`"time":${bucketA + 60}`)
+  expect(payload?.tape).toEqual({ time: bucketA + 60, bought: 100, sold: 0 })
+  controller.abort()
+}, 20_000)

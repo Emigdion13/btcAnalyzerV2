@@ -38,6 +38,7 @@ import {
   PictureInPicture2,
   Play,
   Plus,
+  Radar,
   Redo2,
   RotateCcw,
   Waves,
@@ -71,6 +72,7 @@ import { TimeframePeekBox } from './components/TimeframePeekBox'
 import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
+import { BarPulseBox } from './components/BarPulseBox'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
 import type { ToastMessage } from './components/ui'
 import { demoBook } from './lib/demo-book'
@@ -103,6 +105,7 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
+import { candlePulseDefaultVisible } from './lib/floating-window'
 import {
   isRsiMeterIndicator,
   promotedRsiMeterIndicator,
@@ -261,6 +264,13 @@ export default function App() {
   const [watchlist, setWatchlist] = useLocalState<string[]>('watchlist', DEFAULT_WATCHLIST)
   const [whaleBoxVisible, setWhaleBoxVisible] = useLocalState('whale-box-visible', true)
   const [bookBoxVisible, setBookBoxVisible] = useLocalState('book-strength-box-visible', true)
+  // The floating Candle Pulse HUD: null means "never chosen", deferring to viewport width.
+  const [pulsePreference, setPulsePreference] = useLocalState<boolean | null>(
+    'candle-pulse-visible',
+    null,
+  )
+  const pulseVisible =
+    pulsePreference ?? candlePulseDefaultVisible(window.innerWidth, window.innerHeight)
   const [settings, setSettings] = useLocalState<ChartSettings>('chart-settings', DEFAULT_SETTINGS)
   const [indicators, setIndicators] = useLocalState<Indicator[]>('indicators', DEFAULT_INDICATORS)
   const [allDrawings, setAllDrawings] = useLocalState<Record<string, Drawing[]>>('drawings', {})
@@ -1278,6 +1288,7 @@ export default function App() {
     }
   }
   const togglePeek = () => setPeekPreference(!peekVisible)
+  const togglePulse = () => setPulsePreference(!pulseVisible)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1287,6 +1298,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    togglePulse,
     toggleOscHud,
     draft,
     modal,
@@ -1301,6 +1313,7 @@ export default function App() {
     chooseTool,
     openDocs,
     togglePeek,
+    togglePulse,
     toggleOscHud,
     draft,
     modal,
@@ -1352,6 +1365,10 @@ export default function App() {
         event.preventDefault()
         cmd.togglePeek()
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        cmd.togglePulse()
+      }
       if (event.altKey && !mod && event.key.toLowerCase() === 'm') {
         event.preventDefault()
         cmd.toggleOscHud('cm-ult-macd')
@@ -1381,6 +1398,7 @@ export default function App() {
   // up while any of them is open.
   const openFloatingCount =
     (peekVisible ? 1 : 0) +
+    (pulseVisible ? 1 : 0) +
     (rsiMeterOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
@@ -1474,6 +1492,16 @@ export default function App() {
                   {peekVisible ? 'Hide timeframe peek window' : 'Show timeframe peek window'}
                 </MenuItem>
                 <MenuItem
+                  icon={Radar}
+                  selected={pulseVisible}
+                  onClick={() => {
+                    setPulsePreference(!pulseVisible)
+                    close()
+                  }}
+                >
+                  {pulseVisible ? 'Hide Candle Pulse HUD' : 'Show Candle Pulse HUD'}
+                </MenuItem>
+                <MenuItem
                   icon={Gauge}
                   selected={rsiMeterOpen}
                   onClick={() => {
@@ -1543,6 +1571,7 @@ export default function App() {
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
                     setPeekPreference(null)
+                    setPulsePreference(null)
                     setRsiMeterPreference(null)
                     close()
                     notify('Default layout restored. Your scripts and drawings are unchanged.')
@@ -1741,7 +1770,7 @@ export default function App() {
               trigger={(open) => (
                 <button
                   className={`toolbar-button floating-picker-toggle ${openFloatingCount > 0 ? 'active' : ''}`}
-                  title="Floating windows — the timeframe peek, the RSI meter, and the oscillator windows"
+                  title="Floating windows — the timeframe peek, the Candle Pulse HUD, the RSI meter, and the oscillator windows"
                   aria-haspopup="menu"
                   aria-expanded={open}
                 >
@@ -1765,6 +1794,15 @@ export default function App() {
                     onClick={() => setPeekPreference(!peekVisible)}
                   >
                     Timeframe peek
+                  </MenuItem>
+                  <MenuItem
+                    className="floating-candle-pulse"
+                    icon={Radar}
+                    selected={pulseVisible}
+                    shortcut="Alt C"
+                    onClick={togglePulse}
+                  >
+                    Candle Pulse
                   </MenuItem>
                   <MenuItem
                     className="floating-rsi-meter"
@@ -1952,6 +1990,21 @@ export default function App() {
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}
                 />
+                {hasData && replayIndex === null && pulseVisible && (
+                  <BarPulseBox
+                    ticker={asset.ticker}
+                    source={source}
+                    state={feedState}
+                    candles={candles}
+                    interval={timeframe}
+                    price={currentPrice}
+                    book={bookView}
+                    tape={source === 'coinbase' ? live.tape : null}
+                    upColor={settings.upColor}
+                    downColor={settings.downColor}
+                    onClose={() => setPulsePreference(false)}
+                  />
+                )}
                 {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}

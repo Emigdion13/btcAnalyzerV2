@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  isBarTape,
   isCandle,
   isOrderBookView,
   isProductId,
@@ -9,6 +10,7 @@ import {
   validateHistory,
 } from '../../shared/coinbase'
 import type {
+  BarTape,
   CoinbaseProduct,
   ConnectionState,
   HistorySnapshot,
@@ -79,6 +81,7 @@ export function useCoinbaseMarket({
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({})
   const [whaleFlow, setWhaleFlow] = useState<WhaleFlow | null>(null)
   const [book, setBook] = useState<OrderBookView | null>(null)
+  const [tape, setTape] = useState<BarTape | null>(null)
   const [retryId, setRetryId] = useState(0)
   const [visible, setVisible] = useState(!document.hidden)
   const cache = useRef(new Map<string, HistorySnapshot>())
@@ -96,6 +99,8 @@ export function useCoinbaseMarket({
   useEffect(() => setWhaleFlow(null), [product])
   // Resting depth likewise belongs to the charted product, never to the previous one.
   useEffect(() => setBook(null), [product])
+  // So does the per-bar tape: it counts trades for ONE product's forming bar.
+  useEffect(() => setTape(null), [product])
   useEffect(() => {
     if (!enabled || !visible) return
     const controller = new AbortController()
@@ -158,6 +163,9 @@ export function useCoinbaseMarket({
           setBook(
             isOrderBookView(data.book) && data.book.product === product ? data.book : null,
           )
+          // Independently validated; a malformed tape clears the readout rather than
+          // rendering unverified flow next to real prices.
+          setTape(isBarTape(data.tape) ? data.tape : null)
           update((previous) => {
             if (!previous.snapshot) return previous
             const changed =
@@ -311,6 +319,8 @@ export function useCoinbaseMarket({
     whaleFlow: state === 'live' ? whaleFlow : null,
     // Same rule for resting depth: never draw a frozen book over a disconnected chart.
     book: state === 'live' ? book : null,
+    // ...and for the bar tape, which would otherwise show a dead running total as "flow".
+    tape: state === 'live' ? tape : null,
     retry,
   }
 }

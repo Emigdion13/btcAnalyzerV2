@@ -251,6 +251,9 @@ export class CoinbaseService {
       // Omitted until the product's level2 snapshot has arrived and been analyzed, so a client
       // clears its depth readout instead of freezing a stale book.
       book: this.orderBooks.get(sub.product)?.view(Date.now() / 1000) ?? undefined,
+      // Omitted until the first side-bearing trade since the latest REST receipt, so a client
+      // never renders an empty tape as "zero flow".
+      tape: entry.tracker.tape ?? undefined,
     }
     sub.send(payload)
     sub.revision = entry.revision

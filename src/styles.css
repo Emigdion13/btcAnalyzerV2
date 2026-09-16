@@ -1024,7 +1024,9 @@ button {
   left: 0;
   top: 0;
   pointer-events: none;
-  overflow: visible;
+  /* Clipped to the main pane like every other overlay: an out-of-range
+     coordinate must never paint glyphs over the axis or the panes below. */
+  overflow: hidden;
   z-index: 3;
 }
 .tux-ema-scalper-signal,

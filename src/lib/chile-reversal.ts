@@ -501,6 +501,45 @@ export function calculateChileReversal(
   }
 }
 
+/**
+ * Pine paints signal labels under `max_labels_count` (default ~50): the oldest
+ * are garbage-collected, so a chart never accumulates a whole history of stale
+ * text. Mirrors both halves of that spirit here: a run of the same pattern at
+ * the same level on consecutive bars collapses to its freshest print (the bar
+ * where the close confirmed the pattern), and only the newest `maxCount`
+ * markers stay on the chart. Without the cap, un-capped history plus
+ * back-to-back reprints smeared into rows of "Bounce"/"Reject" text that no
+ * longer read as attached to any candle. The engine's raw `signals` stay
+ * untouched for the legend and tests; only the overlay filters.
+ */
+export const CHILE_MAX_DISPLAYED_SIGNALS = 40
+
+/**
+ * What the overlay actually prints: consecutive-bar reprints of a pattern
+ * collapsed, then capped at `maxCount` — see the constant above. The engine's
+ * raw `signals` stay untouched for the legend and tests; only the SVG overlay
+ * filters.
+ */
+export function displayedChileSignals(
+  signals: ChileSignal[],
+  maxCount: number = CHILE_MAX_DISPLAYED_SIGNALS,
+): ChileSignal[] {
+  const collapsed: ChileSignal[] = []
+  for (const signal of signals) {
+    const previous = collapsed[collapsed.length - 1]
+    if (
+      previous &&
+      previous.kind === signal.kind &&
+      previous.levelKind === signal.levelKind &&
+      previous.level === signal.level &&
+      signal.index === previous.index + 1
+    )
+      collapsed[collapsed.length - 1] = signal
+    else collapsed.push(signal)
+  }
+  return collapsed.slice(-maxCount)
+}
+
 /** Pine `ta.ema` seeded from the first value (not the Studio's SMA-seeded ema). */
 function pineEmaSeries(values: number[], length: number): (number | null)[] {
   const alpha = 2 / (length + 1)

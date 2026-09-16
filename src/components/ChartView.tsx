@@ -61,7 +61,14 @@ import {
   CM_WILLIAMS_VIX_FIX_DEFAULTS,
   williamsVixFixSettings,
 } from '../lib/cm-williams-vix-fix'
-import { clampOscHudBars, cmMacdHudModel, oscHudBars, rsiDivergenceHudModel, waveTrendHudModel, williamsVixFixHudModel } from '../lib/osc-hud'
+import {
+  clampOscHudBars,
+  cmMacdHudModel,
+  oscHudBars,
+  rsiDivergenceHudModel,
+  waveTrendHudModel,
+  williamsVixFixHudModel,
+} from '../lib/osc-hud'
 import type { OscHudKind } from '../lib/osc-hud'
 import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
 import {
@@ -111,6 +118,7 @@ import {
   CHILE_REVERSAL_COLORS,
   calculateChileReversal,
   chileReversalSettings,
+  displayedChileSignals,
 } from '../lib/chile-reversal'
 import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
@@ -502,7 +510,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           const settings = divergenceSettings(indicator)
           const histogram =
             indicator.kind === 'rsi-divergence'
-              ? ta.rsi(candles.map((c) => c.close), indicator.period || 14)
+              ? ta.rsi(
+                  candles.map((c) => c.close),
+                  indicator.period || 14,
+                )
               : (macdHistogram(candles, indicator, {
                   timeframe,
                   timeframes: indicatorTimeframes,
@@ -2540,6 +2551,16 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     )
   }
 
+  /** Compact age for the legend: the last signal's distance from the newest bar. */
+  const chileSignalAge = (seconds: number) => {
+    if (seconds <= 0) return 'now'
+    if (seconds < 90) return `${Math.round(seconds)}s`
+    const minutes = Math.round(seconds / 60)
+    if (minutes < 90) return `${minutes}m`
+    const hours = Math.round(minutes / 60)
+    if (hours < 36) return `${hours}h`
+    return `${Math.round(hours / 24)}d`
+  }
   const chileReversalLegendValue = (result?: (typeof chileReversalOverlays)[number]['result']) => {
     if (!result) return '—'
     if (result.missingFeed) return `${result.resolution} feed…`
@@ -2553,7 +2574,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           : last.kind === 'break-resistance'
             ? 'Break R'
             : 'Break S'
-    return `${text} ${last.levelKind}`
+    const latestTime = candles.at(-1)?.time
+    // Without the age a stale signal reads like a permanent fixture of the chart.
+    const age = latestTime === undefined ? '' : ` · ${chileSignalAge(latestTime - last.time)}`
+    return `${text} ${last.levelKind}${age}`
   }
 
   const renderChileReversalOverlay = (overlay: (typeof chileReversalOverlays)[number]) => {
@@ -2610,7 +2634,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     return (
       <g key={indicator.id} data-testid="chile-reversal-overlay">
         {zones}
-        {result.signals.map((signal) => {
+        {displayedChileSignals(result.signals).map((signal) => {
           const candle = candles[signal.index]
           if (!candle) return null
           const bullish = signal.side === 'bullish'

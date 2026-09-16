@@ -60,6 +60,8 @@ export function ChileReversalSettingsDialog({
     maxDistanceAtr: String(initial.maxDistanceAtr),
     zoneThicknessAtr: String(initial.zoneThicknessAtr),
     impulseBodyRatio: String(initial.impulseBodyRatio),
+    markerTtlSeconds: String(initial.markerTtlSeconds),
+    markerFadeSeconds: String(initial.markerFadeSeconds),
   })
   const [colors, setColors] = useState<Record<ColorKey, string>>({
     supportColor: initial.supportColor,
@@ -80,6 +82,8 @@ export function ChileReversalSettingsDialog({
       maxDistanceAtr: String(d.maxDistanceAtr),
       zoneThicknessAtr: String(d.zoneThicknessAtr),
       impulseBodyRatio: String(d.impulseBodyRatio),
+      markerTtlSeconds: String(d.markerTtlSeconds),
+      markerFadeSeconds: String(d.markerFadeSeconds),
     })
     setColors({ supportColor: d.supportColor, resistanceColor: d.resistanceColor })
     setShowZones(d.showZones)
@@ -116,6 +120,8 @@ export function ChileReversalSettingsDialog({
             pivotRight: Number(numbers.pivotRight),
             maxDistanceAtr: Number(numbers.maxDistanceAtr),
             zoneThicknessAtr: Number(numbers.zoneThicknessAtr),
+            markerTtlSeconds: Number(numbers.markerTtlSeconds),
+            markerFadeSeconds: Number(numbers.markerFadeSeconds),
             showZones,
             showBreaks,
             requireConfirmation,
@@ -125,7 +131,7 @@ export function ChileReversalSettingsDialog({
           }
           if (!isChileReversalSettings(settings)) {
             setError(
-              'Pivot legs must be whole numbers from 1–5, max distance 0.5–6 ATR, zone thickness 0.03–0.50 ATR, impulse ratio 0–1, and colors six-digit hex values.',
+              'Pivot legs must be whole numbers from 1–5, max distance 0.5–6 ATR, zone thickness 0.03–0.50 ATR, impulse ratio 0–1, marker lifetime 0–3600 s, marker fade 0–600 s, and colors six-digit hex values.',
             )
             return
           }
@@ -247,6 +253,41 @@ export function ChileReversalSettingsDialog({
               <p>Include rompeResistencia and rompeSoporte markers alongside the reversals.</p>
             </div>
             <Toggle checked={showBreaks} onChange={setShowBreaks} label="Show breaks" />
+          </div>
+          <div className="smc-grid smc-grid-two">
+            <label className="field smc-number-field">
+              Marker lifetime (s)
+              <input
+                aria-label="Marker lifetime in seconds"
+                inputMode="numeric"
+                value={numbers.markerTtlSeconds}
+                onChange={(event) =>
+                  setNumbers((current) => ({
+                    ...current,
+                    markerTtlSeconds: event.target.value,
+                  }))
+                }
+              />
+              <small>
+                How long a marker stays after its bar closes, then it fades. 0 keeps markers until
+                the 40-marker cap. Default 60.
+              </small>
+            </label>
+            <label className="field smc-number-field">
+              Marker fade (s)
+              <input
+                aria-label="Marker fade in seconds"
+                inputMode="decimal"
+                value={numbers.markerFadeSeconds}
+                onChange={(event) =>
+                  setNumbers((current) => ({
+                    ...current,
+                    markerFadeSeconds: event.target.value,
+                  }))
+                }
+              />
+              <small>How long the fade-out takes once the lifetime ends. Default 15.</small>
+            </label>
           </div>
           <div className="setting-row">
             <div>

@@ -3,10 +3,13 @@ import {
   CHILE_ATR_LENGTH,
   CHILE_PIVOT_MEMORY,
   calculateChileReversal,
+  chileMarkerExpiry,
+  chileMarkerNowSeconds,
   chileReversalIndicatorLabel,
   displayedChileSignals,
   chileReversalSettings,
   isChileReversalSettings,
+  type ChileSignal,
 } from './chile-reversal'
 import {
   CHILE_REVERSAL_DEFAULTS,
@@ -60,9 +63,33 @@ describe('chile reversal settings', () => {
     expect(isChileReversalSettings(settings({ pivotRight: 6 }))).toBe(false)
     expect(isChileReversalSettings(settings({ maxDistanceAtr: 0.2 }))).toBe(false)
     expect(isChileReversalSettings(settings({ zoneThicknessAtr: 0.9 }))).toBe(false)
+    expect(isChileReversalSettings(settings({ markerTtlSeconds: -1 }))).toBe(false)
+    expect(isChileReversalSettings(settings({ markerTtlSeconds: 3601 }))).toBe(false)
+    expect(isChileReversalSettings(settings({ markerFadeSeconds: -1 }))).toBe(false)
+    expect(isChileReversalSettings(settings({ markerFadeSeconds: 601 }))).toBe(false)
     expect(isChileReversalSettings(settings({ supportColor: 'green' }))).toBe(false)
     expect(isChileReversalSettings({ ...CHILE_REVERSAL_DEFAULTS, resolution: '7m' })).toBe(false)
     expect(isChileReversalSettings(null)).toBe(false)
+  })
+
+  it('accepts a profile persisted before the marker lifetime existed', () => {
+    // The lifetime fields are optional in the guard so an old profile keeps
+    // validating instead of being thrown away.
+    const { markerTtlSeconds, markerFadeSeconds, ...legacy } = CHILE_REVERSAL_DEFAULTS
+    expect(markerTtlSeconds).toBe(60)
+    expect(markerFadeSeconds).toBe(15)
+    expect(isChileReversalSettings(legacy)).toBe(true)
+  })
+
+  it('fills marker lifetime defaults for a profile persisted without them', () => {
+    const { markerTtlSeconds, markerFadeSeconds, ...legacy } = CHILE_REVERSAL_DEFAULTS
+    expect(markerTtlSeconds).toBe(60)
+    expect(markerFadeSeconds).toBe(15)
+    const normalized = chileReversalSettings(
+      indicator({ chileReversal: legacy as ChileReversalSettings }),
+    )
+    expect(normalized.markerTtlSeconds).toBe(CHILE_REVERSAL_DEFAULTS.markerTtlSeconds)
+    expect(normalized.markerFadeSeconds).toBe(CHILE_REVERSAL_DEFAULTS.markerFadeSeconds)
   })
 
   it('falls back to defaults for an indicator with no stored settings', () => {
@@ -373,5 +400,67 @@ describe('displayedChileSignals', () => {
   it('leaves short unique lists untouched', () => {
     const few = [print(0), print(5), print(9)]
     expect(displayedChileSignals(few)).toEqual(few)
+  })
+})
+
+describe('chileMarkerExpiry', () => {
+  const print = (time: number): ChileSignal => ({
+    kind: 'bounce-support',
+    index: 0,
+    time,
+    level: 100,
+    levelKind: 'S1',
+    price: 99,
+    side: 'bullish',
+    confirmed: true,
+  })
+  // A 1-minute chart: the marker on a bar closing at t=600 printed at 600.
+  const bar = 60
+  const ttl = 60
+  const fade = 15
+
+  it('returns null for a lifetime of 0 — the always-on behavior', () => {
+    expect(chileMarkerExpiry(print(540), 600, bar, 0, fade)).toBeNull()
+  })
+
+  it('treats a marker on the still-forming bar as fresh', () => {
+    const expiry = chileMarkerExpiry(print(600), 570, bar, ttl, fade)!
+    expect(expiry.ageSeconds).toBe(0)
+    expect(expiry.expired).toBe(false)
+    expect(expiry.fadeDelaySeconds).toBe(ttl)
+  })
+
+  it('holds full strength for the lifetime, then fades, then expires', () => {
+    // Printed at 600: full strength to 660, fading to 675, gone after that.
+    const fresh = chileMarkerExpiry(print(540), 650, bar, ttl, fade)!
+    expect(fresh.expired).toBe(false)
+    expect(fresh.fadeDelaySeconds).toBe(10)
+    const midFade = chileMarkerExpiry(print(540), 670, bar, ttl, fade)!
+    expect(midFade.expired).toBe(false)
+    // Negative delay resumes the CSS animation mid-fade.
+    expect(midFade.fadeDelaySeconds).toBe(-10)
+    const gone = chileMarkerExpiry(print(540), 675, bar, ttl, fade)!
+    expect(gone.expired).toBe(true)
+  })
+
+  it('expires instantly with no fade window', () => {
+    const atTtl = chileMarkerExpiry(print(540), 660, bar, ttl, 0)!
+    expect(atTtl.expired).toBe(true)
+  })
+})
+
+describe('chileMarkerNowSeconds', () => {
+  it('reads the wall clock when the newest bar tracks it', () => {
+    // A live 1m chart: the forming bar closes within a bar of now.
+    expect(chileMarkerNowSeconds(1000, 980, 60)).toBe(1000)
+    expect(chileMarkerNowSeconds(1000, 959, 60)).toBe(1000)
+  })
+
+  it('falls back to the data edge for demo and replay data pinned away from now', () => {
+    // Demo candles are pinned to a fixed past date; the clock becomes the close
+    // of the newest bar so markers age in data time instead of never fading.
+    expect(chileMarkerNowSeconds(1_750_000_000, 1_000_000_000, 60)).toBe(1_000_000_060)
+    // A replay snapshot whose bars run past the wall clock reads the edge too.
+    expect(chileMarkerNowSeconds(1000, 2000, 60)).toBe(2060)
   })
 })

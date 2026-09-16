@@ -13,8 +13,8 @@ import { ChartView } from './ChartView'
 import type { ChartHandle } from './ChartView'
 import { generateCandles, getAsset } from '../lib/market'
 import { bucketStart } from '../../shared/coinbase'
-import { DEFAULT_SETTINGS } from '../lib/types'
-import type { Candle, Indicator, Timeframe } from '../lib/types'
+import { CHILE_REVERSAL_DEFAULTS, DEFAULT_SETTINGS } from '../lib/types'
+import type { Candle, ChileReversalSettings, Indicator, Timeframe } from '../lib/types'
 
 function aggregate(source: Candle[], timeframe: Timeframe): Candle[] {
   const out: Candle[] = []
@@ -146,7 +146,12 @@ const flush = async (ms = 5) => {
   })
 }
 
-function buildProps(candles: Candle[], htf: Candle[]) {
+function buildProps(
+  candles: Candle[],
+  htf: Candle[],
+  timeframe: Timeframe = '1m',
+  chile: Partial<ChileReversalSettings> = {},
+) {
   const indicator: Indicator = {
     id: 'chile-1',
     kind: 'chile-reversal',
@@ -154,13 +159,19 @@ function buildProps(candles: Candle[], htf: Candle[]) {
     period: 0,
     color: '#00e191',
     visible: true,
+    // These tests are about geometry — markers glued to their candles — not
+    // about the marker lifetime, so they opt out of it: with a TTL the demo
+    // clock (the data edge) would hide every marker older than the TTL and the
+    // assertions would depend on where in the seeded history signals happen to
+    // sit. The lifetime has its own tests below.
+    chileReversal: { ...CHILE_REVERSAL_DEFAULTS, markerTtlSeconds: 0, ...chile },
   }
   return {
     source: 'demo' as const,
     feedState: 'live' as const,
     asset: getAsset('BTCUSD'),
     candles,
-    timeframe: '1m' as const,
+    timeframe,
     chartType: 'candles' as const,
     indicators: [indicator],
     customResults: {},
@@ -406,5 +417,127 @@ describe('Chile Reversal marker scroll sync', () => {
 
     await act(async () => root.unmount())
     container.remove()
+  })
+})
+
+describe('Chile Reversal marker lifetime', () => {
+  const step = 900 // a 15m chart, pivots on the same resolution: no HTF feed needed
+
+  /**
+   * 20 flat filler bars (ATR warms up, no pivots), a pivot low at 96, a wick
+   * toward it, then the bar that prints the Bounce — and `tailBars` more bars
+   * after it. Demo data is pinned away from the wall clock, so the marker clock
+   * is the data edge: each appended bar ages the Bounce by another 900 s.
+   */
+  const bounceSeries = (tailBars: number): Candle[] => {
+    const rows: Array<[number, number, number, number]> = [
+      ...Array.from({ length: 20 }, () => [100, 101, 99, 100] as [number, number, number, number]),
+      [100, 101, 99, 100],
+      [100, 101, 96, 100], // pivot low 96, confirmed two bars later
+      [100, 101, 99, 100],
+      [100, 101, 99, 100],
+      [100, 101, 97, 99],
+      [99, 103, 96, 102], // wick into 96, closes green above it: the Bounce
+    ]
+    for (let i = 0; i < tailBars; i++) rows.push([102, 103, 101, 102])
+    return rows.map(([open, high, low, close], i) => ({
+      time: i * step,
+      open,
+      high,
+      low,
+      close,
+      volume: 10,
+    }))
+  }
+
+  const bounceMarkers = (container: HTMLElement) => [
+    ...container.querySelectorAll<SVGGElement>('[data-testid="chile-reversal-bounce-support"]'),
+  ]
+
+  // The default 2.5 ATR distance filter drops the 96 support before the bounce
+  // bar can reach it; 6 keeps it in range. Breaks stay on so the clear test
+  // exercises a mixed pile of markers.
+  const lifetime = { maxDistanceAtr: 6, resolution: '15m' as const }
+  const expiring = { ...lifetime, markerTtlSeconds: 60 }
+
+  async function renderChart(props: ReturnType<typeof buildProps>) {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const ref = createRef<ChartHandle>()
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(<ChartView ref={ref} {...props} />)
+    })
+    await flush(20)
+    await act(async () => {
+      ref.current!.latest()
+    })
+    await flush(20)
+    return { container, ref, root }
+  }
+
+  it('puts a fresh marker on the fade timeline and drops it once it ages out', async () => {
+    // The Bounce is the newest bar: age 0, so it renders with the expiring
+    // class and a fade that starts one lifetime from now.
+    const fresh = await renderChart(buildProps(bounceSeries(0), [], '15m', expiring))
+    const markers = bounceMarkers(fresh.container)
+    expect(markers.length).toBe(1)
+    expect(markers[0].classList.contains('chile-reversal-signal-expiring')).toBe(true)
+    expect(markers[0].style.animationDuration).toBe('15s')
+    expect(markers[0].style.animationDelay).toBe('60s')
+
+    // One 15m bar later every marker is 900 s older — past 60 s + 15 s of fade —
+    // so none of them render at all.
+    const aged = await renderChart(buildProps(bounceSeries(1), [], '15m', expiring))
+    expect(bounceMarkers(aged.container).length).toBe(0)
+    expect(aged.container.querySelectorAll('.chile-reversal-signal').length).toBe(0)
+
+    await act(async () => fresh.root.unmount())
+    fresh.container.remove()
+    await act(async () => aged.root.unmount())
+    aged.container.remove()
+  })
+
+  it('keeps markers on screen when the lifetime is 0', async () => {
+    const view = await renderChart(buildProps(bounceSeries(1), [], '15m', lifetime))
+    const markers = bounceMarkers(view.container)
+    expect(markers.length).toBe(1)
+    expect(markers[0].classList.contains('chile-reversal-signal-expiring')).toBe(false)
+
+    await act(async () => view.root.unmount())
+    view.container.remove()
+  })
+
+  it('clears every marker on demand and lets new signals print afterwards', async () => {
+    const view = await renderChart(buildProps(bounceSeries(0), [], '15m', lifetime))
+    expect(bounceMarkers(view.container).length).toBe(1)
+
+    // The legend's eraser: clean the chart now.
+    const eraser = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Clear Chile Reversal markers"]',
+    )
+    expect(eraser).not.toBeNull()
+    await act(async () => {
+      eraser!.click()
+    })
+    await flush(10)
+    expect(view.container.querySelectorAll('.chile-reversal-signal').length).toBe(0)
+
+    // A later bar that bounces the same level again is a new print the eraser
+    // never touched, while the cleared history stays cleared.
+    const appended = [
+      ...bounceSeries(0),
+      { time: 26 * step, open: 99, high: 103, low: 96, close: 102, volume: 10 },
+    ]
+    await act(async () => {
+      view.root.render(<ChartView ref={view.ref} {...buildProps(appended, [], '15m', lifetime)} />)
+    })
+    await flush(20)
+    const reprinted = bounceMarkers(view.container)
+    expect(reprinted.length).toBe(1)
+    expect(reprinted[0].getAttribute('data-index')).toBe('26')
+
+    await act(async () => view.root.unmount())
+    view.container.remove()
   })
 })

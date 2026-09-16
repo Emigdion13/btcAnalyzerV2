@@ -393,6 +393,13 @@ export interface ChileReversalSettings {
   maxDistanceAtr: number
   /** Pine input: "Grosor rectangulo S/R en ATR" (0.10) — zone half-thickness. */
   zoneThicknessAtr: number
+  /**
+   * Seconds a Bounce/Reject/Break marker stays at full strength after its bar
+   * closes. 0 keeps markers on screen until the 40-marker cap, as before.
+   */
+  markerTtlSeconds: number
+  /** Seconds the fade-out takes once `markerTtlSeconds` elapses. */
+  markerFadeSeconds: number
   /** Draw the S/R zone rectangles. Pine input: "Mostrar zonas S/R 15M". */
   showZones: boolean
   /** Include the `rompeResistencia`/`rompeSoporte` break markers. */
@@ -414,6 +421,10 @@ export const CHILE_REVERSAL_DEFAULTS: Readonly<ChileReversalSettings> = {
   pivotRight: 2,
   maxDistanceAtr: 2.5,
   zoneThicknessAtr: 0.1,
+  // Markers are transient alerts, not permanent annotations: one minute on the
+  // chart, then a slow fade to nothing.
+  markerTtlSeconds: 60,
+  markerFadeSeconds: 15,
   showZones: true,
   showBreaks: true,
   requireConfirmation: false,

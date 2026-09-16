@@ -24,6 +24,7 @@ import type {
 } from 'lightweight-charts'
 import {
   ChevronDown,
+  Eraser,
   Eye,
   EyeOff,
   GripVertical,
@@ -117,6 +118,8 @@ import { calculateTuxEmaScalper, tuxEmaScalperSettings } from '../lib/tux-ema-sc
 import {
   CHILE_REVERSAL_COLORS,
   calculateChileReversal,
+  chileMarkerExpiry,
+  chileMarkerNowSeconds,
   chileReversalSettings,
   displayedChileSignals,
 } from '../lib/chile-reversal'
@@ -393,6 +396,27 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         }),
     [candles, indicators, timeframe, indicatorTimeframes, replay],
   )
+  /**
+   * Clear-on-demand for Chile Reversal markers: per indicator, the print time
+   * (a bar-close second) through which every marker was wiped by the legend's
+   * eraser. Signals printed after it still render; the wiped ones never come
+   * back, which is the point of cleaning the chart.
+   */
+  const [chileMarkerClears, setChileMarkerClears] = useState<Record<string, number>>({})
+  /** Chart-bar seconds and the marker clock's "now" — see chileMarkerNowSeconds. */
+  const chileBarSeconds = INTERVAL[timeframe]
+  const chileNowSeconds = candles.length
+    ? chileMarkerNowSeconds(Date.now() / 1000, candles[candles.length - 1].time, chileBarSeconds)
+    : 0
+  const clearChileMarkers = (indicatorId: string) => {
+    if (!candles.length) return
+    setChileMarkerClears((current) => ({
+      ...current,
+      // At least the newest bar's close, so a marker sitting on the forming
+      // candle is wiped too, not just the already-closed history.
+      [indicatorId]: Math.max(chileNowSeconds, candles[candles.length - 1].time + chileBarSeconds),
+    }))
+  }
   const nextPivotOverlays = useMemo(
     () =>
       indicators
@@ -2561,8 +2585,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (hours < 36) return `${hours}h`
     return `${Math.round(hours / 24)}d`
   }
-  const chileReversalLegendValue = (result?: (typeof chileReversalOverlays)[number]['result']) => {
-    if (!result) return '—'
+  const chileReversalLegendValue = (
+    overlay: (typeof chileReversalOverlays)[number] | undefined,
+    nowSeconds: number,
+    barSeconds: number,
+  ) => {
+    if (!overlay) return '—'
+    const { result, settings } = overlay
     if (result.missingFeed) return `${result.resolution} feed…`
     const last = result.signals.at(-1)
     if (!last) return `${result.levels.length} levels`
@@ -2577,7 +2606,23 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const latestTime = candles.at(-1)?.time
     // Without the age a stale signal reads like a permanent fixture of the chart.
     const age = latestTime === undefined ? '' : ` · ${chileSignalAge(latestTime - last.time)}`
-    return `${text} ${last.levelKind}${age}`
+    // With a marker lifetime, say where the newest print stands in it: the
+    // legend is the only trace left once a marker has faded off the price pane.
+    const expiry = chileMarkerExpiry(
+      last,
+      nowSeconds,
+      barSeconds,
+      settings.markerTtlSeconds,
+      settings.markerFadeSeconds,
+    )
+    const state = !expiry
+      ? ''
+      : expiry.expired
+        ? ' · faded'
+        : expiry.fadeDelaySeconds <= 0
+          ? ' · fading'
+          : ''
+    return `${text} ${last.levelKind}${age}${state}`
   }
 
   const renderChileReversalOverlay = (overlay: (typeof chileReversalOverlays)[number]) => {
@@ -2634,74 +2679,106 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     return (
       <g key={indicator.id} data-testid="chile-reversal-overlay">
         {zones}
-        {displayedChileSignals(result.signals).map((signal) => {
-          const candle = candles[signal.index]
-          if (!candle) return null
-          const bullish = signal.side === 'bullish'
-          const anchor = position({
-            time: candle.time,
-            price: bullish ? candle.low : candle.high,
-          })
-          if (!anchor) return null
-          const isBreak = signal.kind === 'break-resistance' || signal.kind === 'break-support'
-          const color = isBreak
-            ? CHILE_REVERSAL_COLORS.breakout
-            : bullish
-              ? settings.supportColor
-              : settings.resistanceColor
-          const size = 8
-          const gap = 9
-          const tipY = bullish ? anchor.y + gap : anchor.y - gap
-          const baseY = bullish ? tipY + size : tipY - size
-          const glyph =
-            signal.kind === 'bounce-support'
-              ? 'Bounce'
-              : signal.kind === 'reject-resistance'
-                ? 'Reject'
-                : signal.kind === 'break-resistance'
-                  ? 'Break'
-                  : 'Break'
-          return (
-            <g
-              key={`chile-reversal:${signal.kind}:${signal.index}`}
-              className="chile-reversal-signal"
-              data-testid={`chile-reversal-${signal.kind}`}
-              data-index={signal.index}
-            >
-              <title>
-                {glyph} · {signal.levelKind} {signal.level.toFixed(2)}
-              </title>
-              {isBreak ? (
-                <rect
-                  x={anchor.x - size * 0.7}
-                  y={Math.min(tipY, baseY)}
-                  width={size * 1.4}
-                  height={size}
-                  fill={color}
-                  fillOpacity={0.9}
-                />
-              ) : (
-                <path
-                  d={`M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`}
-                  fill={color}
-                  stroke={color}
-                  strokeWidth={0.7}
-                />
-              )}
-              <ChartMessageText
-                x={anchor.x}
-                y={bullish ? baseY + 12 : baseY - 6}
-                color={color}
-                size={9}
-                weight={700}
-                anchor="middle"
-                className="chile-reversal-label"
-              >
-                {glyph}
-              </ChartMessageText>
-            </g>
+        {displayedChileSignals(result.signals)
+          .map((signal) => ({
+            signal,
+            // Markers are alerts, not annotations: each holds full strength for
+            // its lifetime, then the CSS fade takes it to nothing. A lifetime of
+            // 0 keeps the old always-on behavior (expiry null).
+            expiry: chileMarkerExpiry(
+              signal,
+              chileNowSeconds,
+              chileBarSeconds,
+              settings.markerTtlSeconds,
+              settings.markerFadeSeconds,
+            ),
+          }))
+          .filter(
+            (marker) =>
+              // Wiped by the legend's clear-on-demand eraser, or past its fade.
+              marker.signal.time + chileBarSeconds >
+                (chileMarkerClears[indicator.id] ?? Number.NEGATIVE_INFINITY) &&
+              marker.expiry?.expired !== true,
           )
-        })}
+          .map(({ signal, expiry }) => {
+            const candle = candles[signal.index]
+            if (!candle) return null
+            const bullish = signal.side === 'bullish'
+            const anchor = position({
+              time: candle.time,
+              price: bullish ? candle.low : candle.high,
+            })
+            if (!anchor) return null
+            const isBreak = signal.kind === 'break-resistance' || signal.kind === 'break-support'
+            const color = isBreak
+              ? CHILE_REVERSAL_COLORS.breakout
+              : bullish
+                ? settings.supportColor
+                : settings.resistanceColor
+            const size = 8
+            const gap = 9
+            const tipY = bullish ? anchor.y + gap : anchor.y - gap
+            const baseY = bullish ? tipY + size : tipY - size
+            const glyph =
+              signal.kind === 'bounce-support'
+                ? 'Bounce'
+                : signal.kind === 'reject-resistance'
+                  ? 'Reject'
+                  : signal.kind === 'break-resistance'
+                    ? 'Break'
+                    : 'Break'
+            return (
+              <g
+                key={`chile-reversal:${signal.kind}:${signal.index}`}
+                className={`chile-reversal-signal ${expiry ? 'chile-reversal-signal-expiring' : ''}`}
+                data-testid={`chile-reversal-${signal.kind}`}
+                data-index={signal.index}
+                style={
+                  expiry
+                    ? {
+                        // The class carries name/timing/fill-mode; the inline
+                        // duration and delay place this marker on the shared
+                        // fade timeline (a negative delay resumes mid-fade).
+                        animationDuration: `${Math.max(settings.markerFadeSeconds, 0.01)}s`,
+                        animationDelay: `${expiry.fadeDelaySeconds}s`,
+                      }
+                    : undefined
+                }
+              >
+                <title>
+                  {glyph} · {signal.levelKind} {signal.level.toFixed(2)}
+                </title>
+                {isBreak ? (
+                  <rect
+                    x={anchor.x - size * 0.7}
+                    y={Math.min(tipY, baseY)}
+                    width={size * 1.4}
+                    height={size}
+                    fill={color}
+                    fillOpacity={0.9}
+                  />
+                ) : (
+                  <path
+                    d={`M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`}
+                    fill={color}
+                    stroke={color}
+                    strokeWidth={0.7}
+                  />
+                )}
+                <ChartMessageText
+                  x={anchor.x}
+                  y={bullish ? baseY + 12 : baseY - 6}
+                  color={color}
+                  size={9}
+                  weight={700}
+                  anchor="middle"
+                  className="chile-reversal-label"
+                >
+                  {glyph}
+                </ChartMessageText>
+              </g>
+            )
+          })}
       </g>
     )
   }
@@ -3363,7 +3440,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                     ? chileReversalLegendValue(
                                         chileReversalOverlays.find(
                                           (item) => item.indicator.id === indicator.id,
-                                        )?.result,
+                                        ),
+                                        chileNowSeconds,
+                                        chileBarSeconds,
                                       )
                                     : indicator.kind === 'coinbase-strike'
                                       ? formatPrice(
@@ -3412,6 +3491,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                         label={`Toggle ${indicator.name} ${indicator.period}`}
                         onClick={() => props.onIndicatorToggle(indicator.id)}
                       />
+                      {indicator.kind === 'chile-reversal' && (
+                        <IconButton
+                          icon={Eraser}
+                          label={`Clear ${indicator.name} markers`}
+                          title="Clear every Bounce / Reject / Break marker now; new signals still print"
+                          onClick={() => clearChileMarkers(indicator.id)}
+                        />
+                      )}
                       <IconButton
                         icon={Settings2}
                         label={`Settings for ${indicator.name} ${indicator.period}`}

@@ -44,7 +44,13 @@ Breaks compare against the **previous** bar's level set, matching `close[1] <= r
 
 ### What the chart keeps on screen
 
-The engine reports every signal in the loaded history; the overlay does not print all of them. Pine paints under `max_labels_count` (default ~50) and garbage-collects the oldest labels, so the overlay does the equivalent: a run of the same pattern at the same level on consecutive bars collapses to its freshest print, and only the newest 40 markers stay (`displayedChileSignals`). Without that, rows of reprinted **Bounce**/**Reject** texts from aged bars smeared together and read as floating artifacts rather than markers of a bar. Both SVG safety and freshness show up elsewhere too: the overlay is clipped to the main pane, and the legend tags how old the newest signal is (`Reject R1 · 12m`) instead of letting a stale signal look permanent.
+The engine reports every signal in the loaded history; the overlay does not print all of them. Pine paints under `max_labels_count` (default ~50) and garbage-collects the oldest labels, so the overlay does the equivalent: a run of the same pattern at the same level on consecutive bars collapses to its freshest print, and only the newest 40 markers stay (`displayedChileSignals`). Without that, rows of reprinted **Bounce**/**Reject** texts from aged bars smeared together and read as floating artifacts rather than markers of a bar.
+
+On top of the count cap, **markers are ephemeral**. Each one prints when its bar closes, holds full strength for `markerTtlSeconds` (default 60), then fades linearly to nothing over `markerFadeSeconds` (default 15) and stops rendering (`chileMarkerExpiry`). The fade is a CSS animation whose delay encodes the marker's age, so it advances in real time without re-renders, and a negative delay resumes mid-fade for a marker that aged between renders. The clock is wall time on a live feed, where the newest bar tracks the present; demo and replay data are pinned away from the wall clock, so their clock is the close of the newest loaded bar — markers there age in data time as bars stream in. A lifetime of 0 restores the always-on behaviour, subject only to the 40-marker cap.
+
+When the pile still needs manual cleaning, the legend's eraser button (in the indicator row, next to the eye toggle) wipes every marker currently printed; signals that print afterwards still appear. The wipe is recorded as a bar-close cutoff per indicator, so the cleared history never comes back on a later re-render.
+
+Both SVG safety and freshness show up elsewhere too: the overlay is clipped to the main pane, and the legend tags how old the newest signal is (`Reject R1 · 12m`), plus `· fading`/`· faded` once a lifetime is set — the legend is the only trace left after a marker fades off the price pane.
 
 ## Higher-timeframe safety
 
@@ -73,6 +79,8 @@ These are what make the Pine signals late by design: at the moment of a true bot
 | Pivot right          | `pivotDer`                               | 2       |
 | Max distance (ATR)   | `maxDistATR`                             | 2.5     |
 | Zone thickness (ATR) | `grosorZonaATR`                          | 0.10    |
+| Marker lifetime (s)  | —                                        | 60      |
+| Marker fade (s)      | —                                        | 15      |
 | Show S/R zones       | `mostrarSR`                              | on      |
 | Show breaks          | —                                        | on      |
 | Require confirmation | `confirmacionLong/Short` + `velaImpulso` | off     |

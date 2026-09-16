@@ -21,14 +21,15 @@ export function IndicatorTimeframeFeed({ product, interval, playing, onData }: P
     limit: 900,
     metadata: false,
   })
-  const { snapshot, state, message } = feed
+  const { snapshot, state, message, tape } = feed
   useEffect(() => {
     onData(product, interval, {
       candles: snapshot?.candles ?? [],
       asOf: snapshot?.asOf ?? 0,
       state,
       message,
+      tape,
     })
-  }, [product, interval, snapshot, state, message, onData])
+  }, [product, interval, snapshot, state, message, tape, onData])
   return null
 }

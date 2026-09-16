@@ -86,6 +86,37 @@ describe('bar clock', () => {
     expect(read.clock.secondsLeft).toBe(24)
     expect(read.clock.clockLabel).toBe('00:24')
   })
+  it('formats hours and days cleanly for higher candle timings', () => {
+    const closed = sineClosed(30)
+    const forming1h = mk(0, 100, 101, 99, 100.5, 150)
+    const read1h = analyzeBarPulse({
+      candles: [...closed, forming1h],
+      interval: '1h',
+      now: 1800,
+      price: 100.5,
+    })
+    expect(read1h.clock.secondsLeft).toBe(1800)
+    expect(read1h.clock.clockLabel).toBe('30:00')
+
+    const read1hLong = analyzeBarPulse({
+      candles: [...closed, forming1h],
+      interval: '1h',
+      now: 60,
+      price: 100.5,
+    })
+    expect(read1hLong.clock.secondsLeft).toBe(3540)
+    expect(read1hLong.clock.clockLabel).toBe('59:00')
+
+    const forming1D = mk(0, 100, 101, 99, 100.5, 150)
+    const read1D = analyzeBarPulse({
+      candles: [...closed, forming1D],
+      interval: '1D',
+      now: 3600,
+      price: 100.5,
+    })
+    expect(read1D.clock.secondsLeft).toBe(82800)
+    expect(read1D.clock.clockLabel).toBe('23:00:00')
+  })
 })
 
 describe('bar shape', () => {

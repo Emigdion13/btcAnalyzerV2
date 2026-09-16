@@ -269,6 +269,10 @@ export default function App() {
     'candle-pulse-visible',
     null,
   )
+  const [pulseTimeframeSetting, setPulseTimeframeSetting] = useLocalState<string>(
+    'candle-pulse-timeframe',
+    'chart',
+  )
   const pulseVisible =
     pulsePreference ?? candlePulseDefaultVisible(window.innerWidth, window.innerHeight)
   const [settings, setSettings] = useLocalState<ChartSettings>('chart-settings', DEFAULT_SETTINGS)
@@ -469,17 +473,31 @@ export default function App() {
     () => peekResolution(peekSettings, timeframe),
     [peekSettings, timeframe],
   )
+  const effectivePulseTimeframe: Timeframe =
+    pulseTimeframeSetting !== 'chart' && TIMEFRAMES.includes(pulseTimeframeSetting as Timeframe)
+      ? (pulseTimeframeSetting as Timeframe)
+      : timeframe
   // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
   const peekActive = peekVisible && replayIndex === null
+  const pulseActive = pulseVisible && replayIndex === null
   const indicatorTimeframes = useMemo(
     () =>
       requestedIndicatorTimeframes(indicators, timeframe, [
         ...(peekActive ? [peekTimeframe] : []),
+        ...(pulseActive && effectivePulseTimeframe !== timeframe ? [effectivePulseTimeframe] : []),
         // A window-only CM MACD on another resolution cannot be computed from chart candles, so
         // its source feed has to be asked for here: the visible-indicator walk above misses it.
         ...oscHudRequestedTimeframes(indicators, timeframe, oscHudOpen),
       ]),
-    [indicators, timeframe, peekActive, peekTimeframe, oscHudOpen],
+    [
+      indicators,
+      timeframe,
+      peekActive,
+      peekTimeframe,
+      pulseActive,
+      effectivePulseTimeframe,
+      oscHudOpen,
+    ],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
     () =>
@@ -549,6 +567,23 @@ export default function App() {
     live.message,
     live.retry,
     feedActive,
+  ])
+  const pulseFeed = useMemo(() => {
+    const isChart = effectivePulseTimeframe === timeframe
+    const feed = isChart ? undefined : nativeTimeframes[effectivePulseTimeframe]
+    return {
+      candles: feed?.candles ?? (isChart ? candles : EMPTY_CANDLES),
+      state: feed?.state ?? feedState,
+      tape: isChart ? (source === 'coinbase' ? live.tape : null) : (feed?.tape ?? null),
+    }
+  }, [
+    effectivePulseTimeframe,
+    timeframe,
+    nativeTimeframes,
+    candles,
+    feedState,
+    source,
+    live.tape,
   ])
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
@@ -1994,12 +2029,15 @@ export default function App() {
                   <BarPulseBox
                     ticker={asset.ticker}
                     source={source}
-                    state={feedState}
-                    candles={candles}
-                    interval={timeframe}
+                    state={pulseFeed.state}
+                    candles={pulseFeed.candles}
+                    interval={effectivePulseTimeframe}
+                    chartTimeframe={timeframe}
+                    selectedInterval={pulseTimeframeSetting}
+                    onIntervalChange={setPulseTimeframeSetting}
                     price={currentPrice}
                     book={bookView}
-                    tape={source === 'coinbase' ? live.tape : null}
+                    tape={pulseFeed.tape}
                     upColor={settings.upColor}
                     downColor={settings.downColor}
                     onClose={() => setPulsePreference(false)}

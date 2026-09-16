@@ -207,14 +207,22 @@ function barClock(forming: Candle, interval: Timeframe, now: number): BarClock {
   const end = start + seconds
   const progress = clamp01((now - start) / seconds)
   const secondsLeft = Math.max(0, end - now)
-  const m = Math.floor(secondsLeft / 60)
+  const d = Math.floor(secondsLeft / 86400)
+  const h = Math.floor((secondsLeft % 86400) / 3600)
+  const m = Math.floor((secondsLeft % 3600) / 60)
   const s = Math.floor(secondsLeft % 60)
+  const clockLabel =
+    secondsLeft >= 86400
+      ? `${d}d ${h}h`
+      : secondsLeft >= 3600
+        ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+        : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return {
     start,
     end,
     progress,
     secondsLeft,
-    clockLabel: `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+    clockLabel,
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { GripVertical, Minus, Plus, Radar, X } from 'lucide-react'
+import { ChevronDown, GripVertical, Minus, Plus, Radar, X } from 'lucide-react'
 import {
   INTERVAL_SECONDS,
   type BarTape,
@@ -10,7 +10,7 @@ import {
 import { analyzeBarPulse, LEVEL_ATR_HORIZON } from '../lib/bar-pulse'
 import type { LevelSource, LevelZone } from '../lib/bar-pulse'
 import { useFloatingWindow } from '../lib/floating-window'
-import { compactNumber, formatPrice } from '../lib/market'
+import { compactNumber, formatPrice, TIMEFRAMES } from '../lib/market'
 import type { Candle, Timeframe } from '../lib/types'
 
 const POSITION_KEY = 'candle-pulse-pos'
@@ -27,6 +27,9 @@ interface Props {
   state: ConnectionState
   candles: Candle[]
   interval: Timeframe
+  chartTimeframe?: Timeframe
+  selectedInterval?: string
+  onIntervalChange?: (interval: string) => void
   price: number
   book: OrderBookView | null
   tape: BarTape | null
@@ -49,6 +52,9 @@ export function BarPulseBox({
   state,
   candles,
   interval,
+  chartTimeframe,
+  selectedInterval,
+  onIntervalChange,
   price,
   book,
   tape,
@@ -56,9 +62,16 @@ export function BarPulseBox({
   downColor,
   onClose,
 }: Props) {
+  const [localInterval, setLocalInterval] = useState(selectedInterval ?? 'chart')
+  const currentSelection = selectedInterval ?? localInterval
   const [minimized, setMinimized] = useState(false)
   const [now, setNow] = useState(() => Date.now() / 1000)
   const win = useFloatingWindow(POSITION_KEY, 8)
+
+  // Keep local selection in sync if controlled from parent
+  useEffect(() => {
+    if (selectedInterval) setLocalInterval(selectedInterval)
+  }, [selectedInterval])
 
   // The countdown and clock need their own heartbeat; the candles arrive on the feed's cadence.
   useEffect(() => {
@@ -74,8 +87,18 @@ export function BarPulseBox({
     const last = candles[candles.length - 1]
     const seconds = INTERVAL_SECONDS[interval]
     const bucket = Math.floor(now / seconds) * seconds
-    return last.time === bucket ? candles : [...candles.slice(0, -1), { ...last, time: bucket }]
-  }, [source, candles, interval, now])
+    const formingClose = Number.isFinite(price) && price > 0 ? price : last.close
+    return [
+      ...candles.slice(0, -1),
+      {
+        ...last,
+        time: bucket,
+        close: formingClose,
+        high: Math.max(last.high, formingClose),
+        low: Math.min(last.low, formingClose),
+      },
+    ]
+  }, [source, candles, interval, now, price])
 
   const read = useMemo(
     () => analyzeBarPulse({ candles: effectiveCandles, interval, now, price, book, tape }),
@@ -119,8 +142,33 @@ export function BarPulseBox({
         <span className={`pulse-dot ${dotClass}`} aria-hidden="true" />
         <Radar size={11} className="pulse-radar" aria-hidden="true" />
         <span className="pulse-title">
-          CANDLE PULSE <span className="pulse-sub">{ticker} · {interval.toUpperCase()}</span>
+          CANDLE PULSE <span className="pulse-sub">{ticker}</span>
         </span>
+        <label
+          className="pulse-picker"
+          title="Select candle timeframe to analyze"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <select
+            aria-label="Candle timeframe to analyze"
+            value={currentSelection}
+            onChange={(e) => {
+              const val = e.target.value
+              setLocalInterval(val)
+              onIntervalChange?.(val)
+            }}
+          >
+            <option value="chart">
+              Chart{chartTimeframe ? ` (${chartTimeframe})` : ''}
+            </option>
+            {TIMEFRAMES.map((tf) => (
+              <option key={tf} value={tf}>
+                {tf}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={9} aria-hidden="true" />
+        </label>
         <span className="pulse-head-actions">
           <button
             type="button"
@@ -161,7 +209,7 @@ export function BarPulseBox({
           {/* ── Bar clock ─────────────────────────────────────────────── */}
           <section className="pulse-clock" aria-label="Time until this bar closes">
             <div className="pulse-clock-meta">
-              <span className="pulse-cap">BAR CLOSES IN</span>
+              <span className="pulse-cap">BAR CLOSES IN · {interval.toUpperCase()}</span>
               <span className="pulse-clock-time">{clock.clockLabel}</span>
             </div>
             <div className="pulse-clock-track">

@@ -9004,10 +9004,54 @@ input[type='color']::-webkit-color-swatch {
   color: rgba(148, 197, 214, 0.62);
   text-shadow: none;
 }
-.pulse-head-actions {
+.pulse-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
   margin-left: auto;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+.pulse-picker select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 2px 14px 2px 5px;
+  border: 1px solid rgba(89, 216, 242, 0.28);
+  border-radius: 3px;
+  background: rgba(3, 14, 24, 0.85);
+  color: #a5eefc;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  max-width: 86px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+.pulse-picker select:hover,
+.pulse-picker select:focus {
+  border-color: var(--pulse-cyan);
+  background: rgba(89, 216, 242, 0.12);
+  outline: none;
+}
+.pulse-picker select option {
+  background: #06121e;
+  color: #cceeff;
+}
+.pulse-picker > svg {
+  position: absolute;
+  right: 3px;
+  pointer-events: none;
+  color: rgba(148, 197, 214, 0.7);
+}
+.pulse-head-actions {
   display: flex;
   gap: 2px;
+  flex-shrink: 0;
 }
 .pulse-btn {
   display: flex;

@@ -4,6 +4,7 @@ import {
   CHILE_PIVOT_MEMORY,
   calculateChileReversal,
   chileReversalIndicatorLabel,
+  displayedChileSignals,
   chileReversalSettings,
   isChileReversalSettings,
 } from './chile-reversal'
@@ -317,5 +318,60 @@ describe('chile reversal higher timeframe reads', () => {
       expect(signal.index).toBeGreaterThanOrEqual(0)
       expect(signal.index).toBeLessThan(60)
     }
+  })
+})
+
+describe('displayedChileSignals', () => {
+  const print = (
+    index: number,
+    kind: 'bounce-support' | 'reject-resistance' = 'bounce-support',
+    level = 100,
+    levelKind: 'R1' | 'R2' | 'S1' | 'S2' = 'S1',
+  ) => ({
+    kind,
+    index,
+    time: index * 60,
+    level,
+    levelKind,
+    price: level - 1,
+    side: 'bullish' as const,
+    confirmed: true,
+  })
+
+  it('collapses a consecutive-bar reprint of the same pattern to its freshest print', () => {
+    const out = displayedChileSignals([print(10), print(11), print(12)])
+    expect(out).toHaveLength(1)
+    expect(out[0].index).toBe(12)
+  })
+
+  it('keeps non-consecutive prints of the same pattern', () => {
+    const out = displayedChileSignals([print(10), print(12), print(20)])
+    expect(out.map((s) => s.index)).toEqual([10, 12, 20])
+  })
+
+  it('does not collapse different kinds or levels on consecutive bars', () => {
+    const out = displayedChileSignals([
+      print(10, 'bounce-support', 100),
+      print(11, 'reject-resistance', 100, 'R1'),
+      print(12, 'reject-resistance', 101, 'R1'),
+    ])
+    expect(out.map((s) => [s.index, s.kind, s.level])).toEqual([
+      [10, 'bounce-support', 100],
+      [11, 'reject-resistance', 100],
+      [12, 'reject-resistance', 101],
+    ])
+  })
+
+  it('caps the history, keeping the newest markers', () => {
+    const many = Array.from({ length: 60 }, (_, i) => print(i * 3))
+    const out = displayedChileSignals(many)
+    expect(out).toHaveLength(40)
+    expect(out[0].index).toBe(60)
+    expect(out[out.length - 1].index).toBe(59 * 3)
+  })
+
+  it('leaves short unique lists untouched', () => {
+    const few = [print(0), print(5), print(9)]
+    expect(displayedChileSignals(few)).toEqual(few)
   })
 })

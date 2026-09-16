@@ -42,6 +42,10 @@ Pine's hand-rolled insertion sort can assign `r2`/`s2` while `r1`/`s1` is still 
 
 Breaks compare against the **previous** bar's level set, matching `close[1] <= resistencia1 + grosorZona`. As in the original, rebound and rejection are evaluated on the **chart** candle against **higher-timeframe** levels; the Pine script mixes resolutions the same way, so a 1m candle poking a 15m pivot counts.
 
+### What the chart keeps on screen
+
+The engine reports every signal in the loaded history; the overlay does not print all of them. Pine paints under `max_labels_count` (default ~50) and garbage-collects the oldest labels, so the overlay does the equivalent: a run of the same pattern at the same level on consecutive bars collapses to its freshest print, and only the newest 40 markers stay (`displayedChileSignals`). Without that, rows of reprinted **Bounce**/**Reject** texts from aged bars smeared together and read as floating artifacts rather than markers of a bar. Both SVG safety and freshness show up elsewhere too: the overlay is clipped to the main pane, and the legend tags how old the newest signal is (`Reject R1 · 12m`) instead of letting a stale signal look permanent.
+
 ## Higher-timeframe safety
 
 The Pine source reads HTF series with `request.security(..., x[1], lookahead=barmerge.lookahead_on)` — the closed-bar idiom. Atlas reproduces the intent directly: each chart bar maps to the newest pivot-timeframe bar that had already **closed**, so a developing HTF candle's eventual high or low never reaches an earlier chart bar. A test asserts that an extreme low placed in the newest HTF bar does not become a support level.

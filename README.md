@@ -59,7 +59,7 @@ The symbol picker uses Coinbase's available, online USD product catalog. Unavail
 - Catalog and REST requests are cached/coalesced, upstream requests are rate-limited, reconnects back off, heartbeats detect a stalled stream, and periodic/reconnect REST reconciliation repairs missing trade history.
 - Closed-data gaps are **not** replaced with invented flat candles. Sparse products can have fewer returned bars than requested.
 - **Current candles are provisional.** A REST candle does not expose a last-trade ID. To avoid double-counting volume, stream events preceding REST receipt are skipped; this can briefly undercount the receipt window until authoritative REST reconciliation. Do not treat the open candle as finalized data.
-- Alerts pause when the selected feed is disconnected/stale/paused, and during replay. Demo quotes cannot trigger Coinbase alerts. Replay freezes a snapshot; incoming live updates do not move its history.
+- Alerts and custom indicator alarms pause when the selected feed is disconnected/stale/paused, and during replay. Demo quotes cannot trigger Coinbase alerts, and a Coinbase alarm cannot be triggered by demo candles. Replay freezes a snapshot; incoming live updates do not move its history.
 
 Public API references: [candles](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-candles), [product stats](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-stats), and [WebSocket channels](https://docs.cdp.coinbase.com/exchange/websocket-feed/channels).
 
@@ -123,7 +123,8 @@ Kalshi endpoints remain available for its published metal ladders:
 - **CM MACD, WaveTrend, RSI Divergence & VIX Fix windows:** the last twenty minutes of `CM_Ult_MacD_MTF`, `WaveTrend [LazyBear]`, `RSI Divergence`, and `CM_Williams_Vix_Fix` as floating windows on the chart, each zoomed to its own scale — bars wide enough to read a single wave, the original colour rules (aqua/blue/red/maroon histogram, lime MACD and yellow signal with the crossover dots; green wt1, dotted red wt2 and the blue area between them; violet RSI line with 70/50/30 levels and divergence detection; lime/gray fear histogram with the aqua upper band and orange range-high), and the overbought/oversold bands as soon as the window's own scale reaches them. They plot the values the pane plots, so a window and a pane can never disagree, and the numbers follow the bar your crosshair is on. The toolbar **Floating** selector — one dropdown for every floating window — owns the windows (or **Alt M**, **Alt W**, **Alt D**, **Alt V**); each one drags, minimizes, zooms by ±4 bars, and keeps its position and zoom. With no matching indicator on the chart a window runs the published defaults and offers the pane, so its settings stay one click away.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
-- **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
+- **Custom indicator alarms (Alt B):** build your own trigger on **MACD**, **RSI** or **CM_Williams_Vix_Fix** — a *cross before it happens*, a green/red turn, a ChrisMoody histogram colour, a level, a lime fear spike. Each alarm names its own pair and timeframe, so an RSI 15m alarm on BTC-USD keeps watching while you chart ETH 1m; the open chart's pair is read from the live stream and any other pair is polled every 45 seconds. Conditions are "about to cross" with **no threshold to tune** — the gap is measured in bars of typical movement — and up to **four conditions combine in one alarm**: *All of them* must hold on the same bar (a MACD cross gated on RSI), or *Any of them* fires on its own. A fire is once per bar, optionally with a synthesised chime. Never email, never an order. See [custom indicator alarms](docs/indicator-alarms.md).
+- **Your work:** locally saved drafts, scripts, charts, drawings, preferences, watchlists, alerts, indicator alarms, and notes. Explicit **Save** adds or updates a script in the library; drafts are also retained automatically.
 - **Exports:** chart PNGs (including drawings), OHLCV CSVs, and validated JSON workspace backup/import. Share links contain only the symbol, interval, and chart style—not private scripts or drawings.
 - **Responsive layout:** collapsible side panels and editor, desktop/tablet/mobile layouts, and keyboard shortcuts.
 
@@ -272,6 +273,8 @@ src/
     Sidebar.tsx                Watchlist, symbol detail, alerts, trading notes
     Dialogs.tsx                Lazy-loaded search, library, settings, docs, sharing
     TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
+    IndicatorAlarmDialog.tsx   Custom MACD/RSI/VIX Fix alarm builder, with live preview
+    IndicatorAlarmList.tsx     Indicator-alarm cards inside the alerts panel
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
     market.ts                  Asset metadata, demo feed, venue routing, quote formatting
@@ -289,6 +292,10 @@ src/
     sr-breaks-retests.ts        ChartPrime SR Breaks and Retests port: zones, breaks, retests
     pivot-points-missed-reversals.ts  LuxAlgo pivot highs/lows, missed reversals, zig-zag and levels
     indicator-plot-series.ts    Fixed-width histogram and absolute-dot canvas renderers
+    indicator-alarms.ts        Alarm condition catalog, series, cross/proximity evaluation
+    useIndicatorAlarms.ts      Live-stream and polled alarm monitoring, firing and bookkeeping
+    alarm-sound.ts             Web Audio chime, synthesised at fire time
+    alarm-status.ts            What an alarm card reports about its own readiness
     timeframe-peek.ts          Auto resolution choice, window stats, forming bar and SVG geometry
     floating-window.ts        Shared drag/dock/remember logic for the floating chart windows
     market-agents.ts           Agent/forecast engines: dormant, no UI wires them up
@@ -303,11 +310,15 @@ shared/kalshi.ts                Kalshi feed tables: crypto ladders, metal ladder
 shared/kalshi-metals.ts         Settlement points, metal candles, quote, coverage, validation
 shared/fixtures/                Verbatim upstream records used by the tests
 server/                        Coinbase REST/WS adapter, Kalshi adapter, SSE API, servers
+tests/indicator-alarms.spec.ts  Building, reading, pausing and persisting alarms in the browser
 tests/workspace.spec.ts         Existing offline-workspace integration tests
 tests/coinbase.spec.ts          Coinbase UI/transport fixtures and failure tests
 ```
 
-Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, Kalshi settlement parsing, metal bar construction and ladder paging, metal poll cadence and refusal to request unsupported resolutions, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
+Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; alarm
+conditions, cross and proximity arithmetic, combined *all of / any of* alarms, the firing path
+(live stream, closed bars, replay and venue gating), the builder's form and validation, the alarm
+chime and its fallbacks; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, Kalshi settlement parsing, metal bar construction and ladder paging, metal poll cadence and refusal to request unsupported resolutions, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
 
 ## Next production milestones
 

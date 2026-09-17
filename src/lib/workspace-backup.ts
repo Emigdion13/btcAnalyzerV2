@@ -9,12 +9,14 @@ import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
 import { isWaveTrendSettings } from './wave-trend'
 import { isWilliamsVixFixSettings } from './cm-williams-vix-fix'
+import { isIndicatorAlarm } from './indicator-alarms'
 import type { DataSource } from '../../shared/coinbase'
 import type {
   ChartSettings,
   ChartType,
   Drawing,
   Indicator,
+  IndicatorAlarm,
   PriceAlert,
   SavedScript,
   Timeframe,
@@ -36,9 +38,13 @@ export interface WorkspaceBackup {
   scripts: SavedScript[]
   draft: { id: string; name: string; source: string }
   alerts: PriceAlert[]
+  /** Custom indicator alarms. Optional so older backups still import. */
+  indicatorAlarms?: IndicatorAlarm[]
   notes: string
 }
 const symbols = ASSETS.map((a) => a.symbol)
+/** Matches the runtime cap in `indicator-alarms.ts`; backups never carry more than the app keeps. */
+const ALARM_BACKUP_LIMIT = 25
 function validSymbol(value: unknown): value is string {
   return typeof value === 'string' && (symbols.includes(value) || isProductId(value))
 }
@@ -342,6 +348,10 @@ function alert(value: unknown): PriceAlert {
   if (a.triggeredAt !== undefined) result.triggeredAt = date(a.triggeredAt, 'alert trigger date')
   return result
 }
+function indicatorAlarm(value: unknown): IndicatorAlarm {
+  if (!isIndicatorAlarm(value)) invalid('indicator alarm')
+  return value
+}
 export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
   const b = record(value, 'file contents')
   if (b.version !== 1) invalid('unsupported version')
@@ -414,6 +424,15 @@ export function parseWorkspaceBackup(value: unknown): WorkspaceBackup {
       source: text(draft.source, 40000, 'draft source', true),
     },
     alerts: unique(array(b.alerts, 50, 'alerts').map(alert), (a) => a.id, 'alert ID'),
+    ...(b.indicatorAlarms === undefined
+      ? {}
+      : {
+          indicatorAlarms: unique(
+            array(b.indicatorAlarms, ALARM_BACKUP_LIMIT, 'indicator alarms').map(indicatorAlarm),
+            (a) => a.id,
+            'indicator alarm ID',
+          ),
+        }),
     notes: text(b.notes, 50000, 'notes', true),
   }
 }
@@ -434,6 +453,7 @@ export function persistWorkspaceBackup(backup: WorkspaceBackup): void {
     ['scripts', backup.scripts],
     ['draft', backup.draft],
     ['alerts', backup.alerts],
+    ['indicator-alarms', backup.indicatorAlarms ?? []],
     ['notes', backup.notes],
   ]
   const previous = entries.map(([key]) => [key, localStorage.getItem(`atlas.v1.${key}`)] as const)

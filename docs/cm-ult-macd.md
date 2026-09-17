@@ -4,6 +4,11 @@ Atlas includes a native TypeScript port of **ChrisMoody’s original 2014 CM_Mac
 
 ## Using it
 
+Alarms on this indicator — the lime/red cross, "about to cross" with no threshold to tune, and
+every ChrisMoody histogram colour — are documented in
+[custom indicator alarms](indicator-alarms.md), including how an alarm combines with RSI or the
+VIX Fix on the same bar.
+
 New workspaces include the indicator. Existing saved workspaces are not overwritten: select **Indicators**, search **CM_Ult_MacD_MTF** or **ChrisMoody**, and select **Add**. Select its pane title or settings icon to edit it. Hiding the indicator leaves a restorable entry in the price-chart legend and the object tree.
 
 The original default title is **CM_Ult_MacD_MTF (60, 12, 26, 9)**. **60 does not, by itself, force a one-hour calculation.** It is the stored alternate-resolution input. The original **Use Current Chart Resolution?** switch defaults to **checked**. Uncheck it and leave **60 · 1 hour** selected to calculate a fixed hourly MACD on, for example, a 5m or 15m chart. The pane badge explicitly shows the effective resolution.

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
+  BellRing,
   Braces,
   ChartNoAxesCombined,
   Check,
@@ -866,7 +867,8 @@ export function AlertDialog({
           <CircleHelp size={16} />
           <span>
             Alerts pause during replay or disconnection and use only the selected data source. No
-            trades are placed and no emails are sent.
+            trades are placed and no emails are sent. Indicator alarms follow the same rules and
+            add a chime.
           </span>
         </div>
       </form>
@@ -1124,6 +1126,7 @@ export function MarketsDialog({
 
 const SHORTCUTS = [
   ['Search symbols', 'Ctrl / ⌘ K'],
+  ['Custom indicator alarm', 'Alt B'],
   ['Save script', 'Ctrl / ⌘ S'],
   ['Run indicator', 'Ctrl / ⌘ Enter'],
   ['Trend line', 'Alt T'],
@@ -1212,6 +1215,11 @@ export function DocsDialog({
                   icon: Gauge,
                   title: '06 · Read the RSI without giving up a pane',
                   text: 'The toolbar RSI button opens a floating RSI meter — the reading, its change and the 30/50/70 zones — with no oscillator pane of its own. It shares one length with the RSI indicator, so adding RSI from the library turns that same setting into a pane.',
+                },
+                {
+                  icon: BellRing,
+                  title: '07 · Alarm on the indicator, not just the price',
+                  text: 'Alt B or the alerts panel builds an alarm on MACD, RSI or the Williams Vix Fix: a cross before it happens, a green/red turn, a histogram colour, a level, a lime fear spike — or up to four of those combined, all true on the same bar or any one of them. It names its own pair and timeframe, so a BTC 15m alarm keeps watching while you chart something else.',
                 },
               ].map((item) => (
                 <div key={item.title}>

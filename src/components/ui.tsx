@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Bitcoin, Check, CheckCircle2, Info, X, AlertCircle } from 'lucide-react'
+import { AlertCircle, BellRing, Bitcoin, Check, CheckCircle2, Info, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Asset } from '../lib/types'
 import { sparklinePoints } from '../lib/market'
@@ -280,7 +280,8 @@ export function MenuItem({
 export interface ToastMessage {
   id: string
   message: string
-  tone: 'success' | 'error' | 'info'
+  /** `alarm` is a fired indicator alarm: its own icon, and the longest dwell time. */
+  tone: 'success' | 'error' | 'info' | 'alarm'
 }
 export function ToastHost({
   toasts,
@@ -297,6 +298,8 @@ export function ToastHost({
             <CheckCircle2 size={18} />
           ) : toast.tone === 'error' ? (
             <AlertCircle size={18} />
+          ) : toast.tone === 'alarm' ? (
+            <BellRing size={18} />
           ) : (
             <Info size={18} />
           )}

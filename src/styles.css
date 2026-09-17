@@ -2507,9 +2507,118 @@ button {
   align-items: center;
   gap: 5px;
 }
-.alert-card .toggle {
+.alarm-card .toggle {
   transform: scale(0.8);
   transform-origin: right center;
+}
+/* Custom indicator alarms: their own section inside the alerts panel. */
+.alarm-section {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid #273441;
+}
+.alarm-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 13px;
+}
+.alarm-section-heading > h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8294ab;
+}
+.alarm-section-heading .icon-button {
+  width: 24px;
+  height: 24px;
+}
+.alarm-section-heading .icon-button > svg {
+  width: 13px;
+  height: 13px;
+}
+.alarm-section > .empty-state {
+  padding: 22px 4px 18px;
+}
+.alarm-card {
+  border-color: #33404d;
+}
+.alarm-chip {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  padding: 2px 5px;
+  border: 1px solid #35455a;
+  border-radius: 3px;
+  color: #93a6bd;
+}
+.alarm-headline {
+  font-size: 11px;
+  line-height: 16px;
+  color: #cfdcea;
+  margin-top: 12px;
+}
+.alarm-indicator {
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: #6f8298;
+  margin-top: 5px;
+}
+.alarm-combo-chip {
+  display: inline-block;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border: 1px solid #3c4d3a;
+  border-radius: 3px;
+  color: #a9c98d;
+  margin-top: 7px;
+}
+.alarm-reading {
+  font-size: 9.5px;
+  color: #9fb2c8;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.alarm-state {
+  font-size: 9px;
+  line-height: 15px;
+  color: #7a8da4;
+  margin-top: 9px;
+}
+.alarm-state.positive {
+  color: #b7dc97;
+}
+.alarm-state.warning {
+  color: #e2a48f;
+}
+.alarm-card-foot {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #2d394544;
+}
+.alarm-card-foot .icon-button {
+  width: 21px;
+  height: 22px;
+}
+.alarm-card-foot .icon-button > svg {
+  width: 12px;
+  height: 12px;
+}
+.alarm-card-foot .alert-state > svg {
+  color: #5f7488;
+}
+.alarm-section-foot {
+  font-size: 9px;
+  line-height: 15px;
+  color: #677d94;
+  padding: 1px 2px 18px;
 }
 .panel-footnote {
   padding: 13px 17px;
@@ -2881,6 +2990,17 @@ button {
 }
 .toast.info > span {
   color: #c8d4e5;
+}
+/* A fired indicator alarm: the accent colour, so it reads differently from a price alert. */
+.toast.alarm {
+  background: #262e1ffa;
+  border-color: #5e6b3d;
+}
+.toast.alarm > svg {
+  color: #b9ee82;
+}
+.toast.alarm > span {
+  color: #dbe6c9;
 }
 @keyframes toast-in {
   from {
@@ -6585,6 +6705,194 @@ input[type='color']::-webkit-color-swatch {
 }
 
 /* CM_Ult_MacD_MTF — original inputs and plot palette, independent of chart theme. */
+.alarm-modal {
+  width: min(660px, calc(100vw - 28px));
+}
+.alarm-indicator-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.alarm-indicator-picker > button {
+  padding: 10px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  border: 1px solid #2f3d4d;
+  border-radius: 5px;
+  background: #141b23;
+  color: #93a6bd;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.alarm-indicator-picker > button:hover {
+  border-color: #43596f;
+  color: #c3d3e4;
+}
+.alarm-indicator-picker > button.active {
+  border-color: #4d6b3f;
+  background: #1a2419;
+  color: #b9ee82;
+}
+.alarm-indicator-picker > button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.alarm-combo {
+  border: 1px solid #2f3d4d;
+  border-radius: 7px;
+  background: #12191f;
+  padding: 12px 13px;
+  margin: 2px 0 20px;
+}
+.alarm-combo-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+.alarm-combo-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alarm-combo-head strong {
+  font-size: 11px;
+  font-weight: 400;
+  color: #cfe0ee;
+}
+.alarm-combo-head span {
+  font-size: 9.5px;
+  line-height: 15px;
+  color: #8ea3ba;
+}
+.alarm-combo-head .button {
+  flex: none;
+}
+.alarm-match {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 12px 0 9px;
+}
+.alarm-match > button {
+  padding: 8px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  border: 1px solid #2f3d4d;
+  border-radius: 5px;
+  background: #141b23;
+  color: #93a6bd;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.alarm-match > button:hover {
+  border-color: #43596f;
+  color: #c3d3e4;
+}
+.alarm-match > button.active {
+  border-color: #4d6b3f;
+  background: #1a2419;
+  color: #b9ee82;
+}
+.alarm-leg {
+  border: 1px solid #2b3844;
+  border-radius: 6px;
+  background: #131a22;
+  padding: 11px 12px;
+  margin-top: 12px;
+}
+.alarm-leg-head {
+  align-items: center;
+}
+.alarm-leg-head span {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7f93a8;
+}
+.alarm-leg-head .icon-button {
+  width: 21px;
+  height: 22px;
+}
+.alarm-leg-head .icon-button > svg {
+  width: 12px;
+}
+.alarm-leg .alarm-condition-copy {
+  margin: -4px 0 12px;
+}
+.alarm-leg .form-grid {
+  margin-bottom: 12px;
+}
+.alarm-combo .alarm-condition-copy {
+  margin: 0 0 4px;
+}
+.alarm-condition-copy {
+  font-size: 10px;
+  line-height: 16px;
+  color: #8698ad;
+  margin: -9px 0 20px;
+}
+.alarm-condition-copy.quiet {
+  color: #6f8298;
+}
+.alarm-sound-test {
+  margin: -7px 0 20px;
+  align-items: center;
+}
+.alarm-sound-report {
+  font-size: 9px;
+  color: #7a8da4;
+}
+.alarm-preview {
+  border: 1px solid #2f3d4d;
+  border-radius: 7px;
+  background: #131a22;
+  padding: 12px 13px;
+  margin: 2px 0 18px;
+}
+.alarm-preview-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #b9ee82;
+}
+.alarm-preview-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alarm-preview-head strong {
+  font-size: 11px;
+  font-weight: 400;
+  color: #cfe0ee;
+}
+.alarm-preview-head span {
+  font-size: 9.5px;
+  line-height: 15px;
+  color: #8ea3ba;
+}
+.alarm-preview-reading {
+  font-size: 10px;
+  color: #a9c8e0;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.alarm-preview > p {
+  font-size: 10px;
+  line-height: 16px;
+  color: #a2b1c4;
+  margin: 8px 0 0;
+}
+.alarm-preview-foot {
+  display: block;
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: #6f8298;
+  margin-top: 9px;
+}
 .cm-macd-settings-modal {
   width: min(560px, calc(100vw - 28px));
 }

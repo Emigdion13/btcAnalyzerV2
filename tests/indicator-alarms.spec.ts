@@ -64,7 +64,10 @@ test('offers MACD its colour and proximity conditions, and the VIX Fix its spike
   expect(await options()).toContain('Histogram turns red — sell-off momentum building')
   await conditions.selectOption('macd-about-cross-up')
   await expect(dialog.locator('#alarm-param-within')).toHaveValue('3')
-  await expect(dialog.locator('.alarm-condition-copy')).toContainText('No threshold to tune')
+  // The description of the chosen condition, not the static note underneath the length inputs.
+  await expect(dialog.locator('.alarm-condition-copy:not(.quiet)')).toContainText(
+    'No threshold to tune',
+  )
   // The classic MACD has no colour change, so ChrisMoody's histogram colours are not offered —
   // its histogram conditions stay in its own momentum vocabulary.
   await dialog.getByRole('button', { name: 'MACD (classic)', exact: true }).click()

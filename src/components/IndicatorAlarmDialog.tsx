@@ -397,9 +397,10 @@ export function IndicatorAlarmDialog({
         }}
       >
         <div className="form-grid">
-          <label className="field">
+          <label className="field" htmlFor="alarm-market">
             Market · {source === 'demo' ? 'demo instruments' : 'live venue'}
             <select
+              id="alarm-market"
               value={symbol}
               onChange={(event) => {
                 const next = event.target.value

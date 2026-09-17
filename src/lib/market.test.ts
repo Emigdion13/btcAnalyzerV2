@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { ASSETS, INTERVAL, TIMEFRAMES, formatPrice, generateCandles } from './market'
+import {
+  ASSETS,
+  INTERVAL,
+  METAL_ASSETS,
+  METAL_DEFAULTS,
+  TIMEFRAMES,
+  formatPrice,
+  generateCandles,
+  getAsset,
+  metalAsset,
+  pricePrecision,
+  venueForSymbol,
+  venueLabel,
+} from './market'
+import { KALSHI_METAL_FEEDS } from '../../shared/kalshi'
 
 describe('synthetic OHLCV feed', () => {
   it('is deterministic and ends at the reference quote', () => {
@@ -28,5 +42,60 @@ describe('synthetic OHLCV feed', () => {
     expect(formatPrice(67432.8)).toBe('67,432.80')
     expect(formatPrice(0.16482)).toBe('0.16482')
     expect(formatPrice(3521.64, true)).toBe('$3,521.64')
+  })
+})
+
+describe('Kalshi metal metadata', () => {
+  it("describes one asset per Kalshi metal feed, with the feed's own rounding", () => {
+    expect(METAL_ASSETS.map((asset) => asset.symbol)).toEqual(METAL_DEFAULTS)
+    for (const feed of KALSHI_METAL_FEEDS) {
+      const asset = metalAsset(feed)
+      expect(asset.ticker).toBe(feed.ticker)
+      expect(asset.name).toBe(feed.name)
+      expect(asset.category).toBe('Metals')
+      expect(asset.quoteCurrency).toBe('USD')
+      // The price scale reads this, so silver keeps the third decimal Kalshi rounds to.
+      expect(asset.priceIncrement).toBeCloseTo(10 ** -feed.roundDigits, 10)
+      // Nothing is invented: a metal has no synthetic price, volume or market cap.
+      expect(Number.isNaN(asset.price)).toBe(true)
+      expect(asset.volume).toBe('—')
+      expect(asset.marketCap).toBe('—')
+    }
+  })
+
+  it('resolves metals before the generic Coinbase fallback', () => {
+    const gold = getAsset('XAU-USD')
+    expect(gold.category).toBe('Metals')
+    expect(gold.name).toBe('Gold')
+    expect(gold.ticker).toBe('XAU')
+    // Unknown products still fall back to a Coinbase-shaped asset rather than throwing.
+    expect(getAsset('PEPE-USD').category).not.toBe('Metals')
+  })
+
+  it('reports the decimals Kalshi publishes, and none for other symbols', () => {
+    expect(pricePrecision('XAU-USD')).toBe(2)
+    expect(pricePrecision('XAG-USD')).toBe(3)
+    expect(pricePrecision('BTC-USD')).toBeUndefined()
+    expect(pricePrecision('BTCUSDT')).toBeUndefined()
+  })
+
+  it('separates the venue from the data source', () => {
+    // The demo never claims a live venue, and a metal is never labelled Coinbase.
+    expect(venueForSymbol('BTC-USD', 'demo')).toBe('demo')
+    expect(venueForSymbol('XAU-USD', 'demo')).toBe('demo')
+    expect(venueForSymbol('BTC-USD', 'coinbase')).toBe('coinbase')
+    expect(venueForSymbol('XAU-USD', 'coinbase')).toBe('kalshi')
+    expect(venueForSymbol('XAG-USD', 'coinbase')).toBe('kalshi')
+    expect(venueLabel('kalshi')).toBe('Kalshi')
+    expect(venueLabel('coinbase')).toBe('Coinbase')
+    expect(venueLabel('demo')).toBe('Demo')
+  })
+
+  it('shows a settlement value at the precision it was rounded to', () => {
+    const digits = pricePrecision('XAG-USD')
+    expect(formatPrice(63.498, false, digits)).toBe('63.498')
+    // The same number at the default two decimals would hide the published digit.
+    expect(formatPrice(63.498)).toBe('63.50')
+    expect(formatPrice(4300.16, false, pricePrecision('XAU-USD'))).toBe('4,300.16')
   })
 })

@@ -33,17 +33,44 @@ export type KalshiStrikeSource =
   | 'estimate'
 
 /** One coin's Kalshi series and the CF Benchmarks index behind it. */
+/** Which ladder a feed belongs to: the original crypto coins, or the precious metals. */
+export type KalshiFeedKind = 'crypto' | 'metal'
+
 export interface KalshiCoinFeed {
   /** Coinbase product id this feed maps onto, e.g. "BTC-USD". */
   product: string
   /** Kalshi series ticker, e.g. "KXBTC15M". */
   series: string
-  /** CF Benchmarks index id as the API spells it, e.g. "ETHUSD_RTI". */
+  /**
+   * The reference the ladder settles on, as an id. For crypto that is a CF Benchmarks
+   * index (`ETHUSD_RTI`); for the metals it is the Pyth feed named in the rule text
+   * (`PYTH_GOLD`). Only crypto ids exist on the CF Benchmarks passthrough.
+   */
   indexId: string
-  /** The same index as Kalshi's rule text spells it, e.g. "ETHUSDRTI". */
+  /** The same reference as Kalshi's rule text spells it, e.g. "ETHUSDRTI". */
   ruleName: string
   /** Fallback decimal places; the market record's own value wins. */
   roundDigits: number
+  /** Absent on the original crypto ladder, where it reads as 'crypto'. */
+  kind?: KalshiFeedKind
+}
+
+/** A precious-metal ladder: a coin feed plus the display metadata the app needs. */
+export interface KalshiMetalFeed extends KalshiCoinFeed {
+  kind: 'metal'
+  /** Chart symbol, e.g. "XAU-USD". Identical to `product`. */
+  symbol: string
+  /** Short ticker, e.g. "XAU". */
+  ticker: string
+  /** Display name, e.g. "Gold". */
+  name: string
+  /** What one contract prices: Kalshi quotes these per troy ounce, in USD. */
+  unit: string
+}
+
+/** True for a metal feed; the crypto ladder omits `kind` and reads as false. */
+export function isMetalFeed(feed: KalshiCoinFeed): feed is KalshiMetalFeed {
+  return feed.kind === 'metal'
 }
 
 /**
@@ -103,14 +130,89 @@ export const KALSHI_COIN_FEEDS: readonly KalshiCoinFeed[] = [
 const FEEDS_BY_PRODUCT = new Map(KALSHI_COIN_FEEDS.map((feed) => [feed.product, feed]))
 const FEEDS_BY_SERIES = new Map(KALSHI_COIN_FEEDS.map((feed) => [feed.series, feed]))
 
+/**
+ * Kalshi's 15-minute precious-metals ladders.
+ *
+ * These are structurally the same contract as the crypto ladder — one up/down market per
+ * quarter hour, `floor_strike` at the open, `expiration_value` at the close, tie resolves
+ * UP — with two differences that matter:
+ *
+ *   - The reference is **Pyth**, not CF Benchmarks. The rule text reads "the close price of
+ *     the 1-minute candlestick ... Pyth GOLD", i.e. an instantaneous 1-minute close rather
+ *     than BRTI's 60-second average. There is no Kalshi passthrough for it, so `samples`
+ *     stays null and the overlay is built from settlement points alone.
+ *   - Rounding is per-metal: gold publishes 2 decimals, silver 3. As with the coins, read
+ *     `custom_strike.round_digits` off the market and treat these values as the fallback.
+ *
+ * Neither metal exists on Coinbase, so these symbols are never routed to the Coinbase
+ * transport — see `isMetalSymbol` and the guard in `server/api.ts`.
+ */
+export const KALSHI_METAL_FEEDS: readonly KalshiMetalFeed[] = [
+  {
+    kind: 'metal',
+    symbol: 'XAU-USD',
+    product: 'XAU-USD',
+    ticker: 'XAU',
+    name: 'Gold',
+    series: 'KXGOLD15M',
+    indexId: 'PYTH_GOLD',
+    ruleName: 'Pyth GOLD',
+    roundDigits: 2,
+    unit: 'troy ounce',
+  },
+  {
+    kind: 'metal',
+    symbol: 'XAG-USD',
+    product: 'XAG-USD',
+    ticker: 'XAG',
+    name: 'Silver',
+    series: 'KXSILVER15M',
+    indexId: 'PYTH_SILVER',
+    ruleName: 'Pyth SILVER',
+    roundDigits: 3,
+    unit: 'troy ounce',
+  },
+]
+
+const METALS_BY_SYMBOL = new Map(KALSHI_METAL_FEEDS.map((feed) => [feed.symbol, feed]))
+const METALS_BY_SERIES = new Map(KALSHI_METAL_FEEDS.map((feed) => [feed.series, feed]))
+
+/** True for the precious-metal symbols, which look like product ids but are not Coinbase's. */
+export function isMetalSymbol(value: unknown): value is string {
+  return typeof value === 'string' && METALS_BY_SYMBOL.has(value)
+}
+
+/**
+ * Resolutions Kalshi actually publishes for the metals.
+ *
+ * The ladders settle once per quarter hour, so 15m is the native bar and everything above
+ * it is an aggregation of those settlement points. 1m, 3m and 5m have no source at all —
+ * asking for one is a 400, never a resampled guess.
+ */
+export const METAL_INTERVALS = ['15m', '1h', '4h', '1D', '1W'] as const
+export type MetalInterval = (typeof METAL_INTERVALS)[number]
+
+export const isMetalInterval = (value: unknown): value is MetalInterval =>
+  typeof value === 'string' && (METAL_INTERVALS as readonly string[]).includes(value)
+
+/** The metal feed for a chart symbol, or null. */
+export function metalFeedForSymbol(symbol: string): KalshiMetalFeed | null {
+  return METALS_BY_SYMBOL.get(symbol) ?? null
+}
+
+/** The metal feed for a series ticker, or null. */
+export function metalFeedForSeries(series: string): KalshiMetalFeed | null {
+  return METALS_BY_SERIES.get(series) ?? null
+}
+
 /** The Kalshi feed for a Coinbase product, or null when Kalshi runs no 15m market on it. */
 export function kalshiFeedForProduct(product: string): KalshiCoinFeed | null {
-  return FEEDS_BY_PRODUCT.get(product) ?? null
+  return FEEDS_BY_PRODUCT.get(product) ?? METALS_BY_SYMBOL.get(product) ?? null
 }
 
 /** The Kalshi feed for a series ticker, or null. */
 export function kalshiFeedForSeries(series: string): KalshiCoinFeed | null {
-  return FEEDS_BY_SERIES.get(series) ?? null
+  return FEEDS_BY_SERIES.get(series) ?? METALS_BY_SERIES.get(series) ?? null
 }
 
 /** The 15-minute window containing `nowSec`, as unix seconds. */
@@ -293,7 +395,7 @@ export function isBrtiAnchor(value: unknown): value is BrtiAnchor {
 }
 
 /** Kalshi sends prices as JSON numbers on some fields and strings on others. */
-function numeric(value: unknown): number | null {
+export function kalshiNumeric(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null
   if (typeof value === 'string') {
     const parsed = Number(value)
@@ -302,13 +404,13 @@ function numeric(value: unknown): number | null {
   return null
 }
 
-function isoToSeconds(value: unknown): number | null {
+export function kalshiIsoSeconds(value: unknown): number | null {
   if (typeof value !== 'string' || !value) return null
   const ms = Date.parse(value)
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : null
 }
 
-interface RawMarket {
+export interface RawMarket {
   ticker?: unknown
   open_time?: unknown
   close_time?: unknown
@@ -317,10 +419,14 @@ interface RawMarket {
   strike_type?: unknown
   rules_primary?: unknown
   custom_strike?: unknown
+  /** Contract prices in dollars, 0–1. Present on the live metals markets. */
+  last_price_dollars?: unknown
+  yes_bid_dollars?: unknown
+  yes_ask_dollars?: unknown
 }
 
 /** Every market record in a Kalshi `/markets` envelope, loosely typed. */
-function rawMarkets(payload: unknown): RawMarket[] {
+export function kalshiMarketRows(payload: unknown): RawMarket[] {
   if (!payload || typeof payload !== 'object') return []
   const markets = (payload as { markets?: unknown }).markets
   return Array.isArray(markets)
@@ -337,9 +443,9 @@ function rawMarkets(payload: unknown): RawMarket[] {
 export function selectKalshiMarket(payload: unknown, nowSec: number): RawMarket | null {
   let best: RawMarket | null = null
   let bestStart = -Infinity
-  for (const market of rawMarkets(payload)) {
-    const open = isoToSeconds(market.open_time)
-    const strike = numeric(market.floor_strike)
+  for (const market of kalshiMarketRows(payload)) {
+    const open = kalshiIsoSeconds(market.open_time)
+    const strike = kalshiNumeric(market.floor_strike)
     if (open === null || strike === null) continue
     // Only windows that have already opened, and none further back than one full day.
     if (open > nowSec || open < nowSec - 86_400) continue
@@ -360,9 +466,9 @@ export function parseKalshiStrike(
 ): KalshiStrike | null {
   const market = selectKalshiMarket(payload, nowSec)
   if (!market) return null
-  const strike = numeric(market.floor_strike)
-  const windowStart = isoToSeconds(market.open_time)
-  const windowEnd = isoToSeconds(market.close_time)
+  const strike = kalshiNumeric(market.floor_strike)
+  const windowStart = kalshiIsoSeconds(market.open_time)
+  const windowEnd = kalshiIsoSeconds(market.close_time)
   if (strike === null || windowStart === null) return null
   // Kalshi states the close; fall back to the fixed 15-minute window if it does not.
   const end = windowEnd ?? windowStart + KALSHI_WINDOW_SECONDS
@@ -400,11 +506,11 @@ export function parseKalshiStrike(
  */
 export function parseBrtiAnchors(payload: unknown, feed: KalshiCoinFeed): BrtiAnchor[] {
   const found = new Map<number, number>()
-  for (const market of rawMarkets(payload)) {
-    const open = isoToSeconds(market.open_time)
-    const close = isoToSeconds(market.close_time)
-    const strike = numeric(market.floor_strike)
-    const settled = numeric(market.expiration_value)
+  for (const market of kalshiMarketRows(payload)) {
+    const open = kalshiIsoSeconds(market.open_time)
+    const close = kalshiIsoSeconds(market.close_time)
+    const strike = kalshiNumeric(market.floor_strike)
+    const settled = kalshiNumeric(market.expiration_value)
     if (open !== null && strike !== null) found.set(open, strike)
     if (close !== null && settled !== null) found.set(close, settled)
   }

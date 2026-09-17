@@ -22,9 +22,12 @@ import {
   formatPrice,
   getAsset,
   compactNumber,
+  pricePrecision,
   quoteCurrency,
   formatChange,
   changeClass,
+  venueForSymbol,
+  venueLabel,
 } from '../lib/market'
 import { downloadFile, useLocalState } from '../lib/storage'
 import { CoinIcon, Dropdown, EmptyState, IconButton, MenuItem, Toggle } from './ui'
@@ -87,6 +90,9 @@ export function Watchlist({
       direction: previous?.key === key ? -previous.direction : key === 'symbol' ? 1 : -1,
     }))
   const quote = quotes[selected.symbol],
+    /** Kalshi rounds gold to 2 decimals and silver to 3; show the digit it settles on. */
+    digits = pricePrecision(selected.symbol),
+    isMetalQuote = quote?.source === 'kalshi',
     price = quote?.price,
     low = quote?.low,
     high = quote?.high,
@@ -132,7 +138,13 @@ export function Watchlist({
         >
           {(close) => (
             <>
-              {['All assets', 'Layer 1', 'DeFi', 'Other'].map((item) => (
+              {[
+                'All assets',
+                'Layer 1',
+                'DeFi',
+                'Other',
+                ...(source === 'demo' ? [] : ['Metals']),
+              ].map((item) => (
                 <MenuItem
                   key={item}
                   selected={group === item}
@@ -198,7 +210,7 @@ export function Watchlist({
                 <small>{asset.name}</small>
               </span>
               <span className="watchlist-price mono">
-                {formatPrice(quotes[asset.symbol]?.price)}
+                {formatPrice(quotes[asset.symbol]?.price, false, pricePrecision(asset.symbol))}
               </span>
               <span
                 className={`watchlist-change mono ${changeClass(quotes[asset.symbol]?.change)}`}
@@ -285,7 +297,7 @@ export function Watchlist({
           </Dropdown>
         </div>
         <div className="detail-price">
-          {formatPrice(price)}
+          {formatPrice(price, false, digits)}
           <span>{currency}</span>
         </div>
         <div className={`detail-change ${changeClass(change)}`}>
@@ -293,38 +305,56 @@ export function Watchlist({
             (change >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />)}
           <span className="mono">
             {price != null && open != null
-              ? `${price >= open ? '+' : ''}${formatPrice(price - open)} (${formatChange(change)})`
+              ? `${price >= open ? '+' : ''}${formatPrice(price - open, false, digits)} (${formatChange(change)})`
               : 'Waiting for a verified quote'}
           </span>
           <small>24h</small>
         </div>
         <div className="day-range">
           <div>
-            <span>24h range</span>
+            <span
+              title={
+                isMetalQuote
+                  ? 'Kalshi publishes one settlement value per quarter hour, so this is the range of those points, not of every trade in between.'
+                  : undefined
+              }
+            >
+              24h range
+            </span>
             <span className="range-label">{currency}</span>
           </div>
           <div className={`range-track ${range === null ? 'no-data' : ''}`}>
             {range !== null && <i style={{ left: `${range}%` }} />}
           </div>
           <div className="range-values mono">
-            <span>{formatPrice(low)}</span>
-            <span>{formatPrice(high)}</span>
+            <span>{formatPrice(low, false, digits)}</span>
+            <span>{formatPrice(high, false, digits)}</span>
           </div>
         </div>
         <div className="detail-stats">
           <div>
-            <span>24h volume · {source === 'coinbase' ? selected.ticker : 'USD'}</span>
-            <strong>
-              {source === 'coinbase' ? compactNumber(quote?.volume) : `$${selected.volume}`}
+            <span>24h volume · {source === 'demo' ? 'USD' : selected.ticker}</span>
+            <strong
+              title={
+                isMetalQuote
+                  ? 'Kalshi publishes metal prices, not ounces traded, so there is no volume to report.'
+                  : undefined
+              }
+            >
+              {source === 'demo' ? `$${selected.volume}` : compactNumber(quote?.volume)}
             </strong>
           </div>
           <div>
-            <span>{source === 'coinbase' ? 'Exchange' : 'Market cap'}</span>
-            <strong>{source === 'coinbase' ? 'Coinbase' : `$${selected.marketCap}`}</strong>
+            <span>{source === 'demo' ? 'Market cap' : 'Venue'}</span>
+            <strong>
+              {source === 'demo'
+                ? `$${selected.marketCap}`
+                : venueLabel(venueForSymbol(selected.symbol, source))}
+            </strong>
           </div>
           <div>
             <span>24h open</span>
-            <strong>{formatPrice(open)}</strong>
+            <strong>{formatPrice(open, false, digits)}</strong>
           </div>
           <div>
             <span>Quote received · UTC</span>

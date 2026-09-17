@@ -67,7 +67,7 @@ import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
 import { IndicatorStudio } from './components/IndicatorStudio'
-import { IndicatorTimeframeFeed } from './components/IndicatorTimeframeFeeds'
+import { IndicatorTimeframeFeed, MetalTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
 import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { BookStrengthBox } from './components/BookStrengthBox'
@@ -88,11 +88,16 @@ import {
   changeClass,
   formatChange,
   quoteCurrency,
+  venueForSymbol,
+  venueLabel,
+  METAL_DEFAULTS,
 } from './lib/market'
 import { useCoinbaseMarket } from './lib/useCoinbaseMarket'
+import { useKalshiMetalMarket } from './lib/useKalshiMetalMarket'
 import { useIndicatorInput } from './lib/useIndicatorInput'
 import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
+import { isMetalInterval, isMetalSymbol } from '../shared/kalshi'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import { CM_WILLIAMS_VIX_FIX_DEFAULTS } from './lib/cm-williams-vix-fix'
@@ -261,7 +266,11 @@ export default function App() {
   })
   const [workspaceName, setWorkspaceName] = useLocalState('workspace-name', 'Crypto workspace')
   const [tabs, setTabs] = useLocalState<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
-  const [watchlist, setWatchlist] = useLocalState<string[]>('watchlist', DEFAULT_WATCHLIST)
+  const [watchlist, setWatchlist] = useLocalState<string[]>(
+    'watchlist',
+    // A live workspace starts with the metals listed too; the demo has no Kalshi feed.
+    source === 'demo' ? DEFAULT_WATCHLIST : [...DEFAULT_WATCHLIST, ...METAL_DEFAULTS],
+  )
   const [whaleBoxVisible, setWhaleBoxVisible] = useLocalState('whale-box-visible', true)
   const [bookBoxVisible, setBookBoxVisible] = useLocalState('book-strength-box-visible', true)
   // The floating Candle Pulse HUD: null means "never chosen", deferring to viewport width.
@@ -417,24 +426,59 @@ export default function App() {
   const visibleWatchlist = watchlist.filter((s) =>
     source === 'coinbase' ? isProductId(s) : isDemoSymbol(s),
   )
-  const watched = [
+  const watching = [
     symbol,
     ...alerts.filter((a) => a.enabled && !a.triggeredAt).map((a) => a.symbol),
     ...watchlist,
     ...tabs,
   ].filter(isProductId)
+  /**
+   * Gold and silver are shaped like Coinbase product ids but Coinbase does not trade them,
+   * so they are split out here — before anything is asked of the Coinbase transport.
+   */
+  const watched = watching.filter((id) => !isMetalSymbol(id))
+  const watchedMetals = watching.filter(isMetalSymbol)
+  const isMetal = isMetalSymbol(symbol)
+  /** The venue actually serving this chart: metals are Kalshi's, everything else Coinbase's. */
+  const venue = venueForSymbol(symbol, source)
+  /**
+   * A resolution the metals have no data for. Kalshi publishes one settlement value per
+   * quarter hour, so 1m/3m/5m do not exist for gold or silver at any price — the toolbar
+   * hides them and the chart explains itself instead of resampling.
+   */
+  const unsupportedMetalInterval = isMetal && !isMetalInterval(timeframe)
+  const barLimit = Math.max(300, Math.min(900, rangeCommand?.bars ?? 300))
   const live = useCoinbaseMarket({
     product: symbol,
     interval: timeframe,
-    enabled: source === 'coinbase',
+    enabled: source === 'coinbase' && !isMetal,
     playing: feedActive,
     watched,
-    limit: Math.max(300, Math.min(900, rangeCommand?.bars ?? 300)),
+    limit: barLimit,
   })
-  const assets = source === 'coinbase' ? live.assets : ASSETS
+  const metals = useKalshiMetalMarket({
+    symbol,
+    interval: timeframe,
+    enabled: source !== 'demo' && isMetal,
+    playing: feedActive,
+    watched: watchedMetals,
+    limit: barLimit,
+  })
+  const assets = useMemo(
+    () =>
+      source === 'demo'
+        ? ASSETS
+        : // The metals lead so their Kalshi metadata (and its rounding) always wins, even
+          // if a catalog ever listed the same product id.
+          [...metals.assets, ...live.assets.filter((item) => !isMetalSymbol(item.symbol))],
+    [source, live.assets, metals.assets],
+  )
   const asset = assets.find((a) => a.symbol === symbol) ?? getAsset(symbol)
   const syntheticQuotes = useMemo(() => (source === 'demo' ? demoQuotes(tick) : {}), [source, tick])
-  const quotes = source === 'coinbase' ? live.quotes : syntheticQuotes
+  const quotes = useMemo(
+    () => (source === 'demo' ? syntheticQuotes : { ...live.quotes, ...metals.quotes }),
+    [source, syntheticQuotes, live.quotes, metals.quotes],
+  )
   const quotePrices = useMemo(
     () => Object.fromEntries(Object.entries(quotes).map(([id, quote]) => [id, quote.price])),
     [quotes],
@@ -463,7 +507,11 @@ export default function App() {
   )
   const bookView = replayIndex === null ? (live.book ?? demoBookView) : null
   const availableCandles =
-    source === 'coinbase' ? (live.snapshot?.candles ?? EMPTY_CANDLES) : simulatedCandles
+    source === 'demo'
+      ? simulatedCandles
+      : isMetal
+        ? metals.candles
+        : (live.snapshot?.candles ?? EMPTY_CANDLES)
   const baseCandles = replaySnapshot ?? availableCandles
   const candles = useMemo(
     () => (replayIndex === null ? baseCandles : baseCandles.slice(0, replayIndex)),
@@ -530,7 +578,11 @@ export default function App() {
   )
   const currentPrice = quotePrices[symbol] ?? candles[candles.length - 1]?.close
   const hasData = candles.length > 1
-  const feedState = source === 'coinbase' ? live.state : feedActive ? 'live' : 'paused'
+  const feedState =
+    source === 'demo' ? (feedActive ? 'live' : 'paused') : isMetal ? metals.state : live.state
+  /** Whichever venue is live, these are what the banners and the status bar report. */
+  const feedMessage = isMetal ? metals.message : live.message
+  const feedRetry = isMetal ? metals.retry : live.retry
   const peekFeed = useMemo<TimeframePeekFeed | null>(() => {
     if (!peekActive) return null
     const peekingTheChart = peekTimeframe === timeframe
@@ -542,19 +594,19 @@ export default function App() {
       state: feed?.state ?? feedState,
       message:
         feed?.message ??
-        (source === 'coinbase'
-          ? live.message
-          : feedActive
+        (source === 'demo'
+          ? feedActive
             ? 'Demo feed · synthetic bars, not exchange data.'
-            : 'Demo feed paused.'),
+            : 'Demo feed paused.'
+          : feedMessage),
       // A resolution feed is refreshed by remounting it; the chart's own data belongs to the
       // main connection, so it retries that one instead.
       retry:
-        source === 'coinbase'
-          ? peekingTheChart
-            ? live.retry
-            : () => setTimeframeRetry((attempt) => attempt + 1)
-          : undefined,
+        source === 'demo'
+          ? undefined
+          : peekingTheChart
+            ? feedRetry
+            : () => setTimeframeRetry((attempt) => attempt + 1),
     }
   }, [
     peekActive,
@@ -564,8 +616,8 @@ export default function App() {
     candles,
     feedState,
     source,
-    live.message,
-    live.retry,
+    feedMessage,
+    feedRetry,
     feedActive,
   ])
   const pulseFeed = useMemo(() => {
@@ -574,7 +626,8 @@ export default function App() {
     return {
       candles: feed?.candles ?? (isChart ? candles : EMPTY_CANDLES),
       state: feed?.state ?? feedState,
-      tape: isChart ? (source === 'coinbase' ? live.tape : null) : (feed?.tape ?? null),
+      // Taker flow is a Coinbase trade statistic; the metals have no tape to report.
+      tape: isChart ? (venue === 'coinbase' ? live.tape : null) : (feed?.tape ?? null),
     }
   }, [
     effectivePulseTimeframe,
@@ -582,7 +635,7 @@ export default function App() {
     nativeTimeframes,
     candles,
     feedState,
-    source,
+    venue,
     live.tape,
   ])
   const drawKey = `${symbol}:${timeframe}`
@@ -772,7 +825,7 @@ export default function App() {
       (alert) =>
         alert.enabled &&
         !alert.triggeredAt &&
-        quotes[alert.symbol]?.source === source &&
+        quotes[alert.symbol]?.source === venueForSymbol(alert.symbol, source) &&
         (alert.condition === 'above'
           ? quotePrices[alert.symbol] >= alert.price
           : quotePrices[alert.symbol] <= alert.price),
@@ -807,7 +860,10 @@ export default function App() {
     if (next === source) return
     const target =
       next === 'coinbase'
-        ? (COINBASE_DEFAULTS.find((id) => id.startsWith(`${asset.ticker}-`)) ?? 'BTC-USD')
+        ? // Gold and silver are live market data too, just from Kalshi: keep them charted.
+          isMetal
+          ? symbol
+          : (COINBASE_DEFAULTS.find((id) => id.startsWith(`${asset.ticker}-`)) ?? 'BTC-USD')
         : (ASSETS.find((a) => a.ticker === asset.ticker)?.symbol ?? 'BTCUSDT')
     setSource(next)
     setSymbol(target)
@@ -817,13 +873,16 @@ export default function App() {
     setActiveRange('')
     setRangeCommand(null)
     setTool('cursor')
-    const defaults = next === 'coinbase' ? COINBASE_DEFAULTS.slice(0, 10) : DEFAULT_WATCHLIST
+    const defaults =
+      next === 'coinbase'
+        ? [...COINBASE_DEFAULTS.slice(0, 10), ...METAL_DEFAULTS]
+        : DEFAULT_WATCHLIST
     if (!watchlist.some((id) => (next === 'coinbase' ? isProductId(id) : isDemoSymbol(id))))
       setWatchlist((previous) => [...previous, ...defaults])
     setModal(null)
     notify(
       next === 'coinbase'
-        ? 'Coinbase USD pairs selected. Connecting to real market data…'
+        ? 'Live markets selected: Coinbase USD pairs, plus gold and silver settled by Kalshi.'
         : 'Offline demo selected. All demo prices are synthetic.',
       'info',
     )
@@ -840,7 +899,15 @@ export default function App() {
     setModal(null)
   }
   const selectTimeframe = (next: Timeframe) => {
-    setTimeframe(next)
+    // Reached from the toolbar, a template, a backup or the URL: whatever the entry point,
+    // a metal cannot be charted below 15 minutes, so fall back and say why.
+    const target: Timeframe = isMetalSymbol(symbol) && !isMetalInterval(next) ? '15m' : next
+    if (target !== next)
+      notify(
+        `Kalshi settles ${getAsset(symbol).name} once every 15 minutes, so ${next} candles do not exist. Showing 15m.`,
+        'info',
+      )
+    setTimeframe(target)
     setReplayIndex(null)
     setReplaySnapshot(null)
     setReplayPlaying(false)
@@ -1702,16 +1769,20 @@ export default function App() {
             </button>
             <span className="toolbar-separator" />
             <div className="timeframe-buttons">
-              {(['1m', '3m', '5m', '15m', '1h', '4h', '1D'] as Timeframe[]).map((tf) => (
-                <button
-                  key={tf}
-                  className={timeframe === tf ? 'active' : ''}
-                  onClick={() => selectTimeframe(tf)}
-                  aria-label={`${tf} timeframe`}
-                >
-                  {tf === '1D' ? 'D' : tf}
-                </button>
-              ))}
+              {(['1m', '3m', '5m', '15m', '1h', '4h', '1D'] as Timeframe[])
+                // Kalshi publishes the metals once a quarter hour: the finer buttons are
+                // not offered rather than offered and refused.
+                .filter((tf) => !isMetal || isMetalInterval(tf))
+                .map((tf) => (
+                  <button
+                    key={tf}
+                    className={timeframe === tf ? 'active' : ''}
+                    onClick={() => selectTimeframe(tf)}
+                    aria-label={`${tf} timeframe`}
+                  >
+                    {tf === '1D' ? 'D' : tf}
+                  </button>
+                ))}
             </div>
             <Dropdown
               trigger={() => (
@@ -1730,6 +1801,12 @@ export default function App() {
                     <MenuItem
                       key={tf}
                       selected={timeframe === tf}
+                      disabled={isMetal && !isMetalInterval(tf)}
+                      title={
+                        isMetal && !isMetalInterval(tf)
+                          ? 'Kalshi settles the metals once every 15 minutes; nothing finer is published.'
+                          : undefined
+                      }
                       onClick={() => {
                         selectTimeframe(tf)
                         close()
@@ -1976,20 +2053,30 @@ export default function App() {
             </aside>
             <div className="chart-and-panels">
               <div className="chart-container">
-                {source === 'coinbase' &&
+                {source !== 'demo' &&
                   replayIndex === null &&
-                  indicatorTimeframes.map((interval) => (
-                    <IndicatorTimeframeFeed
-                      key={`${symbol}:${interval}:${timeframeRetry}`}
-                      product={symbol}
-                      interval={interval}
-                      playing={feedActive}
-                      onData={receiveTimeframe}
-                    />
-                  ))}
+                  indicatorTimeframes.map((interval) =>
+                    venue === 'kalshi' ? (
+                      <MetalTimeframeFeed
+                        key={`${symbol}:${interval}:${timeframeRetry}`}
+                        product={symbol}
+                        interval={interval}
+                        playing={feedActive}
+                        onData={receiveTimeframe}
+                      />
+                    ) : (
+                      <IndicatorTimeframeFeed
+                        key={`${symbol}:${interval}:${timeframeRetry}`}
+                        product={symbol}
+                        interval={interval}
+                        playing={feedActive}
+                        onData={receiveTimeframe}
+                      />
+                    ),
+                  )}
                 <ChartView
                   ref={chartRef}
-                  source={source}
+                  source={venue}
                   feedState={feedState}
                   asset={asset}
                   candles={candles}
@@ -2043,10 +2130,13 @@ export default function App() {
                     onClose={() => setPulsePreference(false)}
                   />
                 )}
-                {source === 'coinbase' && whaleBoxVisible && replayIndex === null && (
+                {/* Executed flow and resting depth are Coinbase trade statistics. Kalshi
+                    publishes settlement values for the metals, so there is nothing to show
+                    here and no honest substitute to draw. */}
+                {venue === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}
-                {source === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
+                {venue === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
                   <BookStrengthBox book={bookView} onClose={() => setBookBoxVisible(false)} />
                 )}
                 {peekFeed && hasData && (
@@ -2061,31 +2151,43 @@ export default function App() {
                     downColor={settings.downColor}
                   />
                 )}
-                {source === 'coinbase' && !hasData && (
+                {source !== 'demo' && !hasData && (
                   <div className="market-feedback" role="status">
                     <span
-                      className={`market-feedback-icon ${live.state === 'offline' ? 'unavailable' : ''}`}
+                      className={`market-feedback-icon ${feedState === 'offline' ? 'unavailable' : ''}`}
                     >
-                      {live.state === 'offline' ? (
+                      {feedState === 'offline' ? (
                         <WifiOff size={26} />
                       ) : (
                         <Loader2 size={26} className="spin" />
                       )}
                     </span>
                     <span className="eyebrow">
-                      COINBASE · {symbol} · {timeframe}
+                      {venueLabel(venue).toUpperCase()} · {symbol} · {timeframe}
                     </span>
                     <h2>
-                      {live.state === 'offline'
-                        ? 'Coinbase is unavailable'
-                        : 'Connecting your perspective.'}
+                      {unsupportedMetalInterval
+                        ? 'Kalshi publishes no such resolution'
+                        : feedState === 'offline'
+                          ? `${venueLabel(venue)} is unavailable`
+                          : 'Connecting your perspective.'}
                     </h2>
-                    <p>{live.message}</p>
+                    <p>{feedMessage}</p>
                     <div className="row">
-                      <button className="button button-primary" onClick={live.retry}>
-                        <RefreshCw size={14} />
-                        Retry Coinbase
-                      </button>
+                      {unsupportedMetalInterval ? (
+                        <button
+                          className="button button-primary"
+                          onClick={() => selectTimeframe('15m')}
+                        >
+                          <RefreshCw size={14} />
+                          Switch to 15m
+                        </button>
+                      ) : (
+                        <button className="button button-primary" onClick={feedRetry}>
+                          <RefreshCw size={14} />
+                          Retry {venueLabel(venue)}
+                        </button>
+                      )}
                       <button
                         className="button button-secondary"
                         onClick={() => switchSource('demo')}
@@ -2093,17 +2195,21 @@ export default function App() {
                         Use offline demo
                       </button>
                     </div>
-                    <small>No synthetic data is shown in Coinbase mode.</small>
+                    <small>
+                      {venue === 'kalshi'
+                        ? 'Gold and silver are Kalshi settlement values. Nothing is simulated.'
+                        : 'No synthetic data is shown in Coinbase mode.'}
+                    </small>
                   </div>
                 )}
-                {source === 'coinbase' &&
+                {source !== 'demo' &&
                   hasData &&
                   replayIndex === null &&
-                  ['stale', 'reconnecting', 'offline'].includes(live.state) && (
+                  ['stale', 'reconnecting', 'offline'].includes(feedState) && (
                     <div className="market-stale-banner" role="status">
                       <WifiOff size={13} />
-                      <span>{live.message}</span>
-                      <button onClick={live.retry}>Retry</button>
+                      <span>{feedMessage}</span>
+                      <button onClick={feedRetry}>Retry</button>
                     </div>
                   )}
                 {replayIndex !== null && (
@@ -2334,7 +2440,7 @@ export default function App() {
               <button
                 className={`feed-status ${feedState !== 'live' || replayIndex !== null ? 'paused' : ''}`}
                 aria-label="Market data source and connection"
-                title={source === 'coinbase' ? live.message : 'Synthetic offline data'}
+                title={source === 'demo' ? 'Synthetic offline data' : feedMessage}
               >
                 <span className="connection-bars">
                   <i />
@@ -2349,7 +2455,7 @@ export default function App() {
                       ? feedActive
                         ? 'Demo feed connected'
                         : 'Demo feed paused'
-                      : `Coinbase · ${feedState === 'live' ? 'live' : feedState}`}
+                      : `${venueLabel(venue)} · ${feedState === 'live' ? 'live' : feedState}`}
                 </span>
                 <ChevronDown size={10} />
               </button>
@@ -2365,7 +2471,7 @@ export default function App() {
                     close()
                   }}
                 >
-                  Coinbase · real USD markets
+                  Live markets · Coinbase pairs + Kalshi metals
                 </MenuItem>
                 <MenuItem
                   selected={source === 'demo'}
@@ -2378,9 +2484,11 @@ export default function App() {
                 </MenuItem>
                 <div className="menu-divider" />
                 <div className="feed-menu-description">
-                  {source === 'coinbase'
-                    ? `${live.message} 3m candles are aggregated from Coinbase 1m candles; current bars are provisional.`
-                    : 'Illustrative OHLCV. Quotes are generated locally, not from an exchange.'}
+                  {source === 'demo'
+                    ? 'Illustrative OHLCV. Quotes are generated locally, not from an exchange.'
+                    : venue === 'kalshi'
+                      ? `${feedMessage} Kalshi settles gold and silver on Pyth's 1-minute close, once per quarter hour; finer resolutions do not exist.`
+                      : `${feedMessage} 3m candles are aggregated from Coinbase 1m candles; current bars are provisional.`}
                 </div>
                 <MenuItem
                   icon={feedActive ? Pause : Play}
@@ -2391,15 +2499,15 @@ export default function App() {
                 >
                   {feedActive ? 'Pause feed updates' : 'Resume feed updates'}
                 </MenuItem>
-                {source === 'coinbase' && (
+                {source !== 'demo' && (
                   <MenuItem
                     icon={RefreshCw}
                     onClick={() => {
-                      live.retry()
+                      feedRetry()
                       close()
                     }}
                   >
-                    Reconnect Coinbase
+                    Reconnect {venueLabel(venue)}
                   </MenuItem>
                 )}
               </>
@@ -2410,7 +2518,7 @@ export default function App() {
             <span className="tiny-dot" />
             {asset.ticker} / {quoteCurrency(asset)}
             <span>·</span>
-            {source === 'coinbase' ? 'Coinbase' : 'Demo'}
+            {venueLabel(venue)}
           </span>
         </div>
         <div className="statusbar-center">
@@ -2443,7 +2551,7 @@ export default function App() {
             assets={assets}
             quotes={quotes}
             source={source}
-            verified={source === 'demo' || live.verified}
+            verified={source === 'demo' || live.verified || isMetal}
             onToggleWatchlist={toggleWatchlist}
             adding={searchAdding}
           />
@@ -2542,7 +2650,7 @@ export default function App() {
             assets={assets}
             quotes={quotes}
             source={source}
-            verified={source === 'demo' || live.verified}
+            verified={source === 'demo' || live.verified || isMetal}
           />
         )}
         {modal === 'docs' && (

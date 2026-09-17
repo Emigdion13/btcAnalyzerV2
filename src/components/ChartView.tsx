@@ -126,7 +126,14 @@ import {
 import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
-import { compactNumber, formatPrice, quoteCurrency, INTERVAL } from '../lib/market'
+import {
+  compactNumber,
+  formatPrice,
+  pricePrecision,
+  quoteCurrency,
+  venueLabel,
+  INTERVAL,
+} from '../lib/market'
 import { uid, useLocalState } from '../lib/storage'
 import { ChartMessagePlate, ChartMessageText, SrBreakLabel } from './ChartMessage'
 import { CoinIcon, IconButton } from './ui'
@@ -324,10 +331,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
    * Kalshi's own published strike, fetched rather than re-derived. Disabled in demo
    * mode: a simulated chart has no real window for Kalshi to have published against,
    * and inventing one would present fiction as an authoritative number.
+   *
+   * Enabled for both live venues. On gold and silver the strike is the window's opening
+   * settlement value from the same ladder the candles come from, so it is exact by
+   * construction rather than an estimate — the resolver labels it as Kalshi's either way.
    */
   const kalshi = useKalshiStrike({
     product: asset.symbol,
-    enabled: props.source === 'coinbase' && strikeIndicatorActive,
+    enabled: props.source !== 'demo' && strikeIndicatorActive,
   })
   // A product switch can leave the previous pair's response in state for a frame; the
   // strike is only ever applied to the market it was actually published for.
@@ -609,7 +620,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ctx.fillStyle = '#d7dce3'
       ctx.font = '12px "DM Sans", sans-serif'
       ctx.fillText(
-        `${propsRef.current.asset.name} / ${quoteCurrency(propsRef.current.asset)} · ${propsRef.current.timeframe} · ${propsRef.current.source === 'coinbase' ? 'COINBASE / ' + propsRef.current.feedState.toUpperCase() : 'DEMO DATA'}`,
+        `${propsRef.current.asset.name} / ${quoteCurrency(propsRef.current.asset)} · ${propsRef.current.timeframe} · ${propsRef.current.source === 'demo' ? 'DEMO DATA' : venueLabel(propsRef.current.source).toUpperCase() + ' / ' + propsRef.current.feedState.toUpperCase()}`,
         104,
         27,
         Math.max(90, width - 120),
@@ -617,9 +628,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ctx.fillStyle = '#777f8d'
       ctx.font = '10px "DM Sans", sans-serif'
       ctx.fillText(
-        propsRef.current.source === 'coinbase'
-          ? 'Coinbase market data. Current candles provisional. Not investment advice.'
-          : 'Illustrative market data. Not investment advice.',
+        propsRef.current.source === 'demo'
+          ? 'Illustrative market data. Not investment advice.'
+          : propsRef.current.source === 'kalshi'
+            ? 'Kalshi settlement values for the precious metals, quarter-hour resolution. Not investment advice.'
+            : 'Coinbase market data. Current candles provisional. Not investment advice.',
         20,
         49,
       )
@@ -1278,9 +1291,12 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           : activeRsi >= 50
             ? 'rsi-zone-bull'
             : 'rsi-zone-bear'
+  // Kalshi rounds gold to 2 decimals and silver to 3; showing 63.50 for a published
+  // 63.498 would hide the digit the contract actually settles on.
+  const priceDigits = pricePrecision(asset.symbol)
   const plotValue = (plot?: Plot) => {
     const value = plot?.values[hoverIndex]
-    return value === null || value === undefined ? '—' : formatPrice(value)
+    return value === null || value === undefined ? '—' : formatPrice(value, false, priceDigits)
   }
   const cmNotice = (indicator: Indicator) => {
     const s = cmMacdSettings(indicator)
@@ -3194,7 +3210,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         className="chart-canvas"
         ref={hostRef}
         role="img"
-        aria-label={`${asset.name} ${timeframe} ${chartType} chart with ${candles.length} ${props.source === 'demo' ? 'simulated' : 'Coinbase'} price bars`}
+        aria-label={`${asset.name} ${timeframe} ${chartType} chart with ${candles.length} ${props.source === 'demo' ? 'simulated' : venueLabel(props.source)} price bars`}
       />
       <div className="chart-watermark" style={{ top: `${geometry.height * 0.46}px` }}>
         <span>{asset.symbol}</span>
@@ -3209,23 +3225,33 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           <span className="heading-dot">·</span>
           <span>{timeframe}</span>
           <span
-            className={`exchange-label ${props.source === 'coinbase' ? 'coinbase-exchange' : ''}`}
+            className={`exchange-label ${
+              props.source === 'demo'
+                ? ''
+                : props.source === 'kalshi'
+                  ? 'kalshi-exchange'
+                  : 'coinbase-exchange'
+            }`}
             title={
-              props.source === 'coinbase' && ['3m', '4h', '1W'].includes(timeframe)
-                ? 'Aggregated from smaller Coinbase candles · UTC aligned'
-                : 'Market data provider'
+              props.source === 'kalshi'
+                ? // Everything above 15m is aggregated from Kalshi's quarter-hour settlement
+                  // points, and 15m bars are bounded by two of them — the range is a floor.
+                  'Kalshi settlement values on Pyth · quarter-hour resolution · bar range is the tightest published bound'
+                : props.source === 'coinbase' && ['3m', '4h', '1W'].includes(timeframe)
+                  ? 'Aggregated from smaller Coinbase candles · UTC aligned'
+                  : 'Market data provider'
             }
           >
-            {props.source === 'coinbase' ? 'COINBASE' : 'DEMO'}
+            {venueLabel(props.source).toUpperCase()}
           </span>
           <span
             className={`market-dot ${props.replay || props.feedState !== 'live' ? 'replaying' : ''}`}
             title={
               props.replay
                 ? 'Bar replay'
-                : props.source === 'coinbase'
-                  ? `Coinbase · ${props.feedState}`
-                  : 'Demo market data'
+                : props.source === 'demo'
+                  ? 'Demo market data'
+                  : `${venueLabel(props.source)} · ${props.feedState}`
             }
           />
           <button
@@ -3240,23 +3266,23 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           <div className={`ohlc-row ${up ? 'positive' : 'negative'}`}>
             <span>
               <i>O</i>
-              {formatPrice(display.open)}
+              {formatPrice(display.open, false, priceDigits)}
             </span>
             <span>
               <i>H</i>
-              {formatPrice(display.high)}
+              {formatPrice(display.high, false, priceDigits)}
             </span>
             <span>
               <i>L</i>
-              {formatPrice(display.low)}
+              {formatPrice(display.low, false, priceDigits)}
             </span>
             <span>
               <i>C</i>
-              {formatPrice(display.close)}
+              {formatPrice(display.close, false, priceDigits)}
             </span>
             <span className="candle-change">
               {up ? '+' : ''}
-              {formatPrice(display.close - display.open)} ({up ? '+' : ''}
+              {formatPrice(display.close - display.open, false, priceDigits)} ({up ? '+' : ''}
               {((display.close / display.open - 1) * 100).toFixed(2)}%)
             </span>
           </div>

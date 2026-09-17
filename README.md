@@ -2,7 +2,7 @@
 
 A professional, Coinbase-connected charting workspace inspired by TradingView. Built with React, TypeScript, a Node.js market-data adapter, and TradingView Lightweight Charts™.
 
-**Coinbase is the default data source. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
+**Coinbase is the default data source for crypto pairs; gold and silver come from Kalshi's settlement ladders. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
 
 ## Run locally
 
@@ -77,6 +77,7 @@ Outbound endpoints:
 
 - `https://api.exchange.coinbase.com`
 - `wss://ws-feed.exchange.coinbase.com`
+- `https://external-api.kalshi.com` (public, unauthenticated: strike overlay, gold and silver)
 
 If DNS, TLS, regional restrictions, or network policy prevent access, the UI displays **Coinbase is unavailable** (or a stale-data banner if verified history was already loaded). Use **Retry Coinbase**, check the hosting network, or explicitly switch to **Offline demo**. No API keys can fix blocked network access. This Arena sandbox currently fails direct Coinbase TLS connections; the failure state is intentional and the integration is tested with controlled Coinbase-format fixtures, not claimed to be live-verified here.
 
@@ -89,11 +90,31 @@ If DNS, TLS, regional restrictions, or network policy prevent access, the UI dis
 
 All endpoints are read-only. Product syntax, catalog availability, intervals, sample limits, upstream payloads, and imported workspace data are validated. Public API hosting still needs deployment-level abuse protection before serving large anonymous audiences.
 
+## Gold and silver from Kalshi
+
+`XAU-USD` and `XAG-USD` are live markets too — just from a different venue. Coinbase lists no silver product and only tokenised gold (PAXG), so the metals are read from **Kalshi's public 15-minute ladders** (`KXGOLD15M`, `KXSILVER15M`), which settle per troy ounce in USD on **Pyth's 1-minute candle close**. Full detail, including the settlement chain and the paging rules, is in [`docs/kalshi-metals.md`](docs/kalshi-metals.md).
+
+- Every number shown is a value Kalshi put on the record: a window's `floor_strike` (its open) or its graded `expiration_value` (its close). Nothing is interpolated or borrowed from a crypto feed.
+- Bars exist only where two published points sit exactly one quarter hour apart; `high`/`low` are the envelope of those two points, and that bound is labelled as such in the UI.
+- **No volume** for metals. Kalshi's `volume_fp` counts contracts on the ladder, not ounces traded, so the field is left empty rather than mislabelled.
+- Supported resolutions are **15m, 1h, 4h, 1D, 1W**. Kalshi publishes nothing finer, so 1m/3m/5m are hidden for a metal, disabled with an explanation in the dropdown, and refused client-side — never resampled into existence.
+- The window forming right now has a strike but no settlement: it is exposed as a strike overlay, never drawn as a partial bar.
+- Gaps in the ladder stay gaps, and the quote carries the settlement time, so a price up to a quarter hour old says how old it is.
+- The venue is named wherever a price appears: status bar, chart badge, watchlist detail, symbol search, markets table, and exported images read **Kalshi** for metals and **Coinbase** for pairs.
+
+Kalshi endpoints (same-origin, read-only):
+
+- `GET /api/kalshi/metals`
+- `GET /api/kalshi/metals/history?symbol=XAU-USD&interval=15m&limit=300`
+- `GET /api/kalshi/strike?product=BTC-USD`
+
+Metal products are rejected by `/api/coinbase/*` with `METAL_NOT_ON_COINBASE`, so a metal can never be routed to the crypto adapter.
+
 ## What works
 
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
-- **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
-- **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
+- **Markets:** Coinbase USD products, gold and silver from Kalshi's settlement ladders, live quote subscriptions for open charts/watchlists/alerts, venue-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
+- **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport. The metals support 15m and coarser, which is all Kalshi publishes.
 - **Timeframe peek:** a floating window onto any other resolution — while you trade 1m it draws the last candles of, say, 15m _including the bar still forming_, with a countdown to that timeframe's close, a resolution dropdown, and an auto mode that follows the chart.
 - **Candle Pulse:** a cockpit-HUD floating window that reads the single bar being built right now — countdown to its close, O/H/L/C anatomy with close-position-in-range, volume pace vs the typical bar (with a projection to the close), the taker buy/sell tape inside this bar, the nearest defensible support/resistance zones (scored on confluence of pivots, prior day, and resting book, with a "held X/Y" track record), and a composite **BAR TILT** gauge — `UP-LEAN / DOWN-LEAN / NO EDGE` — that says which way the evidence points, explicitly labelled **context, not a signal**. **Alt C** toggles it; draggable and minimizable.
 - **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, **RSI Divergence (Wilder RSI with regular + hidden divergence)**, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, **WaveTrend [LazyBear] (10, 21)**, **CM_Williams_Vix_Fix (ChrisMoody’s published (22, 20, 2, 50, 0.85, 1.01) market-bottom finder)**, **TUX EMA Scalper+SuperTrend (3, 7, 20, close)** with EMA-cross BUY/SELL arrows and green/pink SuperTrend context, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
@@ -255,8 +276,10 @@ src/
     TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
-    market.ts                  Asset metadata, explicit demo feed, quote formatting
+    market.ts                  Asset metadata, demo feed, venue routing, quote formatting
     useCoinbaseMarket.ts       Abortable history loading, live SSE, retry/stale states
+    useKalshiMetalMarket.ts    Gold/silver settlement polling, staleness, watchlist quotes
+    useKalshiStrike.ts         Kalshi's published strike, polled at the window rhythm
     market-settings.ts         Non-destructive migration to source-scoped pairs
     indicator-runtime.ts       Self-contained technical-analysis helpers
     indicators.ts              Built-in plot calculations and script templates
@@ -278,12 +301,15 @@ src/
   styles.css                   Responsive terminal design
   **/*.test.ts                 Unit tests
 shared/coinbase.ts              Validated transport types, aggregation, live candle tracker
-server/                        Coinbase REST/WS adapter, SSE API, Vite/production servers
+shared/kalshi.ts                Kalshi feed tables: crypto ladders, metal ladders, windows
+shared/kalshi-metals.ts         Settlement points, metal candles, quote, coverage, validation
+shared/fixtures/                Verbatim upstream records used by the tests
+server/                        Coinbase REST/WS adapter, Kalshi adapter, SSE API, servers
 tests/workspace.spec.ts         Existing offline-workspace integration tests
 tests/coinbase.spec.ts          Coinbase UI/transport fixtures and failure tests
 ```
 
-Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
+Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, Kalshi settlement parsing, metal bar construction and ladder paging, metal poll cadence and refusal to request unsupported resolutions, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
 
 ## Next production milestones
 

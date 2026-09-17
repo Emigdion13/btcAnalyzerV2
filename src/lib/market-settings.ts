@@ -1,6 +1,6 @@
 import { isProductId } from '../../shared/coinbase'
 import type { DataSource } from '../../shared/coinbase'
-import { ASSETS, COINBASE_DEFAULTS, isDemoSymbol } from './market'
+import { ASSETS, COINBASE_DEFAULTS, METAL_DEFAULTS, isDemoSymbol } from './market'
 import { readStored, writeStored } from './storage'
 
 /** Preserve demo work, while introducing distinct Coinbase USD symbols. */
@@ -17,7 +17,11 @@ export function initializeCoinbaseWorkspace() {
     ASSETS.slice(0, 10).map((a) => a.symbol),
   )
   const tabs = readStored<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
-  writeStored('watchlist', [...new Set([...watchlist, ...COINBASE_DEFAULTS.slice(0, 10)])])
+  // Gold and silver travel with the majors into a live workspace: they are real market
+  // data too, settled by Kalshi rather than traded on Coinbase.
+  writeStored('watchlist', [
+    ...new Set([...watchlist, ...COINBASE_DEFAULTS.slice(0, 10), ...METAL_DEFAULTS]),
+  ])
   writeStored('tabs', [...new Set([...tabs.slice(-6), product, 'ETH-USD'])].slice(-8))
   writeStored('symbol', product)
   writeStored('data-source', 'coinbase')

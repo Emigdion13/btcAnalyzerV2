@@ -49,7 +49,11 @@ export interface Asset {
   marketCap: string
   quoteCurrency?: string
   priceIncrement?: number
-  category: 'Layer 1' | 'DeFi' | 'Other'
+  /**
+   * Watchlist grouping. 'Metals' is the Kalshi-settled precious metals, which are neither
+   * a layer-1 token nor a DeFi one — they are not crypto at all.
+   */
+  category: 'Layer 1' | 'DeFi' | 'Other' | 'Metals'
 }
 /** Published inputs of LazyBear's WaveTrend [LazyBear] (short title `WT_LB`). */
 export interface WaveTrendSettings {

@@ -274,6 +274,15 @@ button {
   background: #20252d;
   color: #d2d8df;
 }
+/* Bullion bars: warm gold, cool silver, no coin disc. */
+.coin-xau {
+  background: #332a12;
+  color: #e8c558;
+}
+.coin-xag {
+  background: #23272e;
+  color: #c3ccd8;
+}
 .coin-doge {
   background: #393020;
   color: #d2b76b;
@@ -2738,6 +2747,15 @@ button {
 .menu-item.selected > svg {
   color: #b9d98c;
 }
+.menu-item:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}
+
 .menu-item.danger {
   color: #e995a3;
 }
@@ -6330,6 +6348,13 @@ input[type='color']::-webkit-color-swatch {
   color: #91b5ff !important;
   background: #1a294244 !important;
   border-color: #354967 !important;
+  letter-spacing: 0.8px;
+}
+/* Kalshi: the venue behind gold, silver and every published strike. */
+.kalshi-exchange {
+  color: #e8c558 !important;
+  background: #2e251244 !important;
+  border-color: #4a3d20 !important;
   letter-spacing: 0.8px;
 }
 .coinbase-feed-badge {

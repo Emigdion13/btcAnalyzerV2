@@ -5,6 +5,19 @@ import { readStored, writeStored } from './storage'
 
 /** Preserve demo work, while introducing distinct Coinbase USD symbols. */
 export function initializeCoinbaseWorkspace() {
+  // Replace the former Kalshi-gold chart with Coinbase's tradeable PAX Gold product even in
+  // workspaces that completed the original Coinbase migration. Lists are de-duplicated because
+  // PAXG may already have been added from Coinbase's catalog.
+  const replaceLegacyGold = (id: string) => (id === 'XAU-USD' ? 'PAXG-USD' : id)
+  const migrateList = (key: 'watchlist' | 'tabs') => {
+    const previous = readStored<string[]>(key, [])
+    if (previous.includes('XAU-USD'))
+      writeStored(key, [...new Set(previous.map(replaceLegacyGold))])
+  }
+  migrateList('watchlist')
+  migrateList('tabs')
+  if (readStored<string>('symbol', '') === 'XAU-USD') writeStored('symbol', 'PAXG-USD')
+
   if (readStored('coinbase-initialized', false)) return
   const old = readStored<string>('symbol', 'BTCUSDT')
   const product = isProductId(old)
@@ -17,8 +30,7 @@ export function initializeCoinbaseWorkspace() {
     ASSETS.slice(0, 10).map((a) => a.symbol),
   )
   const tabs = readStored<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
-  // Gold and silver travel with the majors into a live workspace: they are real market
-  // data too, settled by Kalshi rather than traded on Coinbase.
+  // PAX Gold (Coinbase) and silver (Kalshi) travel with the majors into a live workspace.
   writeStored('watchlist', [
     ...new Set([...watchlist, ...COINBASE_DEFAULTS.slice(0, 10), ...METAL_DEFAULTS]),
   ])

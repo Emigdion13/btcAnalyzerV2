@@ -51,8 +51,8 @@ export function CoinIcon({ asset, size = 28 }: { asset: Asset; size?: number }) 
           <path d="m10 0 10 17-10-4z" fill="#c3cef8" />
           <path d="m0 19 10 6 10-6-10 13z" fill="currentColor" />
         </svg>
-      ) : asset.ticker === 'XAU' || asset.ticker === 'XAG' ? (
-        // A bullion bar: the metals are Kalshi-settled prices per troy ounce.
+      ) : asset.ticker === 'PAXG' || asset.ticker === 'XAU' || asset.ticker === 'XAG' ? (
+        // A bullion bar for PAX Gold and the Kalshi metal references.
         <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5.5 9h13l3.5 10H2z" fill="currentColor" opacity=".9" />
           <path d="M8 4.5h8l2 4H6z" fill="currentColor" opacity=".5" />

@@ -236,7 +236,8 @@ describe('useKalshiMetalMarket', () => {
     expect(value.pending?.windowStart).toBe(LIVE_OPEN)
     expect(value.snapshot?.source).toBe('kalshi')
     expect(value.snapshot?.provisional).toBe(false)
-    expect(value.assets.map((asset) => asset.symbol)).toEqual(['XAU-USD', 'XAG-USD'])
+    // PAXG-USD is intentionally absent: gold is supplied by useCoinbaseMarket.
+    expect(value.assets.map((asset) => asset.symbol)).toEqual(['XAG-USD'])
   })
 
   it('aggregates coarser resolutions on the server, and asks for nothing finer than 15m', async () => {

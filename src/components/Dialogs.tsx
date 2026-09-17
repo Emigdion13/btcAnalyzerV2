@@ -115,8 +115,8 @@ export function SymbolSearch({
           {source === 'demo'
             ? 'Synthetic demo prices. No exchange account required.'
             : verified
-              ? 'Available Coinbase USD pairs, plus gold and silver settled by Kalshi. Open or watch one to stream its quote.'
-              : 'Waiting for Coinbase to verify pair availability. Gold and silver come from Kalshi. Prices are not simulated.'}
+              ? 'Available Coinbase USD pairs including PAX Gold, plus silver settled by Kalshi. Open or watch one to stream its quote.'
+              : 'Waiting for Coinbase to verify pair availability. PAX Gold is Coinbase-traded; silver comes from Kalshi. Prices are not simulated.'}
         </span>
       }
     >
@@ -994,7 +994,7 @@ export function MarketsDialog({
       description={
         source === 'demo'
           ? 'An illustrative market, built for experimentation.'
-          : 'Explore Coinbase USD markets, plus the gold and silver Kalshi settles. Open one to stream its price.'
+          : 'Explore Coinbase USD markets including PAX Gold, plus Kalshi-settled silver. Open one to stream its price.'
       }
       eyebrow="MARKET OVERVIEW"
       onClose={onClose}
@@ -1093,7 +1093,7 @@ export function MarketsDialog({
                   {source === 'demo' ? (
                     <Sparkline asset={asset} />
                   ) : (
-                    // Metals carry no volume: Kalshi publishes prices, not ounces traded.
+                    // The venue column distinguishes Coinbase PAXG from Kalshi silver.
                     <span className="venue-label">
                       {venueLabel(venueForSymbol(asset.symbol, source))}
                     </span>

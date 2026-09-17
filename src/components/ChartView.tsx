@@ -332,7 +332,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
    * mode: a simulated chart has no real window for Kalshi to have published against,
    * and inventing one would present fiction as an authoritative number.
    *
-   * Enabled for both live venues. On gold and silver the strike is the window's opening
+   * Enabled for both live venues. On Kalshi ladders the strike is the window's opening
    * settlement value from the same ladder the candles come from, so it is exact by
    * construction rather than an estimate — the resolver labels it as Kalshi's either way.
    */

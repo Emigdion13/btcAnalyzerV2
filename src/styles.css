@@ -275,6 +275,7 @@ button {
   color: #d2d8df;
 }
 /* Bullion bars: warm gold, cool silver, no coin disc. */
+.coin-paxg,
 .coin-xau {
   background: #332a12;
   color: #e8c558;

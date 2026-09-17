@@ -1,26 +1,30 @@
-# Kalshi gold and silver
+# Kalshi metal ladders
 
-Gold (`XAU-USD`) and silver (`XAG-USD`) are watchable and chartable in live mode. They are not
-Coinbase pairs — Coinbase lists no silver product and only a tokenised gold (PAXG), which is a
-different instrument from the spot metal. The venue that publishes both, per troy ounce, in USD,
-on a quarter-hour ladder is **Kalshi**:
+Kalshi publishes quarter-hour reference ladders for gold (`XAU-USD`) and silver (`XAG-USD`), and
+the server adapter supports both. In the Atlas UI, however, **Gold is now Coinbase's `PAXG-USD`**
+with real 1-minute trade candles; only Silver uses this Kalshi transport. The distinction is
+intentional: PAXG is tokenised gold traded on Coinbase, while Kalshi's ladder is a Pyth-referenced
+settlement series rather than an exchange tape.
 
-| Metal  | Chart symbol | Series        | Reference in the rule text | Rounding      |
-| ------ | ------------ | ------------- | -------------------------- | ------------- |
-| Gold   | `XAU-USD`    | `KXGOLD15M`   | `PYTH_GOLD`                | 2 decimals    |
-| Silver | `XAG-USD`    | `KXSILVER15M` | `PYTH_SILVER`              | 3 decimals    |
+Kalshi's two public series are:
 
-Everything the app shows for a metal is a number Kalshi put on the record. Nothing is
-interpolated, resampled from a finer feed, or borrowed from a crypto candle.
+| Metal  | Chart symbol | Series        | Reference in the rule text | Rounding   |
+| ------ | ------------ | ------------- | -------------------------- | ---------- |
+| Gold   | `XAU-USD`    | `KXGOLD15M`   | `PYTH_GOLD`                | 2 decimals |
+| Silver | `XAG-USD`    | `KXSILVER15M` | `PYTH_SILVER`              | 3 decimals |
+
+Everything shown for `XAG-USD` is a number Kalshi put on the record. Nothing is interpolated,
+resampled from a finer feed, or borrowed from another candle. `PAXG-USD` bypasses this pipeline
+and uses Coinbase's normal REST/WebSocket OHLCV path.
 
 ## What Kalshi publishes
 
 The ladders are public: `GET /trade-api/v2/markets?series_ticker=KXGOLD15M` needs no
 authentication. Each record is one 15-minute window and carries two prices:
 
-- **`floor_strike`** — the metal price at the window's *open*, published as soon as the window
+- **`floor_strike`** — the metal price at the window's _open_, published as soon as the window
   exists. This is the number the contract settles against.
-- **`expiration_value`** — the price at the window's *close*, filled in when the market is graded
+- **`expiration_value`** — the price at the window's _close_, filled in when the market is graded
   (empty string until then).
 
 The rule text names the source, verbatim from a live record:
@@ -35,13 +39,13 @@ which is why the chart's price scale reads `priceIncrement` per asset instead of
 
 Two properties of the data drive the whole implementation:
 
-1. **The chain is exact.** Window *N+1*'s `floor_strike` equals window *N*'s `expiration_value`
+1. **The chain is exact.** Window _N+1_'s `floor_strike` equals window _N_'s `expiration_value`
    (`…2200-00` settles at `4300.16`; the next window `…2215-15` opens with strike `4300.16`).
    Taking the graded value where it exists and the neighbouring strike otherwise yields one
    point per quarter hour with no duplicates and no gaps invented.
 2. **The live window's strike is the freshest boundary point.** Kalshi publishes it about a
    second after the cut, and grades the closed window about eighteen seconds later — so the
-   just-closed bar can be finished from the *open* market's strike before its own settlement
+   just-closed bar can be finished from the _open_ market's strike before its own settlement
    lands. The forming window itself is never drawn as a bar (see below).
 
 ## How bars are built
@@ -53,7 +57,7 @@ Two properties of the data drive the whole implementation:
 - `high`/`low` are the **envelope of those two points** — `max`/`min` of open and close. That is
   the tightest bound the data supports, and it is labelled as such in the UI: Pyth printed other
   prices inside the quarter hour that Kalshi did not publish.
-- `volume` is **0 / null**. Kalshi's `volume_fp` counts *contracts traded on the ladder*, not
+- `volume` is **0 / null**. Kalshi's `volume_fp` counts _contracts traded on the ladder_, not
   ounces of metal traded. Presenting it as candle volume would be a category error, so no volume
   is shown for metals (the sidebar says so on hover).
 - Higher timeframes (1h, 4h, 1D, 1W) are aggregated from the 15-minute bars with the repo's
@@ -72,24 +76,25 @@ distinct from the metal price) — and the chart may draw it as a strike overlay
 
 ### Supported resolutions
 
-Kalshi publishes one value per quarter hour, so the metals support **15m, 1h, 4h, 1D, 1W** and
-nothing finer. `METAL_INTERVALS` / `isMetalInterval` are the single source of truth:
+Kalshi publishes one value per quarter hour, so a **Kalshi ladder chart** supports **15m, 1h, 4h,
+1D, 1W** and nothing finer. `METAL_INTERVALS` / `isMetalInterval` are the single source of truth.
+This limitation applies to `XAG-USD` in the UI—not to Coinbase `PAXG-USD`, which supports all
+Atlas timeframes including 1m, 3m and 5m.
 
-- The timeframe toolbar hides 1m/3m/5m for a metal; the timeframe dropdown disables them with an
-  explanatory tooltip; any other entry point (template, backup, URL) falls back to 15m and says
-  why in a notification.
-- The client hook refuses to *request* an unsupported resolution — it does not ask the server and
+- The timeframe toolbar hides 1m/3m/5m for Kalshi silver; the timeframe dropdown disables them
+  with an explanatory tooltip; any other entry point falls back to 15m and says why.
+- The client hook refuses to _request_ an unsupported resolution — it does not ask the server and
   then discard the answer.
-- `/api/coinbase/*` rejects metal products with `METAL_NOT_ON_COINBASE`; the metals are never
-  routed to the crypto adapter.
+- `/api/coinbase/*` rejects synthetic `XAU-USD` / `XAG-USD` product IDs. `PAXG-USD` is a real
+  Coinbase product and is deliberately routed through the Coinbase adapter.
 
 ## API
 
-| Route                                          | Purpose                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------- |
-| `GET /api/kalshi/metals`                       | The metal feeds the server knows, with series, index, rounding |
-| `GET /api/kalshi/metals/history?symbol=&interval=&limit=` | Bars, points, quote, `pending`, `coverage`, `asOf`, `message` |
-| `GET /api/kalshi/strike?product=XAU-USD`       | The published strike, for the strike overlay                   |
+| Route                                                     | Purpose                                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| `GET /api/kalshi/metals`                                  | The metal feeds the server knows, with series, index, rounding |
+| `GET /api/kalshi/metals/history?symbol=&interval=&limit=` | Bars, points, quote, `pending`, `coverage`, `asOf`, `message`  |
+| `GET /api/kalshi/strike?product=XAU-USD`                  | The published strike, for the strike overlay                   |
 
 `limit` is clamped to 2–900. History is fetched by paging **settled** windows backwards with
 `max_close_ts` (integer unix milliseconds — ISO strings are rejected by Kalshi with a
@@ -121,20 +126,20 @@ chart, with three differences that follow from the data:
   current chart.
 
 `App.tsx` keeps two venues side by side: `venueForSymbol(symbol, source)` decides which one
-serves the chart, `venueLabel` names it in the status bar, chart badge, dialogs and exported
-images, the whale-flow and order-book HUD boxes are Coinbase-only (a metal has no book here),
-and alerts fire with the right venue attached. `MetalTimeframeFeed` does the same for the
-alternate-timeframe indicator feeds.
+serves the chart, and `venueLabel` names it in the status bar, chart badge, dialogs and exported
+images. `PAXG-USD` receives Coinbase candles, volume, tape and order-book data; `XAG-USD` receives
+Kalshi settlement candles without fabricated volume or book data. `MetalTimeframeFeed` handles
+the alternate-timeframe feeds for Kalshi silver.
 
 ## Honesty rules this integration keeps
 
-1. A metal price is always a Kalshi settlement value, and the UI says Kalshi — never "Coinbase".
-2. The quote's `updatedAt` is the settlement time, up to a quarter hour old. The age is shown,
-   not hidden; `coverage.ageSeconds` is computed on the server.
-3. No volume, no market cap, no sparkline-from-nothing for metals: the fields are `—`.
-4. Sub-15-minute resolutions do not exist and are not synthesised.
-5. The forming window is not a bar.
-6. Gaps in the ladder remain gaps.
+1. `PAXG-USD` is always labelled PAX Gold / Coinbase; it is not misrepresented as generic XAU.
+2. `XAG-USD` is always labelled Silver / Kalshi; it is never labelled Coinbase.
+3. A Kalshi quote's `updatedAt` is the settlement time, up to a quarter hour old. The age is shown.
+4. No volume, market cap, or sparkline is invented for Kalshi silver.
+5. Sub-15-minute silver resolutions do not exist and are not synthesised; PAXG uses real Coinbase
+   candles at those resolutions.
+6. The Kalshi forming window is not a bar, and gaps in the ladder remain gaps.
 
 ## Tests
 

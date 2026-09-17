@@ -36,7 +36,7 @@ export function IndicatorTimeframeFeed({ product, interval, playing, onData }: P
 }
 
 /**
- * The same contract for gold and silver, from Kalshi's settlement points.
+ * The same contract for silver, from Kalshi's settlement points.
  *
  * Alt-timeframe indicators need a feed per resolution whatever the venue, and the metals
  * must not be asked of Coinbase. Resolutions Kalshi publishes nothing for — anything below

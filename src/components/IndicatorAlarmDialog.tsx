@@ -135,15 +135,21 @@ export function IndicatorAlarmDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [indicator, condition, legs],
   )
-  const blocked = (kind: AlarmIndicatorKind) => {
-    // One MACD flavour per alarm, and never a family whose conditions are all already watched.
+  /**
+   * A leg may not read the other MACD flavour — the alarm already reads one — and never a family
+   * whose conditions another leg has all taken. The primary may switch freely between flavours
+   * *unless* a leg has claimed one, which is what `blockedForPrimary` watches.
+   */
+  const blockedForLeg = (kind: AlarmIndicatorKind, skip: number | null = null) => {
     if (isMacdKind(kind) && families.some((family) => isMacdKind(family) && family !== kind))
       return true
-    return kind !== indicator && conditionsFor(kind).every((item) => takenBy(kind, item.id, null))
+    return conditionsFor(kind).every((item) => takenBy(kind, item.id, skip))
   }
+  const blockedForPrimary = (kind: AlarmIndicatorKind) =>
+    isMacdKind(kind) && legs.some((leg) => isMacdKind(leg.indicator) && leg.indicator !== kind)
   const canAdd =
     legs.length < ALARM_ENTRY_LIMIT - 1 &&
-    ALARM_INDICATORS.some((kind) => !families.includes(kind) && !blocked(kind))
+    ALARM_INDICATORS.some((kind) => !families.includes(kind) && !blockedForLeg(kind))
   const metal = isMetalSymbol(symbol)
   const timeframes = metal ? TIMEFRAMES.filter(isMetalInterval) : TIMEFRAMES
   const onChart =
@@ -173,7 +179,7 @@ export function IndicatorAlarmDialog({
     )
   }
   const addLeg = () => {
-    const next = ALARM_INDICATORS.find((kind) => !families.includes(kind) && !blocked(kind))
+    const next = ALARM_INDICATORS.find((kind) => !families.includes(kind) && !blockedForLeg(kind))
     if (!next) return
     const condition2 = conditionsFor(next).find((item) => !takenBy(next, item.id, null))!
     legKey.current += 1
@@ -447,8 +453,8 @@ export function IndicatorAlarmDialog({
               key={kind}
               className={kind === indicator ? 'active' : ''}
               aria-pressed={kind === indicator}
-              disabled={blocked(kind)}
-              title={blocked(kind) ? 'One MACD flavour per alarm' : undefined}
+              disabled={blockedForPrimary(kind)}
+              title={blockedForPrimary(kind) ? 'One MACD flavour per alarm' : undefined}
               onClick={() => chooseIndicator(kind)}
             >
               {ALARM_INDICATOR_LABELS[kind]}
@@ -563,11 +569,13 @@ export function IndicatorAlarmDialog({
                           chooseLegIndicator(index, event.target.value as AlarmIndicatorKind)
                         }
                       >
-                        {ALARM_INDICATORS.filter((kind) => !blocked(kind)).map((kind) => (
-                          <option key={kind} value={kind}>
-                            {ALARM_INDICATOR_LABELS[kind]}
-                          </option>
-                        ))}
+                        {ALARM_INDICATORS.filter((kind) => !blockedForLeg(kind, index)).map(
+                          (kind) => (
+                            <option key={kind} value={kind}>
+                              {ALARM_INDICATOR_LABELS[kind]}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </label>
                     <label className="field" htmlFor={`alarm-extra-${index}-condition`}>

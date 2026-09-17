@@ -211,13 +211,20 @@ describe('IndicatorAlarmDialog', () => {
     })
   })
 
-  it('keeps one MACD flavour per alarm, in the picker and in the leg', () => {
+  it('keeps one MACD flavour per alarm, without ever dead-ending the picker', () => {
     render()
+    // With nothing combined yet, both MACD flavours stay open: switching between them is normal.
+    expect(indicatorButton('MACD (classic)').disabled).toBe(false)
+    act(() => indicatorButton('RSI').click())
     act(() => (document.querySelector('#alarm-add-leg') as HTMLButtonElement).click())
+    // The leg takes the first family the alarm is not already reading: CM MACD.
     const legIndicator = document.querySelector('#alarm-extra-0-indicator') as HTMLSelectElement
+    expect(legIndicator.value).toBe('cm-ult-macd')
     expect([...legIndicator.options].map((option) => option.value)).not.toContain('macd')
+    // A leg now owns a MACD flavour, so the primary may not take the other one — and only that.
     expect(indicatorButton('MACD (classic)').disabled).toBe(true)
     expect(indicatorButton('CM_Ult_MacD_MTF').disabled).toBe(false)
+    expect(indicatorButton('RSI').disabled).toBe(false)
   })
 
   it('takes a combination apart again, condition by condition', () => {

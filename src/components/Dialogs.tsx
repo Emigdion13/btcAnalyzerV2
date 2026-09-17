@@ -43,7 +43,16 @@ import type {
   ScriptResult,
 } from '../lib/types'
 import { DEFAULT_SETTINGS } from '../lib/types'
-import { formatPrice, formatChange, changeClass, quoteCurrency, compactNumber } from '../lib/market'
+import {
+  formatPrice,
+  formatChange,
+  changeClass,
+  pricePrecision,
+  quoteCurrency,
+  compactNumber,
+  venueForSymbol,
+  venueLabel,
+} from '../lib/market'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from '../lib/indicators'
 import { isRsiMeterIndicator } from '../lib/rsi-hud'
 import { divergenceSettings, isDivergenceSettings } from '../lib/macd-divergence'
@@ -106,8 +115,8 @@ export function SymbolSearch({
           {source === 'demo'
             ? 'Synthetic demo prices. No exchange account required.'
             : verified
-              ? 'Available Coinbase USD pairs. Open or watch a pair to stream its quote.'
-              : 'Waiting for Coinbase to verify pair availability. Prices are not simulated.'}
+              ? 'Available Coinbase USD pairs including PAX Gold, plus silver settled by Kalshi. Open or watch one to stream its quote.'
+              : 'Waiting for Coinbase to verify pair availability. PAX Gold is Coinbase-traded; silver comes from Kalshi. Prices are not simulated.'}
         </span>
       }
     >
@@ -172,9 +181,13 @@ export function SymbolSearch({
                   {asset.name} / {quoteCurrency(asset)}
                 </small>
               </span>
-              <span className="result-exchange">{source === 'coinbase' ? 'COINBASE' : 'DEMO'}</span>
+              <span className="result-exchange">
+                {venueLabel(venueForSymbol(asset.symbol, source)).toUpperCase()}
+              </span>
               <span className="result-quote">
-                <strong className="mono">{formatPrice(quotes[asset.symbol]?.price)}</strong>
+                <strong className="mono">
+                  {formatPrice(quotes[asset.symbol]?.price, false, pricePrecision(asset.symbol))}
+                </strong>
                 <small className={changeClass(quotes[asset.symbol]?.change)}>
                   {formatChange(quotes[asset.symbol]?.change)}
                 </small>
@@ -979,9 +992,9 @@ export function MarketsDialog({
     <Modal
       title="The bigger picture."
       description={
-        source === 'coinbase'
-          ? 'Explore Coinbase USD markets. Open a pair to stream its price.'
-          : 'An illustrative market, built for experimentation.'
+        source === 'demo'
+          ? 'An illustrative market, built for experimentation.'
+          : 'Explore Coinbase USD markets including PAX Gold, plus Kalshi-settled silver. Open one to stream its price.'
       }
       eyebrow="MARKET OVERVIEW"
       onClose={onClose}
@@ -989,9 +1002,9 @@ export function MarketsDialog({
       footer={
         <span className="dialog-footnote">
           <Monitor size={14} />
-          {source === 'coinbase'
-            ? 'Quotes are loaded for open charts, watchlist pairs and alerts. Missing values are not estimated.'
-            : 'Illustrative demo snapshot. These are not current market prices.'}
+          {source === 'demo'
+            ? 'Illustrative demo snapshot. These are not current market prices.'
+            : 'Quotes are loaded for open charts, watchlist pairs and alerts. Metal quotes are Kalshi settlement values, up to a quarter hour old. Missing values are not estimated.'}
         </span>
       }
     >
@@ -1000,11 +1013,11 @@ export function MarketsDialog({
           <span>{verified ? 'Available pairs' : 'Suggested pairs'}</span>
           <strong>{catalog.length}</strong>
           <small>
-            {source === 'coinbase'
-              ? verified
-                ? 'Coinbase USD catalog'
-                : 'Availability not yet verified'
-              : 'Synthetic demo assets'}
+            {source === 'demo'
+              ? 'Synthetic demo assets'
+              : verified
+                ? 'Coinbase USD catalog + Kalshi metals'
+                : 'Availability not yet verified'}
           </small>
         </div>
         <div>
@@ -1017,9 +1030,11 @@ export function MarketsDialog({
         </div>
         <div>
           <span>Market data source</span>
-          <strong>{source === 'coinbase' ? 'Coinbase' : 'Demo'}</strong>
+          <strong>{source === 'demo' ? 'Demo' : 'Coinbase + Kalshi'}</strong>
           <small>
-            {source === 'coinbase' ? 'Public exchange data' : 'Locally generated prices'}
+            {source === 'demo'
+              ? 'Locally generated prices'
+              : 'Public exchange and market data'}
           </small>
         </div>
       </div>
@@ -1063,7 +1078,9 @@ export function MarketsDialog({
                     </span>
                   </button>
                 </td>
-                <td className="mono">{formatPrice(quotes[asset.symbol]?.price, true)}</td>
+                <td className="mono">
+                  {formatPrice(quotes[asset.symbol]?.price, true, pricePrecision(asset.symbol))}
+                </td>
                 <td className={changeClass(quotes[asset.symbol]?.change)}>
                   <span className="market-change">
                     {formatChange(quotes[asset.symbol]?.change)}
@@ -1076,7 +1093,10 @@ export function MarketsDialog({
                   {source === 'demo' ? (
                     <Sparkline asset={asset} />
                   ) : (
-                    <span className="venue-label">Coinbase</span>
+                    // The venue column distinguishes Coinbase PAXG from Kalshi silver.
+                    <span className="venue-label">
+                      {venueLabel(venueForSymbol(asset.symbol, source))}
+                    </span>
                   )}
                 </td>
                 <td>

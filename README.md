@@ -2,7 +2,7 @@
 
 A professional, Coinbase-connected charting workspace inspired by TradingView. Built with React, TypeScript, a Node.js market-data adapter, and TradingView Lightweight Charts™.
 
-**Coinbase is the default data source. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
+**Coinbase is the default data source for crypto pairs and PAX Gold; silver comes from Kalshi's settlement ladder. Offline demo data is available only by explicit selection; connection failures never substitute synthetic prices. Custom indicators use JavaScript, not Pine Script. No orders are placed.**
 
 ## Run locally
 
@@ -77,6 +77,7 @@ Outbound endpoints:
 
 - `https://api.exchange.coinbase.com`
 - `wss://ws-feed.exchange.coinbase.com`
+- `https://external-api.kalshi.com` (public, unauthenticated: strike overlay and silver settlements)
 
 If DNS, TLS, regional restrictions, or network policy prevent access, the UI displays **Coinbase is unavailable** (or a stale-data banner if verified history was already loaded). Use **Retry Coinbase**, check the hosting network, or explicitly switch to **Offline demo**. No API keys can fix blocked network access. This Arena sandbox currently fails direct Coinbase TLS connections; the failure state is intentional and the integration is tested with controlled Coinbase-format fixtures, not claimed to be live-verified here.
 
@@ -89,11 +90,29 @@ If DNS, TLS, regional restrictions, or network policy prevent access, the UI dis
 
 All endpoints are read-only. Product syntax, catalog availability, intervals, sample limits, upstream payloads, and imported workspace data are validated. Public API hosting still needs deployment-level abuse protection before serving large anonymous audiences.
 
+## Gold from Coinbase; silver from Kalshi
+
+Gold is charted as Coinbase's live **PAX Gold** market (`PAXG-USD`). The instrument is explicitly labelled **PAX Gold**, not generic spot XAU. Coinbase supplies real trade OHLCV, so Gold supports the full **1m, 3m, 5m, 15m, 1h, 4h, 1D and 1W** toolbar through the existing Coinbase candle and stream transport.
+
+Coinbase has no equivalent silver USD product, so silver (`XAG-USD`) remains sourced from **Kalshi's public `KXSILVER15M` settlement ladder**, which settles per troy ounce in USD on Pyth's 1-minute candle close. Full Kalshi implementation detail is in [`docs/kalshi-metals.md`](docs/kalshi-metals.md).
+
+- **PAXG has real OHLCV.** Coinbase's public product, candle, stats and WebSocket endpoints drive the chart, quote and live forming bar just like other Coinbase products.
+- **Silver is native at 15m.** Each bar joins consecutive quarter-hour Kalshi settlement points; 1h, 4h, 1D and 1W are aggregations. The UI disables 1m/3m/5m only for silver rather than inventing prices.
+- **No fake silver volume or hidden gaps.** Kalshi contract volume is not ounces traded, and missing settlement windows remain missing.
+- **No synthetic fallback.** A venue failure produces an actionable stale/offline state instead of substituting prices.
+- The venue is named wherever a price appears: **Coinbase** for `PAXG-USD`, **Kalshi** for `XAG-USD`.
+
+Kalshi endpoints remain available for its published metal ladders:
+
+- `GET /api/kalshi/metals`
+- `GET /api/kalshi/metals/history?symbol=XAG-USD&interval=15m&limit=300`
+- `GET /api/kalshi/strike?product=BTC-USD`
+
 ## What works
 
 - **Canvas charting:** candlesticks, hollow candles, OHLC bars, line, and area charts; interactive crosshair, pan, zoom, linear/log/percentage price scales, auto-fit, and focus mode.
-- **Markets:** Coinbase USD products, live quote subscriptions for open charts/watchlists/alerts, source-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
-- **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport.
+- **Markets:** Coinbase USD products including PAX Gold, silver from Kalshi's settlement ladder, live quote subscriptions for open charts/watchlists/alerts, venue-aware symbol search, sortable watchlists, and a market overview. Twelve synthetic instruments remain available in explicit demo mode.
+- **Timeframes:** 1m, 3m, 5m, 15m, 1h, 4h, 1D, and 1W. Range shortcuts choose an appropriate interval and viewport. PAX Gold supports every timeframe; Kalshi silver supports 15m and coarser.
 - **Timeframe peek:** a floating window onto any other resolution — while you trade 1m it draws the last candles of, say, 15m _including the bar still forming_, with a countdown to that timeframe's close, a resolution dropdown, and an auto mode that follows the chart.
 - **Candle Pulse:** a cockpit-HUD floating window that reads the single bar being built right now — countdown to its close, O/H/L/C anatomy with close-position-in-range, volume pace vs the typical bar (with a projection to the close), the taker buy/sell tape inside this bar, the nearest defensible support/resistance zones (scored on confluence of pivots, prior day, and resting book, with a "held X/Y" track record), and a composite **BAR TILT** gauge — `UP-LEAN / DOWN-LEAN / NO EDGE` — that says which way the evidence points, explicitly labelled **context, not a signal**. **Alt C** toggles it; draggable and minimizable.
 - **Built-in indicators:** SMA, EMA, Bollinger Bands, Wilder RSI, **RSI Divergence (Wilder RSI with regular + hidden divergence)**, conventional MACD/signal lines (with optional **regular + hidden histogram divergence**), **CM_Ult_MacD_MTF (ChrisMoody’s original, also with divergence)**, **WaveTrend [LazyBear] (10, 21)**, **CM_Williams_Vix_Fix (ChrisMoody’s published (22, 20, 2, 50, 0.85, 1.01) market-bottom finder)**, **TUX EMA Scalper+SuperTrend (3, 7, 20, close)** with EMA-cross BUY/SELL arrows and green/pink SuperTrend context, an independent **Smart Money Concepts** price-action overlay, **SR Breaks and Retests (ChartPrime’s published (20, 2, 1) indicator)**, **Pivot Points High Low & Missed Reversal Levels (LuxAlgo’s open-source (50) indicator)**, daily UTC-reset VWAP, and volume. Indicator settings and visibility are editable.
@@ -255,8 +274,10 @@ src/
     TimeframePeekBox.tsx       Floating second-resolution window, forming bar included
     ui.tsx                     Accessible dialogs, menus, buttons, notifications
   lib/
-    market.ts                  Asset metadata, explicit demo feed, quote formatting
+    market.ts                  Asset metadata, demo feed, venue routing, quote formatting
     useCoinbaseMarket.ts       Abortable history loading, live SSE, retry/stale states
+    useKalshiMetalMarket.ts    Silver settlement polling, staleness, watchlist quotes
+    useKalshiStrike.ts         Kalshi's published strike, polled at the window rhythm
     market-settings.ts         Non-destructive migration to source-scoped pairs
     indicator-runtime.ts       Self-contained technical-analysis helpers
     indicators.ts              Built-in plot calculations and script templates
@@ -278,12 +299,15 @@ src/
   styles.css                   Responsive terminal design
   **/*.test.ts                 Unit tests
 shared/coinbase.ts              Validated transport types, aggregation, live candle tracker
-server/                        Coinbase REST/WS adapter, SSE API, Vite/production servers
+shared/kalshi.ts                Kalshi feed tables: crypto ladders, metal ladders, windows
+shared/kalshi-metals.ts         Settlement points, metal candles, quote, coverage, validation
+shared/fixtures/                Verbatim upstream records used by the tests
+server/                        Coinbase REST/WS adapter, Kalshi adapter, SSE API, servers
 tests/workspace.spec.ts         Existing offline-workspace integration tests
 tests/coinbase.spec.ts          Coinbase UI/transport fixtures and failure tests
 ```
 
-Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
+Tests cover CM MACD reference values, colors, MTF/replay boundaries and canvas rendering; OHLCV invariants, Coinbase aggregation/pagination and product validation, real SSE framing with a controlled WebSocket, stream rollover/deduplication, explicit network failures, stale/replay behavior, Kalshi settlement parsing, metal bar construction and ladder paging, metal poll cadence and refusal to request unsupported resolutions, indicators, script isolation, drawing interactions, persistence, exports/imports, and mobile layouts. Coinbase browser tests intercept the transport; fixtures are test-only and are never served by the application.
 
 ## Next production milestones
 
@@ -353,7 +377,7 @@ Drag it anywhere inside the chart (the position persists), minimize it to a sing
 - **Bar clock** — where inside the bar we are and how long until it closes, as a filling bar plus a live `mm:ss` countdown. On Coinbase the bar's own timestamp is authoritative; in the offline demo (whose synthetic bars are anchored to a fixed past date) the widget aligns the forming bar to the real current bucket so the clock behaves like a live feed.
 - **Bar anatomy** — O/H/L/C, the close's position inside the bar's own range (with the open marked), and the body/range ratio.
 - **Volume pace** — volume so far against what this share of a median bar has normally traded, the pace multiple (`1.42×`, glowing hot past `1.25×`), and a white projection tick showing where the bar lands at the close if the current pace holds. The first 5% of a bar reads `TRACKING` rather than guessing.
-- **Bar tape** — the taker buy/sell split executed *inside this bar*, with the net. The server accumulates per-bar taker notional from the `matches` channel (`CandleTracker.tape`, reset at every bar roll and every REST receipt — the same provisional caveat as the bar's volume, and omitted from the stream until the first side-bearing trade). Trades with no side still count toward volume but never toward the tape. The offline demo has no executed tape and says so.
+- **Bar tape** — the taker buy/sell split executed _inside this bar_, with the net. The server accumulates per-bar taker notional from the `matches` channel (`CandleTracker.tape`, reset at every bar roll and every REST receipt — the same provisional caveat as the bar's volume, and omitted from the stream until the first side-bearing trade). Trades with no side still count toward volume but never toward the tape. The offline demo has no executed tape and says so.
 - **Defense grid** — the two nearest support and resistance zones, each scored `0–100`: confluence of independent sources (confirmed fractal pivots of the recent closed bars, the prior UTC day, and resting order-book walls), repeated touches, USD of book at the zone, and proximity. The best zone on each side also carries a `held X/Y` count — of recent bars that traded into the zone from the right side, how many closed back out of it.
 - **BAR TILT** — the composite in `[-100, 100]`: level pressure (the net cushion of strong support below vs strong resistance above), bar tape, bar momentum (direction × body × range position × pace), and range position. Labels are `UP-LEAN`, `DOWN-LEAN`, or `NO EDGE` (below ±12). Every factor shows its signed contribution, with the full reasoning on hover.
 - **Base rate, and the honesty line** — the footer states how often recent bars closed up, and the panel is stamped **CONTEXT — NOT A SIGNAL**: the tilt says which way the evidence points, never what the close will be. The forming bar is provisional, so the panel dims when the feed is not live.

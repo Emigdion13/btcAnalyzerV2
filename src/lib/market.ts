@@ -149,7 +149,9 @@ export const ASSETS: Asset[] = [
 export const TIMEFRAMES: Timeframe[] = ['1m', '3m', '5m', '15m', '1h', '4h', '1D', '1W']
 export { INTERVAL_SECONDS as INTERVAL } from '../../shared/coinbase'
 import { INTERVAL_SECONDS as INTERVAL, isProductId } from '../../shared/coinbase'
-import type { CoinbaseProduct, MarketQuote } from '../../shared/coinbase'
+import type { CoinbaseProduct, DataSource, MarketQuote } from '../../shared/coinbase'
+import { isMetalSymbol, KALSHI_METAL_FEEDS, metalFeedForSymbol } from '../../shared/kalshi'
+import type { KalshiMetalFeed } from '../../shared/kalshi'
 export const COINBASE_DEFAULTS = [
   'BTC-USD',
   'ETH-USD',
@@ -162,6 +164,7 @@ export const COINBASE_DEFAULTS = [
   'DOT-USD',
   'UNI-USD',
   'AAVE-USD',
+  'PAXG-USD',
 ]
 export function coinbaseAsset(product: CoinbaseProduct | string): Asset {
   const symbol = typeof product === 'string' ? product : product.id
@@ -182,6 +185,62 @@ export function coinbaseAsset(product: CoinbaseProduct | string): Asset {
     volume: '—',
     marketCap: '—',
   }
+}
+/** Kalshi-settled metal metadata. This remains the source for silver. */
+export function metalAsset(feed: KalshiMetalFeed): Asset {
+  return {
+    symbol: feed.symbol,
+    ticker: feed.ticker,
+    name: feed.name,
+    color: feed.ticker === 'XAU' ? '#f2c14e' : '#b8c4d0',
+    icon: feed.ticker,
+    category: 'Metals',
+    quoteCurrency: 'USD',
+    // Kalshi rounds gold to 2 decimals and silver to 3. The chart reads this for its price
+    // scale, so silver shows $63.498 rather than a rounded $63.50.
+    priceIncrement: 10 ** -feed.roundDigits,
+    price: NaN,
+    change: NaN,
+    volume: '—',
+    marketCap: '—',
+  }
+}
+export const COINBASE_GOLD_ASSET: Asset = {
+  ...coinbaseAsset('PAXG-USD'),
+  ticker: 'PAXG',
+  name: 'PAX Gold',
+  color: '#f2c14e',
+  icon: 'PAXG',
+  category: 'Metals',
+  priceIncrement: 0.01,
+}
+/** Only silver uses Kalshi in the UI; XAU remains supported by the API for compatibility. */
+export const KALSHI_METAL_ASSETS: Asset[] = KALSHI_METAL_FEEDS.filter(
+  (feed) => feed.symbol === 'XAG-USD',
+).map(metalAsset)
+export const METAL_ASSETS: Asset[] = [COINBASE_GOLD_ASSET, ...KALSHI_METAL_ASSETS]
+export const METAL_DEFAULTS: string[] = METAL_ASSETS.map((asset) => asset.symbol)
+/** Decimals to display for a symbol: venue precision for metals, auto otherwise. */
+export function pricePrecision(symbol: string): number | undefined {
+  if (symbol === COINBASE_GOLD_ASSET.symbol) return 2
+  const feed = metalFeedForSymbol(symbol)
+  return feed ? feed.roundDigits : undefined
+}
+/**
+ * Which venue's numbers a symbol is showing.
+ *
+ * The app's `source` separates real market data from the synthetic demo. This separates
+ * *which* real venue. PAX Gold is a Coinbase-traded token, while silver is a Kalshi
+ * settlement value; each must be labelled accurately.
+ * Every venue label in the UI should come from here rather than from `source` alone.
+ */
+export function venueForSymbol(symbol: string, source: DataSource): DataSource {
+  if (source === 'demo') return 'demo'
+  return isMetalSymbol(symbol) ? 'kalshi' : 'coinbase'
+}
+/** A venue's display name, for badges, the status bar and exported images. */
+export function venueLabel(venue: DataSource): string {
+  return venue === 'demo' ? 'Demo' : venue === 'kalshi' ? 'Kalshi' : 'Coinbase'
 }
 export const quoteCurrency = (asset: Asset) => asset.quoteCurrency ?? 'USDT'
 export const isDemoSymbol = (symbol: string) => ASSETS.some((a) => a.symbol === symbol)
@@ -291,6 +350,8 @@ export function compactNumber(value: number | null | undefined): string {
 export function getAsset(symbol: string) {
   return (
     ASSETS.find((a) => a.symbol === symbol) ??
+    // Metals look like Coinbase product ids, so they are matched before that fallback.
+    METAL_ASSETS.find((a) => a.symbol === symbol) ??
     (isProductId(symbol) ? coinbaseAsset(symbol) : ASSETS[0])
   )
 }

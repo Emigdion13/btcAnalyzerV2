@@ -1,7 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { isInterval, isProductId } from '../shared/coinbase.ts'
-import { KALSHI_COIN_FEEDS, kalshiFeedForProduct } from '../shared/kalshi.ts'
+import {
+  isMetalInterval,
+  isMetalSymbol,
+  KALSHI_COIN_FEEDS,
+  KALSHI_METAL_FEEDS,
+  kalshiFeedForProduct,
+  METAL_INTERVALS,
+} from '../shared/kalshi.ts'
 import { CoinbaseService } from './coinbase-service.ts'
 import { KalshiService } from './kalshi-service.ts'
 import { MarketError } from './rest-client.ts'
@@ -20,6 +27,25 @@ const KALSHI_COIN_LIST = KALSHI_COIN_FEEDS.map((feed) => ({
   series: feed.series,
   indexId: feed.indexId,
   roundDigits: feed.roundDigits,
+}))
+
+/**
+ * The precious metals Kalshi settles, and the resolutions it can support.
+ *
+ * Gold and silver are not Coinbase products. Their prices are Kalshi's own published
+ * settlement values for the `KXGOLD15M` / `KXSILVER15M` ladders, which resolve on Pyth's
+ * 1-minute candlestick close — so quarter-hour resolution is a property of the source,
+ * not a limitation of this server, and sub-15m intervals are refused rather than guessed.
+ */
+const KALSHI_METAL_LIST = KALSHI_METAL_FEEDS.map((feed) => ({
+  symbol: feed.symbol,
+  ticker: feed.ticker,
+  name: feed.name,
+  series: feed.series,
+  indexId: feed.indexId,
+  roundDigits: feed.roundDigits,
+  unit: feed.unit,
+  intervals: METAL_INTERVALS,
 }))
 
 function kalshiCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): {
@@ -83,6 +109,42 @@ export function createMarketApi(
       json(res, 200, { source: 'kalshi', keyed: kalshi.keyed, coins: KALSHI_COIN_LIST })
       return
     }
+    if (url.pathname === '/api/kalshi/metals') {
+      json(res, 200, { source: 'kalshi', metals: KALSHI_METAL_LIST })
+      return
+    }
+    /**
+     * Gold and silver candles, built from Kalshi's published settlement values.
+     *
+     * Handled here, above the Coinbase validation, because a metal symbol is shaped like
+     * a product id but is not one: Coinbase does not trade XAU-USD, and sending it there
+     * would come back as a confusing "product unavailable".
+     */
+    if (url.pathname === '/api/kalshi/metals/history') {
+      const symbol = url.searchParams.get('symbol')
+      if (!isMetalSymbol(symbol))
+        throw new MarketError(
+          'Choose a metal Kalshi settles: XAU-USD (gold) or XAG-USD (silver).',
+          400,
+          'INVALID_METAL',
+        )
+      const metalInterval = url.searchParams.get('interval')
+      if (!isMetalInterval(metalInterval))
+        throw new MarketError(
+          `Kalshi settles the metals every 15 minutes. Choose one of ${METAL_INTERVALS.join(', ')}.`,
+          400,
+          'INVALID_METAL_INTERVAL',
+        )
+      const metalLimit = Number(url.searchParams.get('limit') ?? '300')
+      if (!Number.isInteger(metalLimit) || metalLimit < 2 || metalLimit > 900)
+        throw new MarketError(
+          'Candle limit must be an integer from 2 to 900.',
+          400,
+          'INVALID_LIMIT',
+        )
+      json(res, 200, await kalshi.metalHistory(symbol, metalInterval, metalLimit))
+      return
+    }
     if (url.pathname === '/api/coinbase/products') {
       json(res, 200, await service.getProducts())
       return
@@ -95,6 +157,12 @@ export function createMarketApi(
         'Request up to 100 valid Coinbase USD products.',
         400,
         'INVALID_PRODUCTS',
+      )
+    if (products.some(isMetalSymbol))
+      throw new MarketError(
+        'Gold and silver are not Coinbase products. Use /api/kalshi/metals/history.',
+        400,
+        'METAL_NOT_ON_COINBASE',
       )
     if (url.pathname === '/api/coinbase/quotes') {
       json(res, 200, await service.getQuotes(products))
@@ -109,6 +177,12 @@ export function createMarketApi(
         'Choose a Coinbase USD pair and a supported interval.',
         400,
         'INVALID_REQUEST',
+      )
+    if (isMetalSymbol(product))
+      throw new MarketError(
+        'Gold and silver are not Coinbase products. Use /api/kalshi/metals/history.',
+        400,
+        'METAL_NOT_ON_COINBASE',
       )
     const limit = Number(url.searchParams.get('limit') ?? '300')
     if (!Number.isInteger(limit) || limit < 2 || limit > 900)

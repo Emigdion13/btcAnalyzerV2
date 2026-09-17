@@ -10,7 +10,17 @@ export const INTERVAL_SECONDS = {
   '1W': 604800,
 } as const
 export type Interval = keyof typeof INTERVAL_SECONDS
-export type DataSource = 'coinbase' | 'demo'
+/**
+ * Where a price came from.
+ *
+ * `coinbase` and `kalshi` are both real market data; `demo` is locally generated and must
+ * never be substituted for either. `kalshi` covers the precious-metal ladders, whose
+ * prices are Kalshi's published settlement values rather than an exchange's trades.
+ */
+export type DataSource = 'coinbase' | 'demo' | 'kalshi'
+/** The sources that carry real market data, as opposed to the synthetic demo feed. */
+export const LIVE_SOURCES: readonly DataSource[] = ['coinbase', 'kalshi']
+export const isLiveSource = (source: DataSource): boolean => LIVE_SOURCES.includes(source)
 export type ConnectionState =
   'loading' | 'connecting' | 'live' | 'reconnecting' | 'stale' | 'offline' | 'paused'
 export interface MarketCandle {

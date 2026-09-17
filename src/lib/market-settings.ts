@@ -50,7 +50,11 @@ export function initialMarket(): { source: DataSource; symbol: string } {
         : readStored<DataSource>('data-source', 'coinbase') === 'demo'
           ? 'demo'
           : 'coinbase'
-  const candidate = symbol ?? readStored('symbol', source === 'coinbase' ? 'BTC-USD' : 'BTCUSDT')
+  const storedOrLinked =
+    symbol ?? readStored('symbol', source === 'coinbase' ? 'BTC-USD' : 'BTCUSDT')
+  // Old shared links bypass local-storage migration, so canonicalize them here as well.
+  const candidate =
+    source === 'coinbase' && storedOrLinked === 'XAU-USD' ? 'PAXG-USD' : storedOrLinked
   return {
     source,
     symbol:

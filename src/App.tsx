@@ -1775,8 +1775,8 @@ export default function App() {
             <span className="toolbar-separator" />
             <div className="timeframe-buttons">
               {(['1m', '3m', '5m', '15m', '1h', '4h', '1D'] as Timeframe[])
-                // Kalshi publishes the metals once a quarter hour: the finer buttons are
-                // not offered rather than offered and refused.
+                // Only Kalshi silver is restricted: Coinbase PAXG keeps every button,
+                // including the 1m, 3m and 5m charts.
                 .filter((tf) => !isMetal || isMetalInterval(tf))
                 .map((tf) => (
                   <button
@@ -1809,7 +1809,7 @@ export default function App() {
                       disabled={isMetal && !isMetalInterval(tf)}
                       title={
                         isMetal && !isMetalInterval(tf)
-                          ? 'Kalshi settles the metals once every 15 minutes; nothing finer is published.'
+                          ? 'Kalshi settles silver once every 15 minutes; nothing finer is published.'
                           : undefined
                       }
                       onClick={() => {

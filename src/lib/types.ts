@@ -590,6 +590,104 @@ export interface PriceAlert {
   triggeredAt?: string
   enabled: boolean
 }
+/** Which indicator a custom alarm watches. */
+export type AlarmIndicatorKind = 'cm-ult-macd' | 'macd' | 'rsi' | 'cm-williams-vix-fix'
+/**
+ * Every condition the alarm builder offers. `indicator-alarms.ts` owns the labels,
+ * descriptions and the arithmetic behind each id — this union only names them.
+ */
+export type AlarmConditionId =
+  // CM_Ult_MacD_MTF and the conventional MACD.
+  | 'macd-cross-up'
+  | 'macd-cross-down'
+  | 'macd-about-cross-up'
+  | 'macd-about-cross-down'
+  | 'macd-zero-cross-up'
+  | 'macd-zero-cross-down'
+  | 'macd-above-level'
+  | 'macd-below-level'
+  | 'macd-hist-rising'
+  | 'macd-hist-falling'
+  // CM_Ult_MacD_MTF histogram colors only: the conventional MACD never paints them.
+  | 'macd-hist-aqua'
+  | 'macd-hist-blue'
+  | 'macd-hist-maroon'
+  | 'macd-hist-red'
+  // Wilder RSI.
+  | 'rsi-cross-up-level'
+  | 'rsi-cross-down-level'
+  | 'rsi-about-cross-up'
+  | 'rsi-about-cross-down'
+  | 'rsi-above-level'
+  | 'rsi-below-level'
+  | 'rsi-turns-up'
+  | 'rsi-turns-down'
+  // CM_Williams_Vix_Fix.
+  | 'wvf-spike'
+  | 'wvf-spike-ends'
+  | 'wvf-about-spike'
+  | 'wvf-cross-above-band'
+  | 'wvf-cross-above-range'
+  | 'wvf-above-level'
+  | 'wvf-below-level'
+/**
+ * One leg of a combined alarm: which indicator family it reads, the condition, and its own
+ * numeric inputs. A leg carries its family, so one alarm can gate MACD on RSI or on the VIX
+ * Fix — the same condition id can never mean two things.
+ */
+export interface AlarmConditionEntry {
+  indicator: AlarmIndicatorKind
+  condition: AlarmConditionId
+  /** Numeric inputs declared by this condition's catalog entry, e.g. `{ level: 70 }`. */
+  params: Record<string, number>
+}
+/** How a multi-condition alarm combines: every leg true, or any one of them. */
+export type AlarmMatch = 'all' | 'any'
+/**
+ * A custom alarm on an indicator rather than on a price.
+ *
+ * The alarm names its own symbol, timeframe and indicator settings, so it stands alone: an
+ * RSI(14) 15m alarm on BTC-USD keeps watching while the chart is on something else. Conditions
+ * are state predicates — the alarm fires on the bar the state becomes true, once per bar.
+ *
+ * `indicator`/`condition`/`params` are the primary leg; `also` carries up to three more, and
+ * `match` says whether all of them (`all`, the default) or any one of them (`any`) has to hold
+ * on the bar. An alarm without `also` is exactly what it always was.
+ */
+export interface IndicatorAlarm {
+  id: string
+  symbol: string
+  timeframe: Timeframe
+  indicator: AlarmIndicatorKind
+  condition: AlarmConditionId
+  /** Numeric inputs declared by the condition's catalog entry, e.g. `{ level: 70 }`. */
+  params: Record<string, number>
+  /** Extra legs of a combined alarm, evaluated alongside the primary one. */
+  also?: AlarmConditionEntry[]
+  /** `all` (default) requires every leg; `any` fires on whichever leg is true first. */
+  match?: AlarmMatch
+  /** RSI length. RSI alarms only. */
+  rsi?: { period: number }
+  /** Conventional MACD lengths, EMA-fast / EMA-slow / EMA-signal. */
+  macd?: { fast: number; slow: number; signal: number }
+  /** CM_Ult_MacD_MTF lengths (evaluated at the alarm's own timeframe) and color rules. */
+  cmMacd?: CmMacdSettings
+  /** CM_Williams_Vix_Fix published inputs. */
+  williamsVixFix?: WilliamsVixFixSettings
+  /** Play the alarm chime in addition to the in-app notification. */
+  sound: boolean
+  /** `bar` re-arms on every new bar; `once` pauses the alarm after its first fire. */
+  repeat: 'bar' | 'once'
+  /** Read the forming bar (fast, can repaint) or only closed bars (confirmed). */
+  bars: 'forming' | 'closed'
+  note: string
+  enabled: boolean
+  createdAt: string
+  lastTriggeredAt?: string
+  /** Bucket time of the bar the alarm last fired on, so one bar never fires twice. */
+  lastTriggeredBar?: number
+  triggerCount: number
+}
 export interface ChartSettings {
   grid: boolean
   crosshair: boolean

@@ -16,7 +16,17 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { Asset, PriceAlert, MarketQuote, DataSource, ConnectionState } from '../lib/types'
+import type {
+  Asset,
+  PriceAlert,
+  IndicatorAlarm,
+  MarketQuote,
+  DataSource,
+  ConnectionState,
+} from '../lib/types'
+import { IndicatorAlarmList } from './IndicatorAlarmList'
+import type { AlarmReading } from '../lib/indicator-alarms'
+import type { AlarmFeedHealth } from '../lib/useIndicatorAlarms'
 import {
   ASSETS,
   formatPrice,
@@ -379,21 +389,39 @@ export function Watchlist({
 
 export function AlertsPanel({
   alerts,
+  indicatorAlarms,
+  readings,
+  health,
+  soundEnabled,
   source,
   connected,
   onAdd,
   onRemove,
   onToggle,
   onSelect,
+  onAddIndicatorAlarm,
+  onRemoveIndicatorAlarm,
+  onToggleIndicatorAlarm,
+  onToggleAlarmSound,
+  onToggleAlarmChimes,
   onClose,
 }: {
   alerts: PriceAlert[]
+  indicatorAlarms: IndicatorAlarm[]
+  readings: Record<string, AlarmReading>
+  health: Record<string, AlarmFeedHealth>
+  soundEnabled: boolean
   source: DataSource
   connected: boolean
   onAdd: () => void
   onRemove: (id: string) => void
   onToggle: (id: string) => void
   onSelect: (symbol: string) => void
+  onAddIndicatorAlarm: () => void
+  onRemoveIndicatorAlarm: (id: string) => void
+  onToggleIndicatorAlarm: (id: string) => void
+  onToggleAlarmSound: (id: string) => void
+  onToggleAlarmChimes: () => void
   onClose: () => void
 }) {
   return (
@@ -477,10 +505,24 @@ export function AlertsPanel({
             </div>
           ))
         )}
+        <IndicatorAlarmList
+          alarms={indicatorAlarms}
+          readings={readings}
+          health={health}
+          source={source}
+          connected={connected}
+          soundEnabled={soundEnabled}
+          onToggleSound={onToggleAlarmChimes}
+          onAdd={onAddIndicatorAlarm}
+          onRemove={onRemoveIndicatorAlarm}
+          onToggle={onToggleIndicatorAlarm}
+          onToggleAlarmSound={onToggleAlarmSound}
+          onSelect={onSelect}
+        />
       </div>
       <div className="panel-footnote">
-        Alerts are monitored only on the selected, connected data source while this workspace is
-        open and not replaying. No orders are placed.
+        Alerts and indicator alarms are monitored only on the selected, connected data source while
+        this workspace is open and not replaying. No orders are placed.
       </div>
     </aside>
   )

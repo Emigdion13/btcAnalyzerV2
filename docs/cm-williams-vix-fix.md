@@ -11,6 +11,11 @@ Source: <https://www.tradingview.com/script/og7JPrRA-CM-Williams-Vix-Fix-Finds-M
 
 ## Published inputs
 
+Alarms on this indicator — the lime fear spike, the bar the spike ends on, "about to spike", and
+the band/range-high crossings — are documented in
+[custom indicator alarms](indicator-alarms.md), including how an alarm combines with MACD or RSI
+on the same bar.
+
 | Pine                       | Atlas            | Meaning                                            |
 | -------------------------- | ---------------- | -------------------------------------------------- |
 | `pd` (22)                  | `pd`             | Lookback for the highest close in the fear ratio   |

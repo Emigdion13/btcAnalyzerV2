@@ -66,6 +66,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ChartView } from './components/ChartView'
 import type { ChartHandle } from './components/ChartView'
 import { DEFAULT_WATCHLIST, AlertsPanel, NotesPanel, Watchlist } from './components/Sidebar'
+import { IndicatorAlarmDialog } from './components/IndicatorAlarmDialog'
 import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed, MetalTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
@@ -96,6 +97,11 @@ import {
 import { useCoinbaseMarket } from './lib/useCoinbaseMarket'
 import { useKalshiMetalMarket } from './lib/useKalshiMetalMarket'
 import { useIndicatorInput } from './lib/useIndicatorInput'
+import { useIndicatorAlarms } from './lib/useIndicatorAlarms'
+import { ALARM_LIMIT, alarmHeadline, sanitizeIndicatorAlarms } from './lib/indicator-alarms'
+import { alarmChimeForAlarm, playAlarmChime, primeAlarmAudio } from './lib/alarm-sound'
+import { alarmFireToast } from './lib/alarm-status'
+import type { AlarmReading } from './lib/indicator-alarms'
 import { initialMarket } from './lib/market-settings'
 import { isProductId, candleFingerprint } from '../shared/coinbase'
 import { isMetalInterval, isMetalSymbol } from '../shared/kalshi'
@@ -131,6 +137,7 @@ import type {
   ChartType,
   Drawing,
   Indicator,
+  IndicatorAlarm,
   PriceAlert,
   SavedScript,
   ScriptResult,
@@ -210,6 +217,7 @@ type ModalName =
   | 'indicators'
   | 'settings'
   | 'alert'
+  | 'indicator-alarm'
   | 'share'
   | 'markets'
   | 'docs'
@@ -295,6 +303,13 @@ export default function App() {
     source: SCRIPT_TEMPLATES[0].source,
   })
   const [alerts, setAlerts] = useLocalState<PriceAlert[]>('alerts', [])
+  const [storedAlarms, setIndicatorAlarms] = useLocalState<IndicatorAlarm[]>('indicator-alarms', [])
+  // Stored alarms are read straight out of localStorage: validate before anything renders them.
+  const indicatorAlarms = useMemo(() => {
+    const clean = sanitizeIndicatorAlarms(storedAlarms)
+    return clean.length === storedAlarms.length ? storedAlarms : clean
+  }, [storedAlarms])
+  const [alarmChimes, setAlarmChimes] = useLocalState('alarm-chimes', true)
   const [studioOpen, setStudioOpen] = useLocalState('studio-open', true)
   const [studioHeight, setStudioHeight] = useLocalState('studio-height', 270)
   const [drawingsVisible, setDrawingsVisible] = useLocalState('drawings-visible', true)
@@ -690,7 +705,9 @@ export default function App() {
     (script) =>
       script.id === draft.id && script.source === draft.source && script.name === draft.name,
   )
-  const activeAlertCount = alerts.filter((a) => a.enabled && !a.triggeredAt).length
+  const activeAlertCount =
+    alerts.filter((a) => a.enabled && !a.triggeredAt).length +
+    indicatorAlarms.filter((alarm) => alarm.enabled).length
   const currentChartType = CHART_TYPES.find((c) => c.id === chartType)!
   const closeModal = () => setModal(null)
 
@@ -710,6 +727,55 @@ export default function App() {
     },
     [],
   )
+
+  // Unlock the Web Audio context on the first gesture so a chime can play later, without one.
+  useEffect(() => {
+    const unlock = () => primeAlarmAudio()
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+  const patchIndicatorAlarm = useCallback(
+    (id: string, patch: Partial<IndicatorAlarm>) =>
+      setIndicatorAlarms((previous) =>
+        previous.map((alarm) => (alarm.id === id ? { ...alarm, ...patch } : alarm)),
+      ),
+    [setIndicatorAlarms],
+  )
+  const toggleIndicatorAlarm = (id: string) =>
+    setIndicatorAlarms((previous) =>
+      previous.map((alarm) => (alarm.id === id ? { ...alarm, enabled: !alarm.enabled } : alarm)),
+    )
+  const toggleIndicatorAlarmSound = (id: string) =>
+    setIndicatorAlarms((previous) =>
+      previous.map((alarm) => (alarm.id === id ? { ...alarm, sound: !alarm.sound } : alarm)),
+    )
+  /**
+   * One notification per fire, plus the chime. The alarm's own bookkeeping (last trigger, count,
+   * and pausing a `once` alarm) is written by the monitor, so it happens exactly once per bar.
+   */
+  const onAlarmFire = useCallback(
+    (alarm: IndicatorAlarm, reading: AlarmReading) => {
+      notify(
+        alarmFireToast({ ...alarm, symbol: getAsset(alarm.symbol).ticker }, reading),
+        'alarm',
+      )
+      if (alarm.sound && alarmChimes) playAlarmChime(alarmChimeForAlarm(alarm))
+    },
+    [notify, alarmChimes],
+  )
+  const alarmMonitor = useIndicatorAlarms({
+    alarms: indicatorAlarms,
+    chart: { symbol, timeframe, candles, state: feedState },
+    source,
+    quotes,
+    replay: replayIndex !== null,
+    patchAlarm: patchIndicatorAlarm,
+    onFire: onAlarmFire,
+  })
   useEffect(() => {
     writeStored('data-source', source)
     writeStored('symbol', symbol)
@@ -849,6 +915,13 @@ export default function App() {
       ),
     )
   }, [alerts, quotePrices, quotes, source, feedState, replayIndex, setAlerts, notify])
+  const openIndicatorAlarm = () => {
+    if (replayIndex !== null) {
+      notify('Exit replay to build an indicator alarm.', 'info')
+      return
+    }
+    setModal('indicator-alarm')
+  }
   const openSearch = (adding = false) => {
     setSearchAdding(adding)
     setModal('symbols')
@@ -1307,6 +1380,7 @@ export default function App() {
       scripts,
       draft,
       alerts,
+      indicatorAlarms,
       notes: readStored('notes', ''),
     }
     downloadFile('atlas-workspace.json', JSON.stringify(backup, null, 2))
@@ -1331,6 +1405,7 @@ export default function App() {
       setScripts(backup.scripts)
       setDraft(backup.draft)
       setAlerts(backup.alerts)
+      setIndicatorAlarms(backup.indicatorAlarms ?? [])
       setDrawingHistory({})
       setComputed({})
       setReplayIndex(null)
@@ -1400,6 +1475,7 @@ export default function App() {
     saveScript,
     applyScript,
     undoDrawing,
+    openIndicatorAlarm,
     redoDrawing,
     openSearch,
     chooseTool,
@@ -1416,6 +1492,7 @@ export default function App() {
     applyScript,
     undoDrawing,
     redoDrawing,
+    openIndicatorAlarm,
     openSearch,
     chooseTool,
     openDocs,
@@ -1467,6 +1544,10 @@ export default function App() {
       if (event.altKey && event.key.toLowerCase() === 'h') {
         event.preventDefault()
         cmd.chooseTool('horizontal')
+      }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'b') {
+        event.preventDefault()
+        cmd.openIndicatorAlarm()
       }
       if (event.altKey && !mod && (event.key.toLowerCase() === 'p' || event.code === 'KeyP')) {
         event.preventDefault()
@@ -2378,6 +2459,10 @@ export default function App() {
         {sidePanel === 'alerts' && (
           <AlertsPanel
             alerts={alerts}
+            indicatorAlarms={indicatorAlarms}
+            readings={alarmMonitor.readings}
+            health={alarmMonitor.health}
+            soundEnabled={alarmChimes}
             source={source}
             connected={feedState === 'live' && replayIndex === null}
             onAdd={openAlert}
@@ -2388,6 +2473,13 @@ export default function App() {
               )
             }
             onSelect={selectSymbol}
+            onAddIndicatorAlarm={openIndicatorAlarm}
+            onRemoveIndicatorAlarm={(id) =>
+              setIndicatorAlarms((previous) => previous.filter((alarm) => alarm.id !== id))
+            }
+            onToggleIndicatorAlarm={toggleIndicatorAlarm}
+            onToggleAlarmSound={toggleIndicatorAlarmSound}
+            onToggleAlarmChimes={() => setAlarmChimes((current) => !current)}
             onClose={() => setSidePanel(null)}
           />
         )}
@@ -2636,6 +2728,34 @@ export default function App() {
               closeModal()
               setSidePanel('alerts')
               notify(`Watching ${asset.ticker} ${alert.condition} ${formatPrice(alert.price)}.`)
+            }}
+          />
+        )}
+        {modal === 'indicator-alarm' && (
+          <IndicatorAlarmDialog
+            symbol={symbol}
+            timeframe={timeframe}
+            source={source === 'demo' ? 'demo' : 'coinbase'}
+            assets={assets}
+            candles={candles}
+            connected={feedState === 'live'}
+            onClose={closeModal}
+            onCreate={(alarm) => {
+              if (indicatorAlarms.length >= ALARM_LIMIT) {
+                notify(`Remove an alarm before adding another (${ALARM_LIMIT} maximum).`, 'error')
+                return
+              }
+              const created = {
+                ...alarm,
+                id: uid(),
+                createdAt: new Date().toISOString(),
+              }
+              setIndicatorAlarms((previous) => [created, ...previous])
+              closeModal()
+              setSidePanel('alerts')
+              notify(
+                `Watching ${getAsset(created.symbol).ticker} ${created.timeframe} · ${alarmHeadline(created)}.`,
+              )
             }}
           />
         )}

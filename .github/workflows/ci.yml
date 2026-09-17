@@ -19,9 +19,13 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # `github` turns each failing spec into an annotation on the check run, so a failure is
+      # readable in the PR without downloading the job log; `line` keeps the log human-readable.
+      - run: npm run test:e2e -- --reporter=github,line
+      # The report is a convenience, not a verdict: a full artifact quota must not fail the job.
       - uses: actions/upload-artifact@v4
         if: failure()
+        continue-on-error: true
         with:
           name: browser-test-results
           path: test-results/

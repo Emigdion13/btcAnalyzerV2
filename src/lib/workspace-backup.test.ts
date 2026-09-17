@@ -4,6 +4,8 @@ import type { WorkspaceBackup } from './workspace-backup'
 import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, DIVERGENCE_DEFAULTS, SMC_DEFAULTS } from './types'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 import { WAVE_TREND_DEFAULTS } from './wave-trend'
+import { newIndicatorAlarm } from './indicator-alarms'
+import type { IndicatorAlarm } from './types'
 
 function backup(): WorkspaceBackup {
   return {
@@ -65,6 +67,107 @@ describe('workspace backups', () => {
       },
     ]
     expect(() => parseWorkspaceBackup({ ...backup(), alerts })).toThrow(/date/)
+  })
+  const customAlarm = (overrides: Partial<IndicatorAlarm> = {}): IndicatorAlarm => ({
+    ...newIndicatorAlarm({
+      id: 'alarm-1',
+      symbol: 'BTCUSDT',
+      timeframe: '15m',
+      indicator: 'cm-ult-macd',
+      createdAt: '2026-09-07T00:00:00.000Z',
+    }),
+    ...overrides,
+  })
+  it('round-trips custom indicator alarms, including their trigger bookkeeping', () => {
+    const saved = backup()
+    saved.indicatorAlarms = [
+      customAlarm({ params: { within: 5 } }),
+      customAlarm({
+        id: 'alarm-2',
+        symbol: 'ETHUSDT',
+        indicator: 'rsi',
+        condition: 'rsi-cross-down-level',
+        params: { level: 22 },
+        rsi: { period: 9 },
+        sound: false,
+        repeat: 'once',
+        bars: 'closed',
+        note: 'Only in the London session',
+        lastTriggeredAt: '2026-09-07T04:00:00.000Z',
+        lastTriggeredBar: 1_786_000_000,
+        triggerCount: 2,
+      }),
+    ]
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+  })
+  it('round-trips a combined alarm with its extra legs and its match', () => {
+    const saved = backup()
+    saved.indicatorAlarms = [
+      customAlarm({
+        also: [
+          { indicator: 'rsi', condition: 'rsi-above-level', params: { level: 55 } },
+          { indicator: 'cm-williams-vix-fix', condition: 'wvf-spike', params: {} },
+        ],
+        match: 'any',
+      }),
+    ]
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+  })
+  it('rejects a stored combination that cannot be evaluated', () => {
+    const saved = backup()
+    for (const alarm of [
+      // Two MACD flavours in one alarm would want the same series slot.
+      customAlarm({
+        also: [{ indicator: 'macd', condition: 'macd-zero-cross-up', params: {} }],
+      }),
+      // The same leg twice.
+      customAlarm({
+        also: [
+          { indicator: 'rsi', condition: 'rsi-turns-up', params: {} },
+          { indicator: 'rsi', condition: 'rsi-turns-up', params: {} },
+        ],
+      }),
+      // A leg that does not belong to its family, and a match that is not a match.
+      customAlarm({
+        also: [{ indicator: 'rsi', condition: 'macd-cross-up', params: {} }],
+      }),
+      customAlarm({ match: 'some' as IndicatorAlarm['match'] }),
+      // Five conditions is one more than an alarm can hold.
+      customAlarm({
+        also: [
+          { indicator: 'rsi', condition: 'rsi-turns-up', params: {} },
+          { indicator: 'rsi', condition: 'rsi-turns-down', params: {} },
+          { indicator: 'cm-williams-vix-fix', condition: 'wvf-spike', params: {} },
+          { indicator: 'cm-williams-vix-fix', condition: 'wvf-spike-ends', params: {} },
+        ],
+      }),
+    ]) {
+      expect(() => parseWorkspaceBackup({ ...saved, indicatorAlarms: [alarm] })).toThrow(/alarm/)
+    }
+  })
+  it('keeps older backups without alarms importable', () => {
+    const older = backup()
+    delete older.indicatorAlarms
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(older))).indicatorAlarms).toBeUndefined()
+  })
+  it('rejects an alarm whose condition does not belong to its indicator', () => {
+    const saved = backup()
+    for (const alarm of [
+      customAlarm({ indicator: 'macd', condition: 'macd-hist-aqua' }),
+      customAlarm({ condition: 'rsi-turns-up' }),
+      customAlarm({ timeframe: '2m' as IndicatorAlarm['timeframe'] }),
+      customAlarm({ params: { within: Number.NaN } }),
+      customAlarm({ enabled: 'yes' as unknown as boolean }),
+    ]) {
+      expect(() => parseWorkspaceBackup({ ...saved, indicatorAlarms: [alarm] })).toThrow(/alarm/)
+    }
+    const duplicated = [customAlarm(), customAlarm()]
+    expect(() => parseWorkspaceBackup({ ...saved, indicatorAlarms: duplicated })).toThrow(
+      /duplicate/,
+    )
+    expect(() =>
+      parseWorkspaceBackup({ ...saved, indicatorAlarms: [customAlarm(), { junk: true }] }),
+    ).toThrow(/alarm/)
   })
   it('round-trips every CM input including false switches and independent lengths', () => {
     const saved = backup()

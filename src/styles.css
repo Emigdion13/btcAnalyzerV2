@@ -2775,6 +2775,89 @@ button {
   color: #485e75;
   margin-left: 3px;
 }
+.heap-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font-size: 8px;
+  color: #6e8092;
+}
+.heap-meter:hover {
+  color: #b3c7de;
+}
+.heap-meter.watch {
+  color: #d6ad68;
+}
+.heap-meter.high {
+  color: #e2a48f;
+}
+.heap-meter.critical {
+  color: #ed6773;
+}
+.heap-meter-bar {
+  width: 28px;
+  height: 3px;
+  background: #2b3542;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.heap-meter-bar > i {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.heap-meter-dropdown .dropdown-menu {
+  min-width: 196px;
+  padding: 8px 10px 10px;
+}
+.heap-meter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 196px;
+}
+.heap-meter-panel > p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 14px;
+  color: #8093a8;
+  white-space: normal;
+}
+.heap-meter-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+.heap-meter-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.heap-meter-stats span {
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  color: #6d829a;
+  text-transform: uppercase;
+}
+.heap-meter-stats strong {
+  font-size: 10px;
+  font-weight: 500;
+  color: #c5d3e2;
+}
+.heap-meter-spark {
+  width: 100%;
+  height: 36px;
+  color: #9db386;
+}
+@media (max-width: 580px) {
+  .heap-meter-bar {
+    display: none;
+  }
+  .heap-meter > span:first-child {
+    display: none;
+  }
+}
 .statusbar .dropdown-menu {
   top: auto;
   bottom: calc(100% + 9px);

@@ -75,6 +75,7 @@ import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
+import { HeapMemoryMeter } from './components/HeapMemoryMeter'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
 import type { ToastMessage } from './components/ui'
 import { demoBook } from './lib/demo-book'
@@ -2660,6 +2661,8 @@ export default function App() {
             <span>·</span>
             {venueLabel(venue)}
           </span>
+          <span className="status-divider" />
+          <HeapMemoryMeter />
         </div>
         <div className="statusbar-center">
           <LockKeyhole size={10} />A space to see things differently.

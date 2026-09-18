@@ -75,11 +75,16 @@ const windowStrike = { price: 100 + 35 * 0.05, windowStart: WINDOW_START, window
 describe('agent journal', () => {
   it('maps chart timeframes to higher-timeframe context and horizons', () => {
     expect(agentContextTimeframes('1m')).toEqual(['5m', '15m'])
-    expect(agentContextTimeframes('15m')).toEqual(['1h', '4h'])
+    expect(agentContextTimeframes('15m')).toEqual(['30m', '1h'])
+    expect(agentContextTimeframes('30m')).toEqual(['1h', '4h'])
+    expect(agentContextTimeframes('1h')).toEqual(['2h', '4h'])
+    expect(agentContextTimeframes('2h')).toEqual(['4h', '1D'])
     expect(agentContextTimeframes('1W')).toEqual([])
     // The horizon matches the MACD AI's ten-bar question on intraday charts.
     expect(suggestedHorizonBars('1m')).toBe(10)
     expect(suggestedHorizonBars('15m')).toBe(10)
+    expect(suggestedHorizonBars('30m')).toBe(10)
+    expect(suggestedHorizonBars('2h')).toBe(8)
     expect(suggestedHorizonBars('4h')).toBe(6)
     expect(horizonChoices('1m')).toEqual([5, 10, 20])
   })

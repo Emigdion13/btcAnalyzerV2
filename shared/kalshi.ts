@@ -187,9 +187,10 @@ export function isMetalSymbol(value: unknown): value is string {
  *
  * The ladders settle once per quarter hour, so 15m is the native bar and everything above
  * it is an aggregation of those settlement points. 1m, 3m and 5m have no source at all —
- * asking for one is a 400, never a resampled guess.
+ * asking for one is a 400, never a resampled guess. 30m and 2h are aggregations of the
+ * 15m settlement series, just like 1h and 4h.
  */
-export const METAL_INTERVALS = ['15m', '1h', '4h', '1D', '1W'] as const
+export const METAL_INTERVALS = ['15m', '30m', '1h', '2h', '4h', '1D', '1W'] as const
 export type MetalInterval = (typeof METAL_INTERVALS)[number]
 
 export const isMetalInterval = (value: unknown): value is MetalInterval =>

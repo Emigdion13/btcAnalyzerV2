@@ -62,8 +62,11 @@ export function useFloatingWindow(storageKey: string, padding = DEFAULT_PADDING)
 
   // The chart box changes size without a window resize event whenever the editor, a side panel,
   // or focus mode moves — and a dragged window must not end up clipped out of sight by that.
+  // The peek window can also change its own size via the resize handle, so the box itself is
+  // observed too: expanding the panel near the right edge re-clamps it back inside the stage.
   useEffect(() => {
     const stage = boxRef.current?.parentElement
+    const box = boxRef.current
     if (!stage) return
     const reflow = () => setPosition((current) => (current ? clampToStage(current) : current))
     if (typeof ResizeObserver === 'undefined') {
@@ -72,6 +75,7 @@ export function useFloatingWindow(storageKey: string, padding = DEFAULT_PADDING)
     }
     const observer = new ResizeObserver(reflow)
     observer.observe(stage)
+    if (box) observer.observe(box)
     return () => observer.disconnect()
   }, [clampToStage])
 

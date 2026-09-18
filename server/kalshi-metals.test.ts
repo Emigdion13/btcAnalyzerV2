@@ -346,7 +346,7 @@ describe('the metals HTTP boundary', () => {
       'XAU-USD',
       'XAG-USD',
     ])
-    expect(body.metals[0].intervals).toEqual(['15m', '1h', '4h', '1D', '1W'])
+    expect(body.metals[0].intervals).toEqual(['15m', '30m', '1h', '2h', '4h', '1D', '1W'])
     expect(body.metals[0].unit).toBe('troy ounce')
   })
 
@@ -370,7 +370,7 @@ describe('the metals HTTP boundary', () => {
       expect(response.status).toBe(400)
       const body = await response.json()
       expect(body.error).toBe('INVALID_METAL_INTERVAL')
-      expect(body.message).toContain('15 minutes')
+      expect(body.message).toContain('15m')
     }
     // Refused at the boundary: no upstream request was made to resample from.
     expect(calls).toEqual([])

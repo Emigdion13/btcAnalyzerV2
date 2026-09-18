@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, GripVertical, Info, Minus, Plus, RotateCcw, Timer, X } from 'lucide-react'
 import type { Candle, ConnectionState, DataSource, Timeframe } from '../lib/types'
 import { compactNumber, formatPrice, INTERVAL } from '../lib/market'
@@ -24,6 +24,38 @@ import {
 import type { TimeframePeekSettings } from '../lib/timeframe-peek'
 
 const POSITION_KEY = 'timeframe-peek-pos'
+const SIZE_KEY = 'timeframe-peek-size'
+
+const PEEK_PANEL_DEFAULT_WIDTH = 268
+const PEEK_PANEL_MIN_WIDTH = 200
+const PEEK_PANEL_MAX_WIDTH = 560
+const PEEK_PRICE_MIN_HEIGHT = 56
+const PEEK_PRICE_MAX_HEIGHT = 320
+
+interface PeekSize {
+  panelWidth: number
+  priceHeight: number
+}
+
+const PEEK_SIZE_DEFAULT: PeekSize = {
+  panelWidth: PEEK_PANEL_DEFAULT_WIDTH,
+  priceHeight: PEEK_LAYOUT.priceHeight,
+}
+
+function clampPeekSize(value: unknown): PeekSize {
+  if (!value || typeof value !== 'object') return PEEK_SIZE_DEFAULT
+  const raw = value as Partial<PeekSize>
+  const w = Number(raw.panelWidth)
+  const h = Number(raw.priceHeight)
+  return {
+    panelWidth: Number.isFinite(w)
+      ? Math.min(PEEK_PANEL_MAX_WIDTH, Math.max(PEEK_PANEL_MIN_WIDTH, Math.round(w)))
+      : PEEK_SIZE_DEFAULT.panelWidth,
+    priceHeight: Number.isFinite(h)
+      ? Math.min(PEEK_PRICE_MAX_HEIGHT, Math.max(PEEK_PRICE_MIN_HEIGHT, Math.round(h)))
+      : PEEK_SIZE_DEFAULT.priceHeight,
+  }
+}
 
 export interface TimeframePeekFeed {
   /** Resolution the panel is showing, after `auto` has been resolved against the chart. */
@@ -51,11 +83,15 @@ interface Props {
 /**
  * A floating window onto a second timeframe: the last few bars of another resolution, with the
  * bar that is still forming included and marked. Drag it by the header, pick any resolution from
- * the dropdown (or leave it on auto), and resize the window in bars.
+ * the dropdown (or leave it on auto), and resize the window in bars and in pixels.
  *
  * It reports the same candles the MTF indicators use, so nothing here is a second opinion about
  * price. A forming bar is an unfinished range — the panel says so instead of dressing the current
  * tick up as a close, and it dims rather than pretending when the feed stops being live.
+ *
+ * Now supports 30m and 2h (and every other timeframe in TIMEFRAMES) and is resizable by dragging
+ * the corner handle: width controls how much horizontal room the candles have, height controls
+ * the price pane. Both dimensions persist across reloads.
  */
 export function TimeframePeekBox({
   ticker,
@@ -71,6 +107,10 @@ export function TimeframePeekBox({
   const [showInfo, setShowInfo] = useState(false)
   const [now, setNow] = useState(() => Date.now() / 1000)
   const { boxRef, position, dragging, startDrag, reset } = useFloatingWindow(POSITION_KEY, 6)
+  const [storedSize, setStoredSize] = useLocalState<PeekSize>(SIZE_KEY, PEEK_SIZE_DEFAULT)
+  const size = useMemo(() => clampPeekSize(storedSize), [storedSize])
+  const [resizing, setResizing] = useState(false)
+  const resizeRef = useRef<{ startX: number; startY: number; w: number; h: number } | null>(null)
 
   // A one-second clock is all the countdown and the forming-bar test need; the candles themselves
   // arrive over the existing market stream.
@@ -89,28 +129,83 @@ export function TimeframePeekBox({
   // The meter is the share of the bar's own span that has already elapsed.
   const progress = forming ? Math.min(1, Math.max(0, 1 - remaining / INTERVAL[resolution])) : 1
   const stats = useMemo(() => peekStats(bars), [bars])
+  const plotWidth = useMemo(() => Math.max(60, size.panelWidth - 80), [size.panelWidth])
+  const layoutSizes = useMemo(
+    () => ({
+      ...PEEK_LAYOUT,
+      priceHeight: size.priceHeight,
+      plotWidth,
+    }),
+    [size.priceHeight, plotWidth],
+  )
   const layout = useMemo(
     () =>
       layoutPeekBars(bars, {
         forming,
         showVolume: settings.showVolume,
+        width: plotWidth,
+        sizes: layoutSizes,
       }),
-    [bars, forming, settings.showVolume],
+    [bars, forming, settings.showVolume, plotWidth, layoutSizes],
   )
   const offline = ['offline', 'stale', 'reconnecting'].includes(state)
   const markTop = Math.min(Math.max(7, layout.lastCloseY), Math.max(7, layout.height - 7))
+
+  const startResize = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const startX = event.clientX
+      const startY = event.clientY
+      const startW = size.panelWidth
+      const startH = size.priceHeight
+      resizeRef.current = { startX, startY, w: startW, h: startH }
+      setResizing(true)
+      const move = (moveEvent: PointerEvent) => {
+        const ref = resizeRef.current
+        if (!ref) return
+        const dx = moveEvent.clientX - ref.startX
+        const dy = moveEvent.clientY - ref.startY
+        const nextW = Math.min(
+          PEEK_PANEL_MAX_WIDTH,
+          Math.max(PEEK_PANEL_MIN_WIDTH, Math.round(ref.w + dx)),
+        )
+        const nextH = Math.min(
+          PEEK_PRICE_MAX_HEIGHT,
+          Math.max(PEEK_PRICE_MIN_HEIGHT, Math.round(ref.h + dy)),
+        )
+        setStoredSize({ panelWidth: nextW, priceHeight: nextH })
+      }
+      const stop = () => {
+        resizeRef.current = null
+        setResizing(false)
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', stop)
+        window.removeEventListener('pointercancel', stop)
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', stop)
+      window.addEventListener('pointercancel', stop)
+    },
+    [size.panelWidth, size.priceHeight, setStoredSize],
+  )
+
+  const resetSize = useCallback(() => {
+    setStoredSize(PEEK_SIZE_DEFAULT)
+  }, [setStoredSize])
 
   return (
     <section
       ref={boxRef}
       className={`peek-box${minimized ? ' is-min' : ''}${dragging ? ' is-dragging' : ''}${
-        offline ? ' is-stale' : ''
-      }${forming ? ' is-forming' : ''}`}
+        resizing ? ' is-resizing' : ''
+      }${offline ? ' is-stale' : ''}${forming ? ' is-forming' : ''}`}
       data-testid="timeframe-peek"
       aria-label={`${resolution} timeframe peek`}
-      style={
-        position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined
-      }
+      style={{
+        width: minimized ? undefined : size.panelWidth,
+        ...(position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : {}),
+      }}
     >
       <header className="peek-head" onPointerDown={startDrag}>
         <GripVertical size={12} className="peek-grip" aria-hidden="true" />
@@ -149,6 +244,17 @@ export function TimeframePeekBox({
             aria-label="Snap the peek window back to its docked spot"
             title="Reset position"
             onClick={reset}
+          >
+            <RotateCcw size={10} />
+          </button>
+        ) : null}
+        {!minimized && (size.panelWidth !== PEEK_SIZE_DEFAULT.panelWidth || size.priceHeight !== PEEK_SIZE_DEFAULT.priceHeight) ? (
+          <button
+            type="button"
+            className="peek-button"
+            aria-label="Reset peek window size"
+            title="Reset size"
+            onClick={resetSize}
           >
             <RotateCcw size={10} />
           </button>
@@ -201,7 +307,7 @@ export function TimeframePeekBox({
                 height={layout.height}
                 viewBox={`0 0 ${layout.width} ${layout.height}`}
                 role="img"
-                aria-label={`${bars.length} ${resolution} candles, latest close ${
+                aria-label={`${bars.length} ${resolution} candles, latest close $${
                   stats ? formatPrice(stats.last.close) : 'unavailable'
                 }`}
               >
@@ -391,6 +497,16 @@ export function TimeframePeekBox({
               {offline ? ` Live updates are ${state}: ${message}` : ''}
             </p>
           ) : null}
+
+          <div
+            className="peek-resize-handle"
+            onPointerDown={startResize}
+            title="Drag to resize — width and height. Double-click to reset."
+            onDoubleClick={resetSize}
+            role="separator"
+            aria-label="Resize peek window"
+            aria-orientation="vertical"
+          />
         </>
       )}
     </section>

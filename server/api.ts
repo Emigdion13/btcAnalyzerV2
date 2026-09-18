@@ -131,7 +131,7 @@ export function createMarketApi(
       const metalInterval = url.searchParams.get('interval')
       if (!isMetalInterval(metalInterval))
         throw new MarketError(
-          `Kalshi settles the metals every 15 minutes. Choose one of ${METAL_INTERVALS.join(', ')}.`,
+          `Kalshi settles metals at 15m; higher intervals are aggregated. Choose one of ${METAL_INTERVALS.join(', ')}.`,
           400,
           'INVALID_METAL_INTERVAL',
         )

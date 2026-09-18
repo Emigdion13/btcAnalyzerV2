@@ -37,7 +37,7 @@ describe('PAX Gold workspace routing', () => {
     window.history.replaceState({}, '', '/?symbol=PAXG-USD')
     expect(initialMarket()).toEqual({ source: 'coinbase', symbol: 'PAXG-USD' })
     expect(isMetalSymbol('PAXG-USD')).toBe(false)
-    expect(TIMEFRAMES).toEqual(['1m', '3m', '5m', '15m', '1h', '4h', '1D', '1W'])
+    expect(TIMEFRAMES).toEqual(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W'])
     expect(
       TIMEFRAMES.filter((timeframe) => !isMetalSymbol('PAXG-USD') || isMetalInterval(timeframe)),
     ).toEqual(TIMEFRAMES)

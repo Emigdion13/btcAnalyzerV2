@@ -98,8 +98,10 @@ describe('kalshi metal feeds', () => {
   })
 
   it('supports quarter-hour resolution and up, because that is all Kalshi publishes', () => {
-    expect(METAL_INTERVALS).toEqual(['15m', '1h', '4h', '1D', '1W'])
+    expect(METAL_INTERVALS).toEqual(['15m', '30m', '1h', '2h', '4h', '1D', '1W'])
     expect(isMetalInterval('15m')).toBe(true)
+    expect(isMetalInterval('30m')).toBe(true)
+    expect(isMetalInterval('2h')).toBe(true)
     expect(isMetalInterval('1W')).toBe(true)
     // No source exists below 15 minutes: resampling would be invention.
     for (const interval of ['1m', '3m', '5m']) expect(isMetalInterval(interval)).toBe(false)

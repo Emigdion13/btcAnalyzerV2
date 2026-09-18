@@ -166,7 +166,7 @@ describe('IndicatorAlarmDialog', () => {
       'Kalshi publishes silver once per quarter hour',
     )
     const timeframes = [...select('Timeframe').options].map((option) => option.value)
-    expect(timeframes).toEqual(['15m', '1h', '4h', '1D', '1W'])
+    expect(timeframes).toEqual(['15m', '30m', '1h', '2h', '4h', '1D', '1W'])
   })
 
   it('says a background alarm is polled instead of pretending it is the open chart', () => {

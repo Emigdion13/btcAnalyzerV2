@@ -7,6 +7,7 @@ import { isSrBreaksRetestsSettings } from './sr-breaks-retests'
 import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reversals'
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
+import { isTmoScalperSettings } from './tmo-scalper'
 import { isWaveTrendSettings } from './wave-trend'
 import { isWilliamsVixFixSettings } from './cm-williams-vix-fix'
 import { isIndicatorAlarm } from './indicator-alarms'
@@ -121,6 +122,7 @@ function indicator(value: unknown): Indicator {
       'pivot-points-missed-reversals',
       'coinbase-strike',
       'tux-ema-scalper',
+      'tmo-scalper',
       'wave-trend',
       'vwap',
       'volume',
@@ -268,6 +270,27 @@ function indicator(value: unknown): Indicator {
       sellColor: settings.sellColor,
     }
     result.period = result.tuxEmaScalper.emaLength
+  }
+  if (kind === 'tmo-scalper' && i.tmoScalper !== undefined) {
+    const settings = i.tmoScalper
+    if (!isTmoScalperSettings(settings)) invalid('TMO Scalper settings')
+    result.tmoScalper = {
+      timeframe1: settings.timeframe1,
+      timeframe2: settings.timeframe2,
+      timeframe3: settings.timeframe3,
+      tmoLength: settings.tmoLength,
+      calcLength: settings.calcLength,
+      smoothLength: settings.smoothLength,
+      signalSize: settings.signalSize,
+      signalOffset: settings.signalOffset,
+      extremeOb: settings.extremeOb,
+      extremeOs: settings.extremeOs,
+      showTmo1Signals: settings.showTmo1Signals,
+      showTmo2Signals: settings.showTmo2Signals,
+      showTmo2ExtremeSignals: settings.showTmo2ExtremeSignals,
+      showLines: settings.showLines,
+    }
+    result.period = result.tmoScalper.tmoLength
   }
   if (kind === 'wave-trend' && i.waveTrend !== undefined) {
     const settings = i.waveTrend

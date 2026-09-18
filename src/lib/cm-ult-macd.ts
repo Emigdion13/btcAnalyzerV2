@@ -13,6 +13,7 @@ import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
 import { chileReversalIndicatorLabel, chileReversalSettings } from './chile-reversal'
 import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
 import { tuxEmaScalperIndicatorLabel } from './tux-ema-scalper'
+import { tmoScalperFeeds, tmoScalperIndicatorLabel, tmoScalperSettings } from './tmo-scalper'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
 
 export const CM_MACD_SOURCE =
@@ -108,6 +109,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'pivot-points-missed-reversals')
     return pivotPointsMissedReversalsIndicatorLabel(indicator)
   if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
+  if (indicator.kind === 'tmo-scalper') return tmoScalperIndicatorLabel(indicator)
   if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
   if (indicator.kind === 'wave-trend') return waveTrendIndicatorLabel(indicator)
   if (indicator.kind === 'cm-williams-vix-fix') return williamsVixFixIndicatorLabel(indicator)
@@ -139,11 +141,18 @@ export function requestedIndicatorTimeframes(
   const chileResolutions = indicators
     .filter((indicator) => indicator.kind === 'chile-reversal' && indicator.visible)
     .map((indicator) => chileReversalSettings(indicator).resolution)
+  const tmoResolutions = indicators
+    .filter((indicator) => indicator.kind === 'tmo-scalper' && indicator.visible)
+    .flatMap((indicator) => tmoScalperFeeds(tmoScalperSettings(indicator)))
   return [
     ...new Set(
-      [...cmResolutions, ...smcFvgResolutions, ...chileResolutions, ...extra].filter(
-        (resolution) => resolution !== chart,
-      ),
+      [
+        ...cmResolutions,
+        ...smcFvgResolutions,
+        ...chileResolutions,
+        ...tmoResolutions,
+        ...extra,
+      ].filter((resolution) => resolution !== chart),
     ),
   ].sort()
 }

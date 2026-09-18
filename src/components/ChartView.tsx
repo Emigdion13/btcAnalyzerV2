@@ -48,6 +48,7 @@ import type {
   PriceAlert,
   ScriptResult,
   Timeframe,
+  TmoScalperSettings,
   Tool,
 } from '../lib/types'
 import type { OrderBookView } from '../../shared/coinbase'
@@ -63,10 +64,17 @@ import {
   williamsVixFixSettings,
 } from '../lib/cm-williams-vix-fix'
 import {
+  calculateTmoScalper,
+  TMO_SCALPER_DEFAULTS,
+  tmoScalperFeeds,
+  tmoScalperSettings,
+} from '../lib/tmo-scalper'
+import {
   clampOscHudBars,
   cmMacdHudModel,
   oscHudBars,
   rsiDivergenceHudModel,
+  tmoScalperHudModel,
   waveTrendHudModel,
   williamsVixFixHudModel,
 } from '../lib/osc-hud'
@@ -183,6 +191,7 @@ interface Props {
   waveTrendHud?: boolean
   rsiDivHud?: boolean
   vixFixHud?: boolean
+  tmoScalperHud?: boolean
   /** Closing a window from its own card is the same choice as its toolbar button. */
   onOscHudClose?: (kind: OscHudKind) => void
   /** Lets a window offer the pane whose settings it is borrowing. */
@@ -1298,6 +1307,26 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const value = plot?.values[hoverIndex]
     return value === null || value === undefined ? '—' : formatPrice(value, false, priceDigits)
   }
+  /**
+   * One honest sentence about why a TMO wheel is missing: the feed it aggregates from is
+   * down, still loading, or shorter than the chart (the Kalshi metals publish nothing below
+   * fifteen minutes, and the sub-daily wheels simply have no source there).
+   */
+  const tmoNotice = (settings: TmoScalperSettings) => {
+    for (const feed of tmoScalperFeeds(settings)) {
+      if (feed === timeframe) continue
+      const data = indicatorTimeframes[feed]
+      if (data && ['offline', 'stale', 'reconnecting', 'loading'].includes(data.state))
+        return `${feed} feed ${data.state} · ${data.message}`
+      if (!data?.candles.length)
+        return replay
+          ? `No ${feed} history in this replay snapshot. Exit replay to load it.`
+          : `Loading ${feed} source candles…`
+      if (data.candles[0]!.time > candles[0]?.time)
+        return `${feed} history limited to ${data.candles.length} source candles; earlier bars unavailable.`
+    }
+    return ''
+  }
   const cmNotice = (indicator: Indicator) => {
     const s = cmMacdSettings(indicator)
     const resolution = cmMacdResolution(s, timeframe)
@@ -1329,6 +1358,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const waveHudIndicator = indicators.find((indicator) => indicator.kind === 'wave-trend') ?? null
   const vixFixHudIndicator =
     indicators.find((indicator) => indicator.kind === 'cm-williams-vix-fix') ?? null
+  const tmoHudIndicator = indicators.find((indicator) => indicator.kind === 'tmo-scalper') ?? null
   const cmHudSettings = useMemo(
     () => (cmHudIndicator ? cmMacdSettings(cmHudIndicator) : CM_MACD_DEFAULTS),
     [cmHudIndicator],
@@ -1344,6 +1374,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         : CM_WILLIAMS_VIX_FIX_DEFAULTS,
     [vixFixHudIndicator],
   )
+  const tmoHudSettings = useMemo(
+    () => (tmoHudIndicator ? tmoScalperSettings(tmoHudIndicator) : TMO_SCALPER_DEFAULTS),
+    [tmoHudIndicator],
+  )
   const candleTimes = useMemo(() => candles.map((candle) => candle.time), [candles])
   // Zoom is a per-window preference: the default is twenty minutes of the chart's own bars, and
   // ±4 bars is enough of a step that you can widen for a wave or tighten for the last few ticks.
@@ -1353,6 +1387,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const cmHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-ult-macd'])
   const waveHudBars = oscHudBars(timeframe, oscHudBarsOverride['wave-trend'])
   const vixFixHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-williams-vix-fix'])
+  const tmoHudBars = oscHudBars(timeframe, oscHudBarsOverride['tmo-scalper'])
   const zoomOscHud = (kind: OscHudKind, delta: number) =>
     setOscHudBarsOverride((previous) => ({
       ...previous,
@@ -1463,6 +1498,45 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     ],
   )
   const rsiDivHudBars = oscHudBars(timeframe, oscHudBarsOverride['rsi-divergence'])
+  // The TMO window reads the pane's own wheels: the same settings, the same feeds, the same
+  // gated crosses — the note names the missing feed instead of drawing a guessed wheel.
+  const tmoHudNotice = props.tmoScalperHud ? tmoNotice(tmoHudSettings) : ''
+  const tmoHudModel = useMemo(
+    () =>
+      props.tmoScalperHud
+        ? tmoScalperHudModel(
+            calculateTmoScalper(candles, tmoHudSettings, {
+              timeframe,
+              timeframes: indicatorTimeframes,
+              replay,
+            }),
+            tmoHudSettings,
+            {
+              times: candleTimes,
+              timeframe,
+              bars: tmoHudBars,
+              index: hoverIndex,
+              hovered: hovered !== null,
+              note: tmoHudNotice,
+              settingsSource: tmoHudIndicator ? 'chart' : 'defaults',
+            },
+          )
+        : null,
+    [
+      props.tmoScalperHud,
+      candles,
+      tmoHudSettings,
+      timeframe,
+      indicatorTimeframes,
+      replay,
+      candleTimes,
+      tmoHudBars,
+      hoverIndex,
+      hovered,
+      tmoHudNotice,
+      tmoHudIndicator,
+    ],
+  )
   const rsiDivHudModel = useMemo(
     () =>
       props.rsiDivHud
@@ -3414,6 +3488,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                     ind.kind !== 'cm-ult-macd' &&
                     ind.kind !== 'wave-trend' &&
                     ind.kind !== 'cm-williams-vix-fix' &&
+                    ind.kind !== 'tmo-scalper' &&
                     !(
                       ind.kind === 'custom' &&
                       customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')
@@ -3686,6 +3761,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('cm-williams-vix-fix')}
+        />
+      )}
+      {props.tmoScalperHud && tmoHudModel && (
+        <OscHudCard
+          model={tmoHudModel}
+          dock="tmo"
+          indicator={tmoHudIndicator}
+          bars={tmoHudBars}
+          onZoom={(delta) => zoomOscHud('tmo-scalper', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('tmo-scalper')}
         />
       )}
       {generated.map(({ indicator, plots }) => {

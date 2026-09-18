@@ -42,6 +42,7 @@ import {
   Redo2,
   RotateCcw,
   Waves,
+  Zap,
   Layers,
   Ruler,
   Search,
@@ -109,6 +110,7 @@ import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import { CM_WILLIAMS_VIX_FIX_DEFAULTS } from './lib/cm-williams-vix-fix'
 import { WAVE_TREND_DEFAULTS } from './lib/wave-trend'
+import { TMO_SCALPER_DEFAULTS } from './lib/tmo-scalper'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
   TIMEFRAME_PEEK_DEFAULTS,
@@ -355,32 +357,43 @@ export default function App() {
     OSC_HUD_WIDGETS['cm-williams-vix-fix'].visibilityKey,
     null,
   )
+  const [tmoHudPreference, setTmoHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['tmo-scalper'].visibilityKey,
+    null,
+  )
   const cmHudOpen = oscHudVisible(cmHudPreference)
   const waveHudOpen = oscHudVisible(waveHudPreference)
   const rsiDivHudOpen = oscHudVisible(rsiDivHudPreference)
   const vixFixHudOpen = oscHudVisible(vixFixHudPreference)
+  const tmoHudOpen = oscHudVisible(tmoHudPreference)
   const oscHudOpen = useMemo(
     () => ({
       'cm-ult-macd': cmHudOpen,
       'wave-trend': waveHudOpen,
       'rsi-divergence': rsiDivHudOpen,
       'cm-williams-vix-fix': vixFixHudOpen,
+      'tmo-scalper': tmoHudOpen,
     }),
-    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen],
+    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen, tmoHudOpen],
   )
   const toggleOscHud = useCallback(
     (kind: OscHudKind) => {
-      const set =
-        kind === 'cm-ult-macd'
-          ? setCmHudPreference
-          : kind === 'wave-trend'
-            ? setWaveHudPreference
-            : kind === 'rsi-divergence'
-              ? setRsiDivHudPreference
-              : setVixFixHudPreference
-      set((current) => !oscHudVisible(current))
+      const setters: Record<OscHudKind, (update: (current: boolean | null) => boolean) => void> = {
+        'cm-ult-macd': setCmHudPreference,
+        'wave-trend': setWaveHudPreference,
+        'rsi-divergence': setRsiDivHudPreference,
+        'cm-williams-vix-fix': setVixFixHudPreference,
+        'tmo-scalper': setTmoHudPreference,
+      }
+      setters[kind]((current) => !oscHudVisible(current))
     },
-    [setCmHudPreference, setWaveHudPreference, setRsiDivHudPreference, setVixFixHudPreference],
+    [
+      setCmHudPreference,
+      setWaveHudPreference,
+      setRsiDivHudPreference,
+      setVixFixHudPreference,
+      setTmoHudPreference,
+    ],
   )
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
     window.innerWidth >= 1050 ? 'watchlist' : null,
@@ -1119,9 +1132,11 @@ export default function App() {
                     ? 'TUX EMA Scalper+SuperTrend'
                     : item.kind === 'wave-trend'
                       ? 'WaveTrend [LazyBear]'
-                      : item.kind === 'rsi-divergence'
-                        ? 'RSI Divergence'
-                        : item.kind === 'cm-williams-vix-fix'
+                      : item.kind === 'tmo-scalper'
+                        ? 'TMO Scalper'
+                        : item.kind === 'rsi-divergence'
+                          ? 'RSI Divergence'
+                          : item.kind === 'cm-williams-vix-fix'
                           ? 'CM_Williams_Vix_Fix'
                           : item.short === 'VOL'
                             ? 'Volume'
@@ -1144,6 +1159,7 @@ export default function App() {
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
         ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
         ...(kind === 'wave-trend' ? { waveTrend: { ...WAVE_TREND_DEFAULTS } } : {}),
+        ...(kind === 'tmo-scalper' ? { tmoScalper: { ...TMO_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'cm-williams-vix-fix'
           ? { williamsVixFix: { ...CM_WILLIAMS_VIX_FIX_DEFAULTS } }
           : {}),
@@ -1573,6 +1589,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleOscHud('cm-williams-vix-fix')
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        cmd.toggleOscHud('tmo-scalper')
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1591,7 +1611,8 @@ export default function App() {
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
-    (vixFixHudOpen ? 1 : 0)
+    (vixFixHudOpen ? 1 : 0) +
+    (tmoHudOpen ? 1 : 0)
   return (
     <div className={`app ${focusMode ? 'focus-mode' : ''}`}>
       <input
@@ -1738,6 +1759,16 @@ export default function App() {
                   }}
                 >
                   {vixFixHudOpen ? 'Hide VIX Fix window' : 'Show VIX Fix window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Zap}
+                  selected={tmoHudOpen}
+                  onClick={() => {
+                    toggleOscHud('tmo-scalper')
+                    close()
+                  }}
+                >
+                  {tmoHudOpen ? 'Hide TMO Scalper window' : 'Show TMO Scalper window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -2048,6 +2079,15 @@ export default function App() {
                   >
                     VIX Fix
                   </MenuItem>
+                  <MenuItem
+                    className="floating-tmo-scalper"
+                    icon={Zap}
+                    selected={tmoHudOpen}
+                    shortcut="Alt O"
+                    onClick={() => toggleOscHud('tmo-scalper')}
+                  >
+                    TMO Scalper
+                  </MenuItem>
                 </>
               )}
             </Dropdown>
@@ -2196,6 +2236,7 @@ export default function App() {
                   waveTrendHud={waveHudOpen}
                   rsiDivHud={rsiDivHudOpen}
                   vixFixHud={vixFixHudOpen}
+                  tmoScalperHud={tmoHudOpen}
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}

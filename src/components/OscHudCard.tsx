@@ -19,7 +19,7 @@ interface Props {
   /** Everything the card shows, computed by the chart from the same values its pane plots. */
   model: OscHudModel
   /** Which corner of the chart the card rests in before you drag it. */
-  dock: 'cm' | 'wave' | 'rsi-div' | 'vix-fix'
+  dock: 'cm' | 'wave' | 'rsi-div' | 'vix-fix' | 'tmo'
   /** The indicator the card reads, when the chart has one. */
   indicator: Indicator | null
   onEditIndicator: (indicator: Indicator) => void
@@ -226,7 +226,12 @@ export function OscHudCard({
                       y2={geometry.height - OSC_HUD_LAYOUT.padBottom + 5}
                     />
                     {traces
-                      .filter((trace) => trace.style !== 'dots')
+                      .filter(
+                        (trace) =>
+                          trace.style !== 'dots' &&
+                          trace.style !== 'tri-up' &&
+                          trace.style !== 'tri-down',
+                      )
                       .map((trace) => {
                         const value = trace.values[model.activeIndex!]
                         return value === null || value === undefined ? null : (
@@ -330,6 +335,32 @@ function OscHudTraceShape({
             />
           ),
         )}
+      </g>
+    )
+  }
+  if (trace.style === 'tri-up' || trace.style === 'tri-down') {
+    // The TMO Scalper arrows: a triangle whose point sits on the signal's value, so ▲ is
+    // readable against the line it flags even when several signals share a bar.
+    const up = trace.style === 'tri-up'
+    const half = trace.width
+    const flat = trace.width * 0.72
+    return (
+      <g className="osc-hud-triangles">
+        {trace.values.map((value, index) => {
+          if (value === null) return null
+          const x = geometry.x[index]!
+          const y = geometry.y(value)
+          const tipY = up ? y - half : y + half
+          const baseY = up ? y + flat : y - flat
+          return (
+            <polygon
+              key={`${trace.title}-${index}`}
+              points={`${x},${tipY} ${x - half},${baseY} ${x + half},${baseY}`}
+              fill={trace.color}
+              fillOpacity={activeIndex === index ? 1 : 0.92}
+            />
+          )
+        })}
       </g>
     )
   }

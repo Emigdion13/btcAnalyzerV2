@@ -989,6 +989,16 @@ button {
 .oscillator-legend .legend-actions {
   margin-left: 0;
 }
+/* The oscillator pane's indicator name stays hidden until the pointer comes
+   near the legend; the layout slot is kept so the live values never shift. */
+.oscillator-legend .legend-name {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.oscillator-legend:hover .legend-name,
+.oscillator-legend .legend-name:focus {
+  opacity: 1;
+}
 .chart-currency {
   position: absolute;
   top: 10px;

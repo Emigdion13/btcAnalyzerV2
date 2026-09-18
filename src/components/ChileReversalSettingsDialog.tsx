@@ -9,7 +9,7 @@ import {
 } from '../lib/types'
 import { Modal, Toggle } from './ui'
 
-const RESOLUTIONS: Timeframe[] = ['1m', '3m', '5m', '15m', '1h', '4h', '1D', '1W']
+const RESOLUTIONS: Timeframe[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W']
 
 type ColorKey = 'supportColor' | 'resistanceColor'
 

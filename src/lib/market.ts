@@ -146,7 +146,7 @@ export const ASSETS: Asset[] = [
     category: 'DeFi',
   },
 ]
-export const TIMEFRAMES: Timeframe[] = ['1m', '3m', '5m', '15m', '1h', '4h', '1D', '1W']
+export const TIMEFRAMES: Timeframe[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W']
 export { INTERVAL_SECONDS as INTERVAL } from '../../shared/coinbase'
 import { INTERVAL_SECONDS as INTERVAL, isProductId } from '../../shared/coinbase'
 import type { CoinbaseProduct, DataSource, MarketQuote } from '../../shared/coinbase'
@@ -296,11 +296,15 @@ export function generateCandles(asset: Asset, timeframe: Timeframe, count = 900)
           ? 0.001
           : timeframe === '15m'
             ? 0.0016
-            : timeframe === '1h'
-              ? 0.0025
-              : timeframe === '4h'
-                ? 0.005
-                : 0.012
+            : timeframe === '30m'
+              ? 0.002
+              : timeframe === '1h'
+                ? 0.0025
+                : timeframe === '2h'
+                  ? 0.0035
+                  : timeframe === '4h'
+                    ? 0.005
+                    : 0.012
   let price = asset.price * 0.85
   const candles: Candle[] = []
   for (let i = 0; i < count; i++) {

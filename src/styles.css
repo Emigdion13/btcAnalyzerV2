@@ -8651,6 +8651,57 @@ input[type='color']::-webkit-color-swatch {
   border-bottom: 0;
   padding-bottom: 6px;
 }
+.peek-box.is-resizing {
+  transition: none;
+  border-color: #3d4a5c;
+  user-select: none;
+}
+.peek-box.is-resizing .peek-head {
+  cursor: grabbing;
+}
+.peek-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 3px;
+  cursor: nwse-resize;
+  touch-action: none;
+  color: #3f4a58;
+  z-index: 3;
+  border-radius: 0 0 9px 0;
+}
+.peek-resize-handle:hover {
+  color: #7a8699;
+  background: rgba(255, 255, 255, 0.05);
+}
+.peek-resize-handle:active {
+  color: var(--accent);
+}
+.peek-resize-handle::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  border-radius: 0 0 1px 0;
+  opacity: 0.9;
+}
+.peek-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 6px;
+  width: 4px;
+  height: 4px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.5;
+}
 .peek-head {
   display: flex;
   align-items: center;

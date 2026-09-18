@@ -1855,7 +1855,7 @@ export default function App() {
             </button>
             <span className="toolbar-separator" />
             <div className="timeframe-buttons">
-              {(['1m', '3m', '5m', '15m', '1h', '4h', '1D'] as Timeframe[])
+              {(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D'] as Timeframe[])
                 // Only Kalshi silver is restricted: Coinbase PAXG keeps every button,
                 // including the 1m, 3m and 5m charts.
                 .filter((tf) => !isMetal || isMetalInterval(tf))
@@ -1876,7 +1876,9 @@ export default function App() {
                   icon={ChevronDown}
                   label="More timeframes"
                   className="small-chevron"
-                  active={!['1m', '3m', '5m', '15m', '1h', '4h', '1D'].includes(timeframe)}
+                  active={
+                    !['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D'].includes(timeframe)
+                  }
                 />
               )}
             >

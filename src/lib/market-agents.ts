@@ -218,7 +218,9 @@ export const FORECAST_HORIZON_BARS: Record<Timeframe, number> = {
   '3m': 10,
   '5m': 10,
   '15m': 10,
+  '30m': 10,
   '1h': 8,
+  '2h': 8,
   '4h': 6,
   '1D': 5,
   '1W': 4,
@@ -249,7 +251,7 @@ const distanceWeight = (distanceAtr: number | null) =>
   distanceAtr === null ? 0 : clamp(1.3 - distanceAtr / 2.2, 0, 1)
 const bookBucketWeight = (bucket?: BookStrengthBucket) =>
   bucket === 'strong' ? 1 : bucket === 'medium' ? 0.7 : bucket === 'weak' ? 0.35 : 0
-const TIMEFRAME_ORDER: Timeframe[] = ['1m', '3m', '5m', '15m', '1h', '4h', '1D', '1W']
+const TIMEFRAME_ORDER: Timeframe[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W']
 const timeframeRank = (timeframe: Timeframe) => TIMEFRAME_ORDER.indexOf(timeframe)
 
 function atr(candles: Candle[], period: number): (number | null)[] {

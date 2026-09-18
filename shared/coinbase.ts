@@ -4,7 +4,9 @@ export const INTERVAL_SECONDS = {
   '3m': 180,
   '5m': 300,
   '15m': 900,
+  '30m': 1800,
   '1h': 3600,
+  '2h': 7200,
   '4h': 14400,
   '1D': 86400,
   '1W': 604800,
@@ -305,13 +307,12 @@ export const isProductId = (value: unknown): value is string =>
 export const isInterval = (value: unknown): value is Interval =>
   typeof value === 'string' && Object.hasOwn(INTERVAL_SECONDS, value)
 export function nativeGranularity(interval: Interval): number {
-  return interval === '3m'
-    ? 60
-    : interval === '4h'
-      ? 3600
-      : interval === '1W'
-        ? 86400
-        : INTERVAL_SECONDS[interval]
+  if (interval === '3m') return 60
+  if (interval === '30m') return 300
+  if (interval === '2h') return 3600
+  if (interval === '4h') return 3600
+  if (interval === '1W') return 86400
+  return INTERVAL_SECONDS[interval]
 }
 /** Weekly bars start Monday 00:00 UTC; all other bars use UTC-aligned buckets. */
 export function bucketStart(time: number, interval: Interval): number {

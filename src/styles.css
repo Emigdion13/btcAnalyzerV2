@@ -7135,6 +7135,63 @@ input[type='color']::-webkit-color-swatch {
   margin-top: 10px;
   color: #b9ee82;
 }
+
+/* TMO Scalper — three time-frame selects, the length grid and the signal toggles. */
+.tmo-settings-modal {
+  width: min(520px, calc(100vw - 28px));
+}
+.settings-hint {
+  margin: 0 0 12px;
+  color: #8290a4;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.tmo-tf-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.tmo-length-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.tmo-number-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.tmo-tf-fields .field,
+.tmo-length-fields .field,
+.tmo-number-fields .field {
+  min-width: 0;
+}
+.tmo-tf-fields select,
+.tmo-length-fields input,
+.tmo-number-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.tmo-tf-fields small,
+.tmo-length-fields small,
+.tmo-number-fields small {
+  display: block;
+  margin-top: 4px;
+}
+.tmo-toggles {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+}
+@media (max-width: 640px) {
+  .tmo-length-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tmo-tf-fields,
+  .tmo-number-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 640px) {
   .wt-settings-modal .modal-body {
     padding: 16px;
@@ -7779,6 +7836,12 @@ input[type='color']::-webkit-color-swatch {
   top: 146px;
   right: calc(var(--osc-hud-width) * 3 + 34px);
 }
+/* The fifth window starts the second row instead of running off the left edge of the strip —
+   under the CM card when the whole set is docked. */
+.osc-hud-card.dock-tmo {
+  top: 356px;
+  right: 10px;
+}
 /* Minimized cards shrink to their content, so the row tightens rather than leaving a hole. */
 .osc-hud-card.is-minimized {
   width: auto;
@@ -8097,6 +8160,10 @@ input[type='color']::-webkit-color-swatch {
   }
   .osc-hud-card.dock-vix-fix {
     top: 624px;
+    right: 6px;
+  }
+  .osc-hud-card.dock-tmo {
+    top: 788px;
     right: 6px;
   }
   .osc-hud-plot {
@@ -9072,6 +9139,13 @@ input[type='color']::-webkit-color-swatch {
 }
 .menu-item.floating-vix-fix.selected > svg {
   color: #4ade80;
+}
+.menu-item.floating-tmo-scalper.selected {
+  background: #1e290f;
+  color: #7cfc00;
+}
+.menu-item.floating-tmo-scalper.selected > svg {
+  color: #7cfc00;
 }
 @media (max-width: 1180px) {
   .peek-box {

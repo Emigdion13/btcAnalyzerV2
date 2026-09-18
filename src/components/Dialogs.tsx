@@ -70,6 +70,7 @@ import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
 import { NextPivotSettingsDialog } from './NextPivotSettingsDialog'
 import { TuxEmaScalperSettingsDialog } from './TuxEmaScalperSettingsDialog'
 import { WaveTrendSettingsDialog } from './WaveTrendSettingsDialog'
+import { TmoScalperSettingsDialog } from './TmoScalperSettingsDialog'
 
 export function SymbolSearch({
   onClose,
@@ -556,6 +557,7 @@ export function IndicatorSettingsDialog(props: {
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
   if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
+  if (props.indicator.kind === 'tmo-scalper') return <TmoScalperSettingsDialog {...props} />
   if (props.indicator.kind === 'sr-breaks-retests')
     return <SrBreaksRetestsSettingsDialog {...props} />
   if (props.indicator.kind === 'pivot-points-missed-reversals')
@@ -1136,6 +1138,7 @@ const SHORTCUTS = [
   ['WaveTrend window', 'Alt W'],
   ['RSI Divergence window', 'Alt D'],
   ['CM Williams VIX Fix window', 'Alt V'],
+  ['TMO Scalper window', 'Alt O'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

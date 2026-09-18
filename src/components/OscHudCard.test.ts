@@ -2,10 +2,12 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { OscHudCard } from './OscHudCard'
-import { cmMacdHudModel, oscHudGeometry, rsiDivergenceHudModel, waveTrendHudModel } from '../lib/osc-hud'
+import { cmMacdHudModel, oscHudGeometry, rsiDivergenceHudModel, tmoScalperHudModel, waveTrendHudModel } from '../lib/osc-hud'
 import { CM_MACD_DEFAULTS, CM_COLORS, type CmMacdValues } from '../lib/cm-ult-macd'
 import { WAVE_TREND_DEFAULTS, WT_COLORS, type WaveTrendValues } from '../lib/wave-trend'
 import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
+import { TMO_SCALPER_DEFAULTS } from '../lib/tmo-scalper'
+import type { TmoScalperValues } from '../lib/tmo-scalper'
 import type { Candle, Indicator, Timeframe } from '../lib/types'
 
 const times = (count: number, step = 60): number[] =>
@@ -195,5 +197,42 @@ describe('the floating oscillator card', () => {
     expect(markup).toContain('Delta')
     expect(markup).toContain('Div')
     expect(markup).toContain('Add the RSI Divergence pane to the chart')
+  })
+
+  it('renders a TMO Scalper card: three wheel lines, real ▲/▼ polygons and the profile subtitle', () => {
+    const empty = swing.map(() => null)
+    const values: TmoScalperValues = {
+      main1: swing.map((value) => value * 1.1),
+      signal1: swing.map((value) => value * 0.9),
+      main2: swing,
+      signal2: swing.map((value) => value * 0.8),
+      main3: swing.map((value) => value * 0.5),
+      signal3: swing.map((value) => value * 0.4),
+      bull1: empty,
+      bear1: empty,
+      bull2: empty.map((value, index) => (index === 19 ? -6 : value)),
+      bear2: empty,
+      bullExtreme: empty,
+      bearExtreme: empty.map((value, index) => (index === 18 ? 7 : value)),
+    }
+    const model = tmoScalperHudModel(values, TMO_SCALPER_DEFAULTS, {
+      times: times(swing.length),
+      timeframe: '1m',
+      bars: swing.length,
+      index: swing.length - 1,
+    })
+    const markup = card(model, { dock: 'tmo' })
+    expect(markup).toContain('aria-label="TMO Scalper window"')
+    expect(markup).toContain('data-testid="osc-hud-tmo-scalper"')
+    expect(markup).toContain('(1, 5, 30, 14, 5, 3)')
+    // Six wheel traces and three markers that are triangles, not circles pretending.
+    expect(markup.match(/<polyline/g)).toHaveLength(6)
+    expect(markup.match(/<polygon/g)).toHaveLength(2)
+    // The active bar (19) is the gated middle-wheel cross up; the extreme sag sits one bar back.
+    expect(markup).toContain('▲ TMO 2 BUY SIGNAL')
+    // The wheels are quoted under their own time-frame labels.
+    expect(markup).toContain('1m')
+    expect(markup).toContain('5m')
+    expect(markup).toContain('30m')
   })
 })

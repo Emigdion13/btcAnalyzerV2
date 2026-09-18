@@ -23,6 +23,7 @@ export type IndicatorKind =
   | 'coinbase-strike'
   | 'scalpswing'
   | 'tux-ema-scalper'
+  | 'tmo-scalper'
   | 'next-pivot'
   | 'chile-reversal'
   | 'wave-trend'
@@ -55,6 +56,71 @@ export interface Asset {
    */
   category: 'Layer 1' | 'DeFi' | 'Other' | 'Metals'
 }
+/**
+ * The published TimeFrame choices of TMO Scalper. Pine options 'M' and longer have no
+ * streamable chart feed in Atlas and are intentionally absent.
+ */
+export type TmoResolution =
+  | '1'
+  | '2'
+  | '3'
+  | '5'
+  | '10'
+  | '15'
+  | '20'
+  | '30'
+  | '45'
+  | '60'
+  | '120'
+  | '180'
+  | '240'
+  | 'D'
+  | '2D'
+  | '3D'
+  | '4D'
+  | 'W'
+  | '2W'
+  | '3W'
+
+/**
+ * Published inputs of L&L Capital's TMO Scalper, with the strategy-profile additions the
+ * published legend (1, 5, 30, 14, 5, 3, 3, 2, 9, -9) lists after the signal settings:
+ * the extreme overbought/oversold levels and the two arrow toggles.
+ */
+export interface TmoScalperSettings {
+  /** Pine input: `TimeFrame1` ('1') — the fast wheel, usually the chart's own minutes. */
+  timeframe1: TmoResolution
+  /** Pine input: `TimeFrame2` ('5') — the wheel TMO 1 crosses are gated and traded by. */
+  timeframe2: TmoResolution
+  /** Pine input: `TimeFrame3` ('30') — the slow wheel that gates TMO 2. */
+  timeframe3: TmoResolution
+  /** Pine input: `Length` (14) — bars of close-vs-open sums before smoothing. */
+  tmoLength: number
+  /** Pine input: `Calc Length` (5) — first EMA smoothing of the sums. */
+  calcLength: number
+  /** Pine input: `Smooth Length` (3) — Main EMA and Signal EMA length. */
+  smoothLength: number
+  /** Pine input: `Signal Size` (3) — the cross-dot radius. */
+  signalSize: number
+  /**
+   * Pine input: `Signal Offset` — how far a cross dot sits off the Main line. Published
+   * default 0; the documented (3, 2) signal profile pins it to 2.
+   */
+  signalOffset: number
+  /** Extreme overbought level (9) for the TMO 2 extreme flags. */
+  extremeOb: number
+  /** Extreme oversold level (-9) for the TMO 2 extreme flags. */
+  extremeOs: number
+  /** Display the TMO 1 cross dots (the original's bright circles). */
+  showTmo1Signals: boolean
+  /** Display the TMO 2 cross dots (hidden in the published style but always computed). */
+  showTmo2Signals: boolean
+  /** Display the TMO 2 crosses that fire past the extreme levels. */
+  showTmo2ExtremeSignals: boolean
+  /** Draw the three Main/Signal line pairs. */
+  showLines: boolean
+}
+
 /** Published inputs of LazyBear's WaveTrend [LazyBear] (short title `WT_LB`). */
 export interface WaveTrendSettings {
   /** `n1` — channel length of the ESA and the absolute-deviation average. */
@@ -557,6 +623,7 @@ export interface Indicator {
   strike?: CoinbaseStrikeSettings
   scalpswing?: ScalpSwingSettings
   tuxEmaScalper?: TuxEmaScalperSettings
+  tmoScalper?: TmoScalperSettings
   nextPivot?: NextPivotSettings
   chileReversal?: ChileReversalSettings
   waveTrend?: WaveTrendSettings

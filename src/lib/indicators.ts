@@ -9,6 +9,7 @@ import {
 import { rsiDivergencePlots } from './rsi-divergence'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
+import { calculateTmoScalper, tmoScalperPlots, tmoScalperSettings } from './tmo-scalper'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
@@ -172,6 +173,16 @@ export const INDICATOR_CATALOG: {
     color: '#39b978',
   },
   {
+    kind: 'tmo-scalper',
+    name: 'TMO Scalper',
+    short: 'TMO Scalper',
+    description:
+      'L&L Capital’s (T)rue (M)omentum (O)scillator MTF Scalper: three timeframe-aligned wheels (1/5/30m) whose crosses print only when the higher wheel agrees, with ±9 extreme flags — the (1, 5, 30, 14, 5, 3, 3, 2, 9, -9, ▴, ▾, ▴, ▾) profile.',
+    category: 'Momentum',
+    period: 14,
+    color: '#27c22e',
+  },
+  {
     kind: 'next-pivot',
     name: 'The Next Pivot [Kioseff Trading]',
     short: 'Next Pivot',
@@ -278,6 +289,12 @@ export function builtInPlots(
   // remain ordinary price plots so they participate in the chart scale.
   if (indicator.kind === 'tux-ema-scalper') {
     return tuxEmaScalperPlots(candles, indicator)
+  }
+  // TMO Scalper is a true oscillator pane: three timeframe wheels, their gated cross
+  // dots, and the cutoff/zero lines, built from whatever resolutions its settings ask for.
+  if (indicator.kind === 'tmo-scalper') {
+    const settings = tmoScalperSettings(indicator)
+    return tmoScalperPlots(calculateTmoScalper(candles, settings, context), settings)
   }
   // The Next Pivot renders its forecast path, ZigZag, bands and match box as a
   // native SVG overlay on the price pane; no Lightweight Charts series.

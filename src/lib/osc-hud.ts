@@ -1,7 +1,8 @@
 /**
  * Floating windows for the oscillators you watch all day: the last twenty minutes of
- * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence and CM_Williams_Vix_Fix, drawn as
- * their own little chart instead of squeezed into a full-height pane at the bottom of the screen.
+ * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence, CM_Williams_Vix_Fix and TMO Scalper,
+ * drawn as their own little chart instead of squeezed into a full-height pane at the bottom
+ * of the screen.
  *
  * Everything here is the arithmetic the cards render from — which bars belong in the window, how
  * the y-scale is chosen, what the numbers and the call are for the bar the crosshair is on. No
@@ -25,16 +26,25 @@ import { WT_COLORS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
 import { WVF_COLORS } from './cm-williams-vix-fix'
 import type { WilliamsVixFixValues } from './cm-williams-vix-fix'
+import {
+  TMO_COLORS,
+  TMO_CUTOFF,
+  TMO_SCALPER_DEFAULTS,
+  tmoResolutionLabel,
+  tmoScalperFeeds,
+  tmoScalperSettings,
+} from './tmo-scalper'
+import type { TmoScalperValues } from './tmo-scalper'
 import { formatPrice } from './market'
 import { ta } from './indicator-runtime'
 import { detectMacdDivergences } from './macd-divergence'
 import type { Divergence } from './macd-divergence'
-import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, WaveTrendSettings, WilliamsVixFixSettings } from './types'
+import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, TmoScalperSettings, WaveTrendSettings, WilliamsVixFixSettings } from './types'
 
-/** The four windows, keyed by the indicator kind they mirror. */
+/** The five windows, keyed by the indicator kind they mirror. */
 export type OscHudKind = Extract<
   Indicator['kind'],
-  'cm-ult-macd' | 'wave-trend' | 'rsi-divergence' | 'cm-williams-vix-fix'
+  'cm-ult-macd' | 'wave-trend' | 'rsi-divergence' | 'cm-williams-vix-fix' | 'tmo-scalper'
 >
 
 export const OSC_HUD_KINDS: OscHudKind[] = [
@@ -42,6 +52,7 @@ export const OSC_HUD_KINDS: OscHudKind[] = [
   'wave-trend',
   'rsi-divergence',
   'cm-williams-vix-fix',
+  'tmo-scalper',
 ]
 
 /**
@@ -118,6 +129,15 @@ export const OSC_HUD_WIDGETS: Record<OscHudKind, OscHudWidget> = {
     visibilityKey: 'osc-hud-visible:cm-williams-vix-fix',
     positionKey: 'osc-hud-pos:cm-williams-vix-fix',
     minimizedKey: 'osc-hud-min:cm-williams-vix-fix',
+  },
+  'tmo-scalper': {
+    kind: 'tmo-scalper',
+    title: 'TMO Scalper',
+    button: 'TMO Scalper',
+    accent: '#7cfc00',
+    visibilityKey: 'osc-hud-visible:tmo-scalper',
+    positionKey: 'osc-hud-pos:tmo-scalper',
+    minimizedKey: 'osc-hud-min:tmo-scalper',
   },
 }
 
@@ -251,7 +271,7 @@ export interface OscHudTrace {
   /** Already sliced to the window, oldest first. */
   values: (number | null)[]
   width: number
-  style: 'line' | 'dots' | 'area'
+  style: 'line' | 'dots' | 'area' | 'tri-up' | 'tri-down'
   /** Pine `transp`, for the area fills the originals used. */
   transp?: number
   dash?: string
@@ -1067,20 +1087,310 @@ export function williamsVixFixHudModel(
 }
 
 /**
- * Extra chart resolutions a window needs that the visible indicators do not: the CM window is
- * useful even when its indicator is switched off, and an alt-timeframe CM MACD cannot be computed
- * from chart candles at all. `requestedIndicatorTimeframes` only walks visible indicators, so the
- * feed subscription for a window-only indicator has to be asked for here.
+ * The scalper's read of the three wheels, in the order the strategy guide teaches it: a TMO 2
+ * extreme cross is the trade, a plain gated TMO 2 cross is the signal, a TMO 1 cross is the
+ * scalp-level hint, a wheel parked past its extreme or cutoff level names the zone, and only
+ * then does the slow wheel's standing direction have the floor.
+ */
+export function tmoScalperVerdict(
+  values: TmoScalperValues,
+  settings: TmoScalperSettings,
+  activeIndex: number | null,
+): OscHudVerdict {
+  const at = (source: (number | null)[]) =>
+    activeIndex !== null && activeIndex >= 0 && activeIndex < source.length
+      ? (source[activeIndex] ?? null)
+      : null
+  const main2 = at(values.main2)
+  const main3 = at(values.main3)
+  const signal3 = at(values.signal3)
+  if (main2 === null && main3 === null)
+    return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
+  const wheel3 =
+    main3 !== null && signal3 !== null
+      ? `TMO 3 ${main3 > signal3 ? 'green' : 'red'} (${tmoResolutionLabel(settings.timeframe3)})`
+      : `TMO 3 ${tmoResolutionLabel(settings.timeframe3)} warming up`
+  const detail = (wheel: string, value: number | null) =>
+    `${wheel} ${trim(value)} · ${wheel3}`
+  if (settings.showTmo2ExtremeSignals && at(values.bullExtreme) !== null)
+    return { text: '▲ TMO 2 EXTREME BUY', tone: 'bull', detail: detail('at', main2) }
+  if (settings.showTmo2ExtremeSignals && at(values.bearExtreme) !== null)
+    return { text: '▼ TMO 2 EXTREME SELL', tone: 'bear', detail: detail('at', main2) }
+  if (settings.showTmo2Signals && at(values.bull2) !== null)
+    return { text: '▲ TMO 2 BUY SIGNAL', tone: 'bull', detail: detail('cross up at', main2) }
+  if (settings.showTmo2Signals && at(values.bear2) !== null)
+    return { text: '▼ TMO 2 SELL SIGNAL', tone: 'bear', detail: detail('cross down at', main2) }
+  if (settings.showTmo1Signals && at(values.bull1) !== null)
+    return { text: '▲ TMO 1 cross up', tone: 'bull', detail: detail('TMO 2 at', main2) }
+  if (settings.showTmo1Signals && at(values.bear1) !== null)
+    return { text: '▼ TMO 1 cross down', tone: 'bear', detail: detail('TMO 2 at', main2) }
+  if (main2 !== null && main2 >= settings.extremeOb)
+    return {
+      text: '🔥 EXTREME OVERBOUGHT',
+      tone: 'ob',
+      detail: `TMO 2 ${trim(main2)} ≥ ${trim(settings.extremeOb)} · ${wheel3}`,
+    }
+  if (main2 !== null && main2 <= settings.extremeOs)
+    return {
+      text: '⚡ EXTREME OVERSOLD',
+      tone: 'os',
+      detail: `TMO 2 ${trim(main2)} ≤ ${trim(settings.extremeOs)} · ${wheel3}`,
+    }
+  if (main2 !== null && main2 >= TMO_CUTOFF)
+    return { text: '🔥 OVERBOUGHT ZONE', tone: 'ob', detail: detail('TMO 2 at', main2) }
+  if (main2 !== null && main2 <= -TMO_CUTOFF)
+    return { text: '⚡ OVERSOLD ZONE', tone: 'os', detail: detail('TMO 2 at', main2) }
+  const up = main3 !== null && signal3 !== null && main3 > signal3
+  return {
+    text: up ? '▲ TMO 3 GREEN' : main3 === null ? '— NEUTRAL' : '▼ TMO 3 RED',
+    tone: main3 === null ? 'flat' : up ? 'bull' : 'bear',
+    detail: detail('TMO 2 at', main2),
+  }
+}
+
+/**
+ * The TMO Scalper window: the three wheels' Main lines with their Signal shadows, drawn from
+ * the same chart-aligned values the pane plots, so the fast wheel's wiggle and the slow wheel's
+ * slope read at a glance. The gated crosses print as the published circles, and the ▲/▼ markers
+ * of the profile are the TMO 2 and extreme flags. Levels shown are the ±15 cutoffs and the ±9
+ * extremes, and only while the window's own scale can reach them — like every other window's.
+ */
+export function tmoScalperHudModel(
+  values: TmoScalperValues,
+  settings: TmoScalperSettings,
+  input: OscHudModelInput,
+): OscHudModel {
+  const start = windowStart(input.times.length, input.bars)
+  const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
+  const times = cut(input.times)
+  const main1 = finite(cut(values.main1))
+  const signal1 = finite(cut(values.signal1))
+  const main2 = finite(cut(values.main2))
+  const signal2 = finite(cut(values.signal2))
+  const main3 = finite(cut(values.main3))
+  const signal3 = finite(cut(values.signal3))
+  const bull1 = cut(values.bull1)
+  const bear1 = cut(values.bear1)
+  const bull2 = cut(values.bull2)
+  const bear2 = cut(values.bear2)
+  const bullExtreme = cut(values.bullExtreme)
+  const bearExtreme = cut(values.bearExtreme)
+  const domain = oscHudDomain([main1, signal1, main2, signal2, main3, signal3])
+  const activeIndex = input.index - start
+  const active = activeIndex >= 0 && activeIndex < times.length ? activeIndex : null
+  const at = (source: (number | null)[]) =>
+    active !== null && active < source.length ? (source[active] ?? null) : null
+
+  const levels = oscHudLevels(
+    [
+      { value: TMO_CUTOFF, color: TMO_COLORS.bear, label: `${TMO_CUTOFF}`, dashed: false },
+      { value: settings.extremeOb, color: TMO_COLORS.bear, label: `${settings.extremeOb}`, dashed: true },
+      { value: settings.extremeOs, color: TMO_COLORS.bull, label: `${settings.extremeOs}`, dashed: true },
+      { value: -TMO_CUTOFF, color: TMO_COLORS.bull, label: `${-TMO_CUTOFF}`, dashed: false },
+      { value: 0, color: TMO_COLORS.zero, label: '0', dashed: false },
+    ],
+    domain,
+  )
+
+  const traces: OscHudTrace[] = []
+  if (settings.showLines) {
+    traces.push(
+      // The slow wheel thicker and underneath, like the pane's dark pair.
+      {
+        title: 'TMO 3 Main',
+        color: TMO_COLORS.tmo2Bull,
+        values: main3,
+        width: 2.4,
+        style: 'line',
+        z: 1,
+      },
+      {
+        title: 'TMO 3 Signal',
+        color: TMO_COLORS.tmo2Bear,
+        values: signal3,
+        width: 1.4,
+        style: 'line',
+        dash: '2 3',
+        z: 2,
+      },
+      {
+        title: 'TMO 2 Main',
+        color: TMO_COLORS.bull,
+        values: main2,
+        width: 1.8,
+        style: 'line',
+        z: 3,
+      },
+      {
+        title: 'TMO 2 Signal',
+        color: TMO_COLORS.bear,
+        values: signal2,
+        width: 1.3,
+        style: 'line',
+        dash: '2 2',
+        z: 4,
+      },
+      {
+        title: 'TMO 1 Main',
+        color: TMO_COLORS.tmo1Bull,
+        values: main1,
+        width: 1.5,
+        style: 'line',
+        z: 5,
+      },
+      {
+        title: 'TMO 1 Signal',
+        color: TMO_COLORS.bear,
+        values: signal1,
+        width: 1.1,
+        style: 'line',
+        dash: '1 3',
+        z: 6,
+      },
+    )
+  }
+  if (settings.showTmo1Signals) {
+    traces.push(
+      {
+        title: 'TMO 1 Bullish',
+        color: TMO_COLORS.tmo1Bull,
+        values: bull1,
+        width: 3.2,
+        style: 'dots',
+        z: 7,
+      },
+      {
+        title: 'TMO 1 Bearish',
+        color: TMO_COLORS.bear,
+        values: bear1,
+        width: 3.2,
+        style: 'dots',
+        z: 7,
+      },
+    )
+  }
+  if (settings.showTmo2Signals) {
+    traces.push(
+      {
+        title: 'TMO 2 Bullish',
+        color: TMO_COLORS.tmo2Bull,
+        values: bull2,
+        width: 4.6,
+        style: 'tri-up',
+        z: 8,
+      },
+      {
+        title: 'TMO 2 Bearish',
+        color: TMO_COLORS.tmo2Bear,
+        values: bear2,
+        width: 4.6,
+        style: 'tri-down',
+        z: 8,
+      },
+    )
+  }
+  if (settings.showTmo2ExtremeSignals) {
+    traces.push(
+      {
+        title: 'TMO 2 Extreme Bullish',
+        color: TMO_COLORS.extremeBull,
+        values: bullExtreme,
+        width: 5,
+        style: 'tri-up',
+        z: 9,
+      },
+      {
+        title: 'TMO 2 Extreme Bearish',
+        color: TMO_COLORS.extremeBear,
+        values: bearExtreme,
+        width: 5,
+        style: 'tri-down',
+        z: 9,
+      },
+    )
+  }
+
+  const windowValues: TmoScalperValues = {
+    main1,
+    signal1,
+    main2,
+    signal2,
+    main3,
+    signal3,
+    bull1,
+    bear1,
+    bull2,
+    bear2,
+    bullExtreme,
+    bearExtreme,
+  }
+  return {
+    kind: 'tmo-scalper',
+    title: OSC_HUD_WIDGETS['tmo-scalper'].title,
+    subtitle: `(${settings.timeframe1}, ${settings.timeframe2}, ${settings.timeframe3}, ${settings.tmoLength}, ${settings.calcLength}, ${settings.smoothLength})`,
+    accent: OSC_HUD_WIDGETS['tmo-scalper'].accent,
+    times,
+    traces,
+    levels,
+    domain,
+    activeIndex: active,
+    hovered: !!input.hovered,
+    bars: times.length,
+    spanLabel: oscHudSpan(times.length, input.timeframe),
+    readouts: [
+      {
+        label: tmoResolutionLabel(settings.timeframe1),
+        value: trim(at(main1)),
+        color: TMO_COLORS.tmo1Bull,
+      },
+      {
+        label: tmoResolutionLabel(settings.timeframe2),
+        value: trim(at(main2)),
+        color: TMO_COLORS.bull,
+      },
+      {
+        label: tmoResolutionLabel(settings.timeframe3),
+        value: trim(at(main3)),
+        color: TMO_COLORS.tmo2Bull,
+      },
+    ],
+    verdict: tmoScalperVerdict(windowValues, settings, active),
+    ready:
+      main1.some((value) => value !== null) ||
+      main2.some((value) => value !== null) ||
+      main3.some((value) => value !== null),
+    note: input.note ?? null,
+    settingsSource: input.settingsSource ?? 'defaults',
+  }
+}
+
+/**
+ * Extra chart resolutions a window needs that the visible indicators do not: the CM and TMO
+ * windows are useful even when their indicator is switched off, and an alt-resolution MACD or
+ * TMO aggregation cannot be computed from chart candles at all.
+ * `requestedIndicatorTimeframes` only walks visible indicators, so the feed subscription for a
+ * window-only indicator has to be asked for here.
  */
 export function oscHudRequestedTimeframes(
   indicators: Indicator[],
   chart: Timeframe,
   open: Partial<Record<OscHudKind, boolean>>,
 ): Timeframe[] {
-  if (!open['cm-ult-macd']) return []
-  const source = indicators.find((indicator) => indicator.kind === 'cm-ult-macd')
-  if (!source || source.visible) return []
-  const settings = cmMacdSettings(source)
-  const resolution = settings.useCurrentRes ? chart : settings.resCustom
-  return resolution === chart ? [] : [resolution]
+  const feeds: Timeframe[] = []
+  if (open['cm-ult-macd']) {
+    const source = indicators.find((indicator) => indicator.kind === 'cm-ult-macd')
+    if (source && !source.visible) {
+      const settings = cmMacdSettings(source)
+      const resolution = settings.useCurrentRes ? chart : settings.resCustom
+      if (resolution !== chart) feeds.push(resolution)
+    }
+  }
+  if (open['tmo-scalper']) {
+    const source = indicators.find((indicator) => indicator.kind === 'tmo-scalper')
+    if (!source || !source.visible) {
+      const settings = source ? tmoScalperSettings(source) : TMO_SCALPER_DEFAULTS
+      feeds.push(...tmoScalperFeeds(settings).filter((resolution) => resolution !== chart))
+    }
+  }
+  return [...new Set(feeds)]
 }

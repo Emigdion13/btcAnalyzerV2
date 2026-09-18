@@ -116,9 +116,10 @@ test('the pane plots the wheels with the library edit available from the window'
   await tmoWindow(page).getByRole('button', { name: 'Settings for TMO Scalper' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('TMO Scalper')
-  await expect(dialog.getByLabel('TMO 1')).toHaveValue('1')
-  await expect(dialog.getByLabel('TMO 2')).toHaveValue('5')
-  await expect(dialog.getByLabel('TMO 3')).toHaveValue('30')
+  // Exact labels: "TMO 1 signals" et al. are the display switches on the same dialog.
+  await expect(dialog.getByLabel('TMO 1', { exact: true })).toHaveValue('1')
+  await expect(dialog.getByLabel('TMO 2', { exact: true })).toHaveValue('5')
+  await expect(dialog.getByLabel('TMO 3', { exact: true })).toHaveValue('30')
   await expect(dialog.getByLabel('Length', { exact: true })).toHaveValue('14')
   await expect(dialog.getByLabel('Calc Length')).toHaveValue('5')
   await expect(dialog.getByLabel('Smooth Length')).toHaveValue('3')

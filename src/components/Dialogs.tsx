@@ -1352,6 +1352,10 @@ export function DocsDialog({
                 <strong>Storage</strong>
                 <span>This browser only · no cloud sync</span>
               </div>
+              <div>
+                <strong>Memory</strong>
+                <span>Status bar RAM meter · Chromium JS heap</span>
+              </div>
             </div>
             <div className="info-box">
               Atlas is an independent application, not affiliated with or endorsed by TradingView or

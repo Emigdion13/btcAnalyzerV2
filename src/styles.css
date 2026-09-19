@@ -9101,6 +9101,184 @@ input[type='color']::-webkit-color-swatch {
   color: var(--dim);
   white-space: nowrap;
 }
+.peek-rsi {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1px 8px;
+  margin: 2px 0 0;
+  padding: 5px 9px 4px;
+  border-top: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+.peek-rsi-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.peek-rsi-meta small {
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.peek-rsi-meta em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 300ms ease;
+}
+.peek-rsi-value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  line-height: 1;
+  color: var(--text);
+  transition: color 300ms ease;
+}
+.peek-rsi-gauge {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 7px;
+  margin-top: 2px;
+}
+.peek-rsi-track {
+  position: absolute;
+  inset: 2px 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(43, 185, 155, 0.55),
+    rgba(220, 225, 233, 0.14) 45%,
+    rgba(220, 225, 233, 0.14) 55%,
+    rgba(237, 103, 115, 0.55)
+  );
+}
+.peek-rsi-track i {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+  transition:
+    left 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 300ms ease,
+    box-shadow 300ms ease;
+}
+.peek-rsi-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--dim);
+  opacity: 0.55;
+}
+.peek-rsi-band.is-low {
+  left: 30%;
+}
+.peek-rsi-band.is-high {
+  left: 70%;
+}
+/* Zone colouring matches the RSI meter: extremes glow, bull/bear tint, the label disambiguates. */
+.peek-rsi.is-bullish .peek-rsi-value,
+.peek-rsi.is-bullish .peek-rsi-meta em {
+  color: var(--accent);
+}
+.peek-rsi.is-bullish .peek-rsi-value {
+  text-shadow: 0 0 12px rgba(185, 238, 130, 0.3);
+}
+.peek-rsi.is-bullish .peek-rsi-track i {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(185, 238, 130, 0.45);
+}
+.peek-rsi.is-bearish .peek-rsi-value,
+.peek-rsi.is-bearish .peek-rsi-meta em {
+  color: #f5a623;
+}
+.peek-rsi.is-bearish .peek-rsi-value {
+  text-shadow: 0 0 12px rgba(245, 166, 35, 0.3);
+}
+.peek-rsi.is-bearish .peek-rsi-track i {
+  background: #f5a623;
+  box-shadow: 0 0 6px rgba(245, 166, 35, 0.45);
+}
+.peek-rsi.is-overbought {
+  background: radial-gradient(120% 90% at 85% 20%, rgba(237, 103, 115, 0.12), transparent 70%);
+}
+.peek-rsi.is-overbought .peek-rsi-value,
+.peek-rsi.is-overbought .peek-rsi-meta em {
+  color: var(--red);
+  animation: peek-rsi-breathe 2.2s ease-in-out infinite;
+}
+.peek-rsi.is-overbought .peek-rsi-track i {
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(237, 103, 115, 0.75);
+  animation: peek-rsi-dot 2.2s ease-in-out infinite;
+}
+.peek-rsi.is-oversold {
+  background: radial-gradient(120% 90% at 15% 20%, rgba(43, 185, 155, 0.13), transparent 70%);
+}
+.peek-rsi.is-oversold .peek-rsi-value,
+.peek-rsi.is-oversold .peek-rsi-meta em {
+  color: var(--green);
+  animation: peek-rsi-breathe 2.2s ease-in-out infinite;
+}
+.peek-rsi.is-oversold .peek-rsi-track i {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(43, 185, 155, 0.75);
+  animation: peek-rsi-dot 2.2s ease-in-out infinite;
+}
+.peek-rsi.is-warming .peek-rsi-value {
+  color: var(--dim);
+}
+.peek-rsi.is-warming .peek-rsi-track i {
+  opacity: 0.35;
+}
+@keyframes peek-rsi-breathe {
+  0%,
+  100% {
+    text-shadow: 0 0 10px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 22px currentColor;
+  }
+}
+@keyframes peek-rsi-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 6px currentColor;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 14px currentColor;
+    transform: translate(-50%, -50%) scale(1.25);
+  }
+}
+.peek-min-rsi {
+  font-size: 8.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(220, 225, 233, 0.07);
+  color: var(--muted);
+}
+.peek-min-rsi.is-bullish {
+  color: var(--accent);
+}
+.peek-min-rsi.is-bearish {
+  color: #f5a623;
+}
+.peek-min-rsi.is-oversold {
+  color: var(--green);
+}
+.peek-min-rsi.is-overbought {
+  color: var(--red);
+}
 .peek-timer {
   display: flex;
   align-items: center;
@@ -9324,6 +9502,13 @@ input[type='color']::-webkit-color-swatch {
   }
   .peek-timer-track i,
   .peek-range-track i {
+    transition: none;
+  }
+  .peek-rsi-value,
+  .peek-rsi-track i {
+    animation: none;
+  }
+  .peek-rsi-track i {
     transition: none;
   }
 }

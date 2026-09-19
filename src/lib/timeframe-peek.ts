@@ -9,6 +9,7 @@
  * Pure by design (no DOM, no fetch) so the geometry and the resolution math stay testable.
  */
 import { bucketStart, INTERVAL_SECONDS, isInterval } from '../../shared/coinbase'
+import { ta } from './indicator-runtime'
 import { TIMEFRAMES } from './market'
 import type { Candle, Timeframe } from './types'
 
@@ -261,6 +262,43 @@ export function peekStats(candles: Candle[]): PeekStats | null {
     volume,
     bars: candles.length,
   }
+}
+
+/** The peek window's momentum readout runs the classic 14-period RSI. */
+export const PEEK_RSI_PERIOD = 14
+
+export type PeekRsiZone = 'overbought' | 'bullish' | 'neutral' | 'bearish' | 'oversold'
+
+/**
+ * RSI of the resolution the window is watching, over that resolution's full candle
+ * history — not just the few bars on screen, so the reading has the period it claims.
+ * The forming bar's live close is the newest input, exactly like every other number
+ * in the panel; `null` until at least `period + 1` closes exist.
+ */
+export function peekRsi(candles: Candle[], period = PEEK_RSI_PERIOD): number | null {
+  if (candles.length < period + 1) return null
+  const values = ta.rsi(
+    candles.map((candle) => candle.close),
+    period,
+  )
+  for (let i = values.length - 1; i >= 0; i--) {
+    const value = values[i]
+    if (value !== null && Number.isFinite(value)) return Math.round(value * 10) / 10
+  }
+  return null
+}
+
+/**
+ * The five-zone read traders act on: extremes warn, the 50 line splits momentum.
+ * `null` alongside a `null` RSI — a missing reading is never called neutral.
+ */
+export function peekRsiZone(rsi: number | null): PeekRsiZone | null {
+  if (rsi === null || !Number.isFinite(rsi)) return null
+  if (rsi >= 70) return 'overbought'
+  if (rsi >= 55) return 'bullish'
+  if (rsi >= 45) return 'neutral'
+  if (rsi >= 30) return 'bearish'
+  return 'oversold'
 }
 
 export interface PeekBarGeometry {

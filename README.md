@@ -262,6 +262,14 @@ For explicit offline demo mode only, `src/lib/market.ts` generates 900 reproduci
 
 The chart instance is retained between updates. Incremental updates are used when only the last candle changes; historical corrections trigger a full series update. Built-ins are memoized. Custom indicator calculations are batched approximately every 2.5 seconds in disposable workers (manual **Add to chart** runs immediately). Custom results align by candle timestamp, so rolling history and exchange gaps cannot shift plots to the wrong bars. Native chart rendering, animation-frame-throttled drawings, lazy-loaded dialogs, cacheable vendor chunks, and locally served fonts keep the UI focused and lightweight.
 
+## Memory maintenance
+
+Every run mode schedules a **memory purge every 30 minutes** (`ATLAS_MAINTENANCE_MINUTES` to change, `0` to disable). The sweep drops everything no live chart still needs — cached histories, quotes, and trade bookmarks for pairs nobody is watching, REST and Kalshi pages past their useful lifetime, and stranded index-sample buffers — then, because all of this repo's scripts start Node with `--expose-gc`, forces a full garbage collection so the freed heap goes back to the operating system immediately. Subscribed charts keep every byte of live state; anything purged is simply re-fetched on demand. Each sweep prints one log line:
+
+```
+[atlas] memory purge — charts:3 quotes:2 tradeBookmarks:2 failedReconciles:0 restPages:41 kalshiPages:6 indexBuffers:0 · rss 212.4 MB → 118.9 MB
+```
+
 ## Project structure
 
 ```text
@@ -378,6 +386,7 @@ Charting 1m while a 15m structure decides the session is a scrolling problem: th
 - **The forming bar is labelled as forming.** It is drawn outlined with a live pip, and the meter below counts down to that resolution's close. Its high and low are the extremes so far and its close is the current tick — not a settled close — so nothing on screen implies the 15m candle has decided anything yet. Bars stay visible but go quiet (dimmed, carrying the feed's own state) while the stream is stale, reconnecting, or offline.
 - **One stream, not a second one.** The window reads the same `IndicatorTimeframes` feeds the multi-timeframe indicators share: `requestedIndicatorTimeframes(indicators, chart, extra)` de-duplicates, so peeking at 1h while `CM_Ult_MacD_MTF` runs on 1h costs a single connection, and hiding the window releases it. **Bar replay never peeks at live candles** — the window is hidden while replaying, like the whale-flow and book readouts.
 - **The rest is stated, not implied.** `1 bar = 15 chart bars` gives the ratio, volume is that resolution's volume, and the price axis is the window's own range rather than the chart's. Demo mode draws the synthetic bars and says so.
+- **The momentum of the resolution you are watching.** The window carries a large RSI(14) readout computed on that resolution's full candle history — the forming bar's live close included — never on just the few bars on screen. The number is colour-coded by zone exactly like the RSI meter (overbought red, oversold green, bull lime, bear amber), glows and breathes at the extremes, and sits on a gradient gauge with 30/70 marks and a gliding marker. Until `period + 1` closes exist it says *warming up* rather than guessing; the minimized chip keeps a compact coloured reading.
 
 Drag it anywhere inside the chart (the position persists), minimize it to a single price line, or hide it from the toolbar Floating selector, the workspace menu, or its own close button. Below 1050px — the width the side panels collapse at — the window starts closed so it never sits on the price legend, and opening it there is remembered like any other preference. The window holds 4–40 bars and the volume strip toggles. Geometry, auto-resolution, and stats live in `src/lib/timeframe-peek.ts`; the panel is `src/components/TimeframePeekBox.tsx`.
 

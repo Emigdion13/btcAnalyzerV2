@@ -12,10 +12,13 @@ import {
   PEEK_BARS_MAX,
   PEEK_BARS_MIN,
   PEEK_RESOLUTIONS,
+  PEEK_RSI_PERIOD,
   peekBarTime,
   peekIsForming,
   peekRatioLabel,
   peekResolutionLabel,
+  peekRsi,
+  peekRsiZone,
   peekStats,
   peekTimeRemaining,
   peekWindow,
@@ -150,6 +153,10 @@ export function TimeframePeekBox({
   )
   const offline = ['offline', 'stale', 'reconnecting'].includes(state)
   const markTop = Math.min(Math.max(7, layout.lastCloseY), Math.max(7, layout.height - 7))
+  // Momentum of the watched resolution: the full candle history of that timeframe, the
+  // forming bar's live close included — the same honesty rule as every other readout here.
+  const rsiValue = useMemo(() => peekRsi(candles), [candles])
+  const rsiZone = peekRsiZone(rsiValue)
 
   const startResize = useCallback(
     (event: React.PointerEvent) => {
@@ -248,7 +255,9 @@ export function TimeframePeekBox({
             <RotateCcw size={10} />
           </button>
         ) : null}
-        {!minimized && (size.panelWidth !== PEEK_SIZE_DEFAULT.panelWidth || size.priceHeight !== PEEK_SIZE_DEFAULT.priceHeight) ? (
+        {!minimized &&
+        (size.panelWidth !== PEEK_SIZE_DEFAULT.panelWidth ||
+          size.priceHeight !== PEEK_SIZE_DEFAULT.priceHeight) ? (
           <button
             type="button"
             className="peek-button"
@@ -286,6 +295,14 @@ export function TimeframePeekBox({
             <span className={`peek-change ${stats.change >= 0 ? 'is-up' : 'is-down'}`}>
               {stats.change >= 0 ? '+' : ''}
               {stats.change.toFixed(2)}%
+            </span>
+          ) : null}
+          {rsiValue !== null ? (
+            <span
+              className={`peek-min-rsi mono is-${rsiZone}`}
+              title={`RSI ${PEEK_RSI_PERIOD} · ${rsiZone}`}
+            >
+              {Math.round(rsiValue)}
             </span>
           ) : null}
           <span className="peek-min-time mono">
@@ -409,6 +426,39 @@ export function TimeframePeekBox({
             </p>
           )}
 
+          <div
+            className={`peek-rsi${rsiZone ? ` is-${rsiZone}` : ''}${
+              rsiValue === null ? ' is-warming' : ''
+            }`}
+            data-testid="peek-rsi"
+            role="meter"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={rsiValue ?? undefined}
+            aria-label={`RSI ${PEEK_RSI_PERIOD} of the ${resolution} candles${
+              rsiValue !== null ? `, currently ${rsiValue.toFixed(1)} — ${rsiZone}` : ', warming up'
+            }`}
+          >
+            <span className="peek-rsi-meta">
+              <small>rsi · {PEEK_RSI_PERIOD}</small>
+              <em>{rsiZone ?? 'warming up'}</em>
+            </span>
+            <span className="peek-rsi-value mono">
+              {rsiValue !== null ? rsiValue.toFixed(1) : '—'}
+            </span>
+            <span className="peek-rsi-gauge" aria-hidden="true">
+              <span className="peek-rsi-band is-low" />
+              <span className="peek-rsi-band is-high" />
+              <span className="peek-rsi-track">
+                <i
+                  style={{
+                    left: `${rsiValue === null ? 50 : Math.min(100, Math.max(0, rsiValue))}%`,
+                  }}
+                />
+              </span>
+            </span>
+          </div>
+
           {stats && (
             <div className="peek-stats">
               <span className="peek-price mono">{formatPrice(stats.last.close)}</span>
@@ -493,7 +543,9 @@ export function TimeframePeekBox({
             <p className="peek-note">
               The same candles the MTF indicators read, drawn at {resolution}. The outlined bar is{' '}
               <strong>still forming</strong>: its high and low are the range so far, and it can
-              close anywhere inside them. {source === 'demo' ? 'Demo bars are synthetic.' : ''}
+              close anywhere inside them. The RSI readout is {PEEK_RSI_PERIOD}-period momentum over
+              these {resolution} closes, forming bar included.{' '}
+              {source === 'demo' ? 'Demo bars are synthetic.' : ''}
               {offline ? ` Live updates are ${state}: ${message}` : ''}
             </p>
           ) : null}

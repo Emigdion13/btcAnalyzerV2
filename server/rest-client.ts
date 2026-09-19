@@ -96,21 +96,25 @@ export class CoinbaseRestClient {
               if (this.cache.size >= 200) this.cache.delete(this.cache.keys().next().value!)
               this.cache.set(path, result)
               resolve(result)
+              // Retire the coalescing entry in the same job as the settlement: deleting it
+              // from a later `.finally` would leave a window where a fresh caller is handed
+              // the just-settled promise instead of consulting the (possibly purged) cache.
+              this.pending.delete(path)
             })
-            .catch((error) =>
+            .catch((error) => {
               reject(
                 error instanceof MarketError
                   ? error
                   : new MarketError(
                       'Cannot reach Coinbase from this server. Check the connection and retry.',
                     ),
-              ),
-            )
+              )
+              this.pending.delete(path)
+            })
             .finally(() => {
               clearTimeout(timeout)
               this.controllers.delete(controller)
               this.active--
-              this.pending.delete(path)
               this.drain()
             })
         },
@@ -119,6 +123,22 @@ export class CoinbaseRestClient {
     })
     this.pending.set(path, request)
     return request
+  }
+  /**
+   * Drop cache entries recorded before `cutoff` (a `Date.now()`-style timestamp).
+   *
+   * Candle paths embed their request window, so every reconciliation mints a new URL:
+   * expired pages would otherwise ride the 200-entry FIFO indefinitely instead of
+   * being dropped once their TTL has clearly passed. Returns how many were dropped.
+   */
+  purge(cutoff: number): number {
+    let dropped = 0
+    for (const [path, entry] of this.cache)
+      if (entry.at < cutoff) {
+        this.cache.delete(path)
+        dropped++
+      }
+    return dropped
   }
   close() {
     this.stopped = true

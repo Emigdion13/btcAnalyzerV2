@@ -525,6 +525,33 @@ export class KalshiService {
     this.pending.clear()
     this.sampleBuffers.clear()
   }
+
+  /**
+   * Drop cache entries recorded before `cutoff` and index buffers that have gone
+   * entirely stale.
+   *
+   * Without this the cache grows for the life of the process: settled metals pages are
+   * keyed by their page cursor, so every quarter hour mints a new key, and a TTL is
+   * only honoured on read. Index buffers are trimmed on write, but a product nobody
+   * charts any more leaves its buffer stranded past the two-hour window. Returns the
+   * number of entries and buffers dropped.
+   */
+  purge(cutoff: number): { pages: number; sampleBuffers: number } {
+    let pages = 0
+    for (const [key, entry] of this.cache)
+      if (entry.at < cutoff) {
+        this.cache.delete(key)
+        pages++
+      }
+    const staleBefore = Math.floor(this.now() / 1000) - 7_200
+    let sampleBuffers = 0
+    for (const [product, samples] of this.sampleBuffers)
+      if (!samples.length || samples[samples.length - 1].time < staleBefore) {
+        this.sampleBuffers.delete(product)
+        sampleBuffers++
+      }
+    return { pages, sampleBuffers }
+  }
 }
 
 /**

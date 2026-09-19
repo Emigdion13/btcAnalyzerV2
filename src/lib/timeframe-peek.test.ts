@@ -16,6 +16,8 @@ import {
   peekRatioLabel,
   peekResolution,
   peekResolutionLabel,
+  peekRsi,
+  peekRsiZone,
   peekStats,
   peekSynchronizedHorizon,
   peekTimeRemaining,
@@ -393,5 +395,71 @@ describe('peekBarTime', () => {
     expect(peekBarTime(time, '1m')).toBe('14:15')
     expect(peekBarTime(time, '1D')).toBe('8/9')
     expect(peekBarTime(time, '1W')).toBe('8/9')
+  })
+})
+
+describe('peekRsi', () => {
+  const rises = (count: number) =>
+    Array.from({ length: count }, (_, i) => candle(i * 900, 100 + i, 101 + i, 99 + i, 100 + i))
+
+  it('needs at least period + 1 closes before it says anything', () => {
+    expect(peekRsi(rises(14))).toBeNull()
+    expect(peekRsi(rises(15))).not.toBeNull()
+    expect(peekRsi(rises(20), 14)).not.toBeNull()
+    expect(peekRsi([], 14)).toBeNull()
+  })
+
+  it('reads the extremes and the flat line the way Wilder defined them', () => {
+    expect(peekRsi(rises(30))).toBe(100)
+    const falls = rises(30).map((c) => candle(c.time, c.open, c.low, c.high, 200 - c.close))
+    expect(peekRsi(falls)).toBe(0)
+    const flat = Array.from({ length: 30 }, (_, i) => candle(i * 900, 100, 100, 100, 100))
+    expect(peekRsi(flat)).toBe(50)
+  })
+
+  it('matches a hand-computed Wilder smoothing', () => {
+    // Period 2 over closes [1, 2, 1.5]: avg gain 0.5, avg loss 0.25 → RS 2 → 66.67.
+    const bars = [1, 2, 1.5].map((close, i) => candle(i * 900, close, close, close, close))
+    expect(peekRsi(bars, 2)).toBe(66.7)
+  })
+
+  it('treats the forming bar as the newest input, like every other readout in the panel', () => {
+    const bars = rises(20)
+    const withLiveClose = bars
+      .slice(0, -1)
+      .concat(candle(bars.at(-1)!.time, bars.at(-1)!.open, 130, 90, 118))
+    expect(peekRsi(withLiveClose)).not.toBeNull()
+    // The same history with a very different live close cannot read identically.
+    const crashed = bars
+      .slice(0, -1)
+      .concat(candle(bars.at(-1)!.time, bars.at(-1)!.open, 130, 90, 82))
+    expect(peekRsi(withLiveClose)).not.toBe(peekRsi(crashed))
+  })
+
+  it('measures the watched resolution, not the visible 4–40 bar window', () => {
+    const full = rises(60)
+    expect(peekRsi(full)).not.toBeNull()
+    // A bare 12-bar window has no 14-period reading — which is exactly why the panel
+    // feeds the resolution's whole history into peekRsi, never the visible slice.
+    expect(peekRsi(peekWindow(full, 12))).toBeNull()
+  })
+})
+
+describe('peekRsiZone', () => {
+  it('warns at the extremes and splits momentum on the 50 line', () => {
+    expect(peekRsiZone(70)).toBe('overbought')
+    expect(peekRsiZone(84.2)).toBe('overbought')
+    expect(peekRsiZone(69.9)).toBe('bullish')
+    expect(peekRsiZone(55)).toBe('bullish')
+    expect(peekRsiZone(54.9)).toBe('neutral')
+    expect(peekRsiZone(45)).toBe('neutral')
+    expect(peekRsiZone(44.9)).toBe('bearish')
+    expect(peekRsiZone(30)).toBe('bearish')
+    expect(peekRsiZone(29.9)).toBe('oversold')
+    expect(peekRsiZone(4)).toBe('oversold')
+  })
+  it('never calls a missing reading neutral', () => {
+    expect(peekRsiZone(null)).toBeNull()
+    expect(peekRsiZone(Number.NaN)).toBeNull()
   })
 })

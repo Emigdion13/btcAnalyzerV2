@@ -11,6 +11,7 @@ import {
 } from '../shared/kalshi.ts'
 import { CoinbaseService } from './coinbase-service.ts'
 import { KalshiService } from './kalshi-service.ts'
+import { collectGarbage, parseMaintenanceMinutes, rssMegabytes } from './maintenance.ts'
 import { MarketError } from './rest-client.ts'
 
 /**
@@ -74,6 +75,38 @@ export function createMarketApi(
   kalshi = new KalshiService(kalshiCredentialsFromEnv()),
 ) {
   const connections = new Set<ServerResponse>()
+  /**
+   * The scheduled memory sweep.
+   *
+   * Anything a live chart no longer holds is re-fetchable within seconds, so the sweep
+   * drops it wholesale instead of letting resident memory ramp for a session's length.
+   * `ATLAS_MAINTENANCE_MINUTES` defaults to 30; `0` disables the sweep. With Node
+   * started under `--expose-gc` (all of this repo's run scripts do), a full collection
+   * follows so the freed heap is returned to the operating system immediately.
+   */
+  const PURGE_AGE_MS = 15 * 60 * 1000
+  const purge = () => {
+    const before = rssMegabytes(),
+      cutoff = Date.now() - PURGE_AGE_MS
+    const report = {
+      ...service.purge(cutoff),
+      ...kalshi.purge(cutoff),
+    }
+    const collected = collectGarbage()
+    console.log(
+      `[atlas] memory purge — charts:${report.histories} quotes:${report.quotes}` +
+        ` tradeBookmarks:${report.tradeIds} failedReconciles:${report.failures}` +
+        ` restPages:${report.restEntries} kalshiPages:${report.pages}` +
+        ` indexBuffers:${report.sampleBuffers}` +
+        ` · rss ${before} MB → ${rssMegabytes()} MB` +
+        (collected ? '' : ' · gc unavailable (start with --expose-gc to release heap)'),
+    )
+  }
+  const maintenanceMinutes = parseMaintenanceMinutes(process.env.ATLAS_MAINTENANCE_MINUTES)
+  const maintenanceTimer =
+    maintenanceMinutes > 0 ? setInterval(purge, maintenanceMinutes * 60_000) : undefined
+  // Never hold the process open just for the next sweep.
+  maintenanceTimer?.unref?.()
   const json = (res: ServerResponse, status: number, value: unknown) => {
     if (res.destroyed || res.writableEnded) return
     res.writeHead(status, {
@@ -256,9 +289,12 @@ export function createMarketApi(
       return true
     },
     close() {
+      if (maintenanceTimer) clearInterval(maintenanceTimer)
       connections.forEach((res) => res.end())
       service.close()
       kalshi.close()
     },
+    /** Run the memory sweep now, on the same schedule the server keeps internally. */
+    purge,
   }
 }

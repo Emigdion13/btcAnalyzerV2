@@ -464,4 +464,58 @@ export class CoinbaseService {
     socket?.close()
     this.rest.close()
   }
+
+  /**
+   * Drop everything no live chart still needs.
+   *
+   * Every structure here is bounded individually, but together they idle at tens of
+   * megabytes: a cached history carries 900 bars plus up to 10,000 trade bookmarks,
+   * and each pair ever charted keeps one of each until it is the one unlucky entry
+   * evicted by a hundred newer siblings. The scheduled sweep releases them all at
+   * once — subscribed charts keep every byte of live state; anything else is
+   * re-fetched on demand within a minute of being asked for again. `cutoff` (a
+   * `Date.now()`-style timestamp) applies to the REST client's upstream pages.
+   */
+  purge(cutoff: number): {
+    histories: number
+    quotes: number
+    tradeIds: number
+    failures: number
+    restEntries: number
+  } {
+    const watched = new Set<string>()
+    for (const sub of this.subscribers) for (const id of sub.products) watched.add(id)
+    const charted = new Set([...this.subscribers].map((s) => `${s.product}:${s.interval}`))
+    let histories = 0
+    for (const key of this.histories.keys())
+      if (!charted.has(key)) {
+        this.histories.delete(key)
+        histories++
+      }
+    let quotes = 0
+    for (const id of Object.keys(this.quotes))
+      if (!watched.has(id)) {
+        delete this.quotes[id]
+        quotes++
+      }
+    let tradeIds = 0
+    for (const id of this.lastTradeIds.keys())
+      if (!watched.has(id)) {
+        this.lastTradeIds.delete(id)
+        tradeIds++
+      }
+    let failures = 0
+    for (const key of this.failedReconciliations)
+      if (!charted.has(key)) {
+        this.failedReconciliations.delete(key)
+        failures++
+      }
+    // Flow trackers and books are pruned on unsubscribe, but a socket that died
+    // without a close event can strand them; the sweep is the backstop.
+    for (const product of this.whaleFlows.keys())
+      if (!watched.has(product)) this.whaleFlows.delete(product)
+    for (const product of this.orderBooks.keys())
+      if (!watched.has(product)) this.orderBooks.delete(product)
+    return { histories, quotes, tradeIds, failures, restEntries: this.rest.purge(cutoff) }
+  }
 }

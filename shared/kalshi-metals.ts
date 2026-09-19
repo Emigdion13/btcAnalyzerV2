@@ -33,7 +33,7 @@ import {
   isCandle,
   type MarketCandle,
   type MarketQuote,
-} from './coinbase'
+} from './coinbase.ts'
 import {
   KALSHI_WINDOW_SECONDS,
   kalshiIsoSeconds,
@@ -43,7 +43,7 @@ import {
   type KalshiMetalFeed,
   type MetalInterval,
   type RawMarket,
-} from './kalshi'
+} from './kalshi.ts'
 
 /** One exact price Kalshi published at a quarter-hour boundary, unix seconds. */
 export interface SettlementPoint {

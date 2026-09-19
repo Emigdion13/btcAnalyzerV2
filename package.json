@@ -4,14 +4,14 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "node --expose-gc node_modules/vite/bin/vite.js --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0",
+    "preview": "node --expose-gc node_modules/vite/bin/vite.js preview --host 0.0.0.0",
     "test": "vitest run",
     "lint": "eslint .",
     "test:e2e": "playwright test",
     "format": "prettier --write .",
-    "start": "node --experimental-strip-types server/index.ts"
+    "start": "node --expose-gc --experimental-strip-types server/index.ts"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.6",

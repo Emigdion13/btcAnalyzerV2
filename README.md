@@ -262,6 +262,14 @@ For explicit offline demo mode only, `src/lib/market.ts` generates 900 reproduci
 
 The chart instance is retained between updates. Incremental updates are used when only the last candle changes; historical corrections trigger a full series update. Built-ins are memoized. Custom indicator calculations are batched approximately every 2.5 seconds in disposable workers (manual **Add to chart** runs immediately). Custom results align by candle timestamp, so rolling history and exchange gaps cannot shift plots to the wrong bars. Native chart rendering, animation-frame-throttled drawings, lazy-loaded dialogs, cacheable vendor chunks, and locally served fonts keep the UI focused and lightweight.
 
+## Memory maintenance
+
+Every run mode schedules a **memory purge every 30 minutes** (`ATLAS_MAINTENANCE_MINUTES` to change, `0` to disable). The sweep drops everything no live chart still needs — cached histories, quotes, and trade bookmarks for pairs nobody is watching, REST and Kalshi pages past their useful lifetime, and stranded index-sample buffers — then, because all of this repo's scripts start Node with `--expose-gc`, forces a full garbage collection so the freed heap goes back to the operating system immediately. Subscribed charts keep every byte of live state; anything purged is simply re-fetched on demand. Each sweep prints one log line:
+
+```
+[atlas] memory purge — charts:3 quotes:2 tradeBookmarks:2 failedReconciles:0 restPages:41 kalshiPages:6 indexBuffers:0 · rss 212.4 MB → 118.9 MB
+```
+
 ## Project structure
 
 ```text

@@ -691,7 +691,9 @@ function StandardIndicatorSettingsDialog({
         {(indicator.kind === 'macd' || indicator.kind === 'rsi-divergence') && (
           <>
             <DivergenceSettingsSection
-              title={indicator.kind === 'rsi-divergence' ? 'RSI divergence' : 'MACD histogram divergence'}
+              title={
+                indicator.kind === 'rsi-divergence' ? 'RSI divergence' : 'MACD histogram divergence'
+              }
               settings={divergence}
               numbers={divNumbers}
               onToggle={(key, value) => setDivergence({ ...divergence, [key]: value })}
@@ -869,8 +871,8 @@ export function AlertDialog({
           <CircleHelp size={16} />
           <span>
             Alerts pause during replay or disconnection and use only the selected data source. No
-            trades are placed and no emails are sent. Indicator alarms follow the same rules and
-            add a chime.
+            trades are placed and no emails are sent. Indicator alarms follow the same rules and add
+            a chime.
           </span>
         </div>
       </form>
@@ -1036,9 +1038,7 @@ export function MarketsDialog({
           <span>Market data source</span>
           <strong>{source === 'demo' ? 'Demo' : 'Coinbase + Kalshi'}</strong>
           <small>
-            {source === 'demo'
-              ? 'Locally generated prices'
-              : 'Public exchange and market data'}
+            {source === 'demo' ? 'Locally generated prices' : 'Public exchange and market data'}
           </small>
         </div>
       </div>
@@ -1139,6 +1139,7 @@ const SHORTCUTS = [
   ['RSI Divergence window', 'Alt D'],
   ['CM Williams VIX Fix window', 'Alt V'],
   ['TMO Scalper window', 'Alt O'],
+  ['MTF RSI window', 'Alt R'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

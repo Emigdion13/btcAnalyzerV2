@@ -72,6 +72,9 @@ import { IndicatorStudio } from './components/IndicatorStudio'
 import { IndicatorTimeframeFeed, MetalTimeframeFeed } from './components/IndicatorTimeframeFeeds'
 import { TimeframePeekBox } from './components/TimeframePeekBox'
 import type { TimeframePeekFeed } from './components/TimeframePeekBox'
+import { MtfRsiWindow } from './components/MtfRsiWindow'
+import type { MtfRsiRowFeed } from './components/MtfRsiWindow'
+import { MTF_RSI_TIMEFRAMES } from './lib/mtf-rsi'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
@@ -120,7 +123,7 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
-import { candlePulseDefaultVisible } from './lib/floating-window'
+import { candlePulseDefaultVisible, mtfRsiDefaultVisible } from './lib/floating-window'
 import {
   isRsiMeterIndicator,
   promotedRsiMeterIndicator,
@@ -338,6 +341,13 @@ export default function App() {
     null,
   )
   const rsiMeterOpen = rsiMeterVisible(rsiMeterPreference)
+  // The floating MTF RSI window: one RSI and one tendency call per watched resolution.
+  // Same contract as the other windows — null means "never chosen" and defers to the default.
+  const [mtfRsiPreference, setMtfRsiPreference] = useLocalState<boolean | null>(
+    'mtf-rsi-visible',
+    null,
+  )
+  const mtfRsiOpen = mtfRsiPreference ?? mtfRsiDefaultVisible(window.innerWidth, window.innerHeight)
   // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
   // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
   // pane. Same contract as the RSI meter — null means "never chosen" and a real choice from the
@@ -562,11 +572,16 @@ export default function App() {
   // A hidden window asks nothing of the market, and bar replay must not peek at live candles.
   const peekActive = peekVisible && replayIndex === null
   const pulseActive = pulseVisible && replayIndex === null
+  // The MTF RSI window reads real feeds for its ladder; in replay it stays closed with the rest.
+  const mtfRsiActive = mtfRsiOpen && replayIndex === null
   const indicatorTimeframes = useMemo(
     () =>
       requestedIndicatorTimeframes(indicators, timeframe, [
         ...(peekActive ? [peekTimeframe] : []),
         ...(pulseActive && effectivePulseTimeframe !== timeframe ? [effectivePulseTimeframe] : []),
+        // The window's own ladder: five resolutions of feeds, deduplicated against the
+        // chart's own resolution by the same walk every other consumer shares.
+        ...(mtfRsiActive ? [...MTF_RSI_TIMEFRAMES] : []),
         // A window-only CM MACD on another resolution cannot be computed from chart candles, so
         // its source feed has to be asked for here: the visible-indicator walk above misses it.
         ...oscHudRequestedTimeframes(indicators, timeframe, oscHudOpen),
@@ -578,6 +593,7 @@ export default function App() {
       peekTimeframe,
       pulseActive,
       effectivePulseTimeframe,
+      mtfRsiActive,
       oscHudOpen,
     ],
   )
@@ -663,14 +679,41 @@ export default function App() {
       // Taker flow is a Coinbase trade statistic; the metals have no tape to report.
       tape: isChart ? (venue === 'coinbase' ? live.tape : null) : (feed?.tape ?? null),
     }
+  }, [effectivePulseTimeframe, timeframe, nativeTimeframes, candles, feedState, venue, live.tape])
+  /**
+   * The MTF RSI ladder's feeds. The chart's own resolution is served by the chart candles
+   * (the requested-timeframes walk never duplicates it); every other rung comes from the
+   * shared indicator feeds, demo synthetic history included. A rung whose feed has not
+   * answered yet reports empty candles and the connection state — the window says "no data"
+   * rather than inventing a reading.
+   */
+  const mtfRsiRows = useMemo<MtfRsiRowFeed[]>(() => {
+    if (!mtfRsiActive) return []
+    return MTF_RSI_TIMEFRAMES.map((resolution) => {
+      const isChart = resolution === timeframe
+      const feed = isChart ? undefined : nativeTimeframes[resolution]
+      return {
+        resolution,
+        candles: feed?.candles ?? (isChart ? candles : EMPTY_CANDLES),
+        state: feed?.state ?? feedState,
+        message:
+          feed?.message ??
+          (source === 'demo'
+            ? feedActive
+              ? 'Demo feed · synthetic bars, not exchange data.'
+              : 'Demo feed paused.'
+            : feedMessage),
+      }
+    })
   }, [
-    effectivePulseTimeframe,
+    mtfRsiActive,
     timeframe,
     nativeTimeframes,
     candles,
     feedState,
-    venue,
-    live.tape,
+    feedMessage,
+    source,
+    feedActive,
   ])
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
@@ -773,10 +816,7 @@ export default function App() {
    */
   const onAlarmFire = useCallback(
     (alarm: IndicatorAlarm, reading: AlarmReading) => {
-      notify(
-        alarmFireToast({ ...alarm, symbol: getAsset(alarm.symbol).ticker }, reading),
-        'alarm',
-      )
+      notify(alarmFireToast({ ...alarm, symbol: getAsset(alarm.symbol).ticker }, reading), 'alarm')
       if (alarm.sound && alarmChimes) playAlarmChime(alarmChimeForAlarm(alarm))
     },
     [notify, alarmChimes],
@@ -1138,10 +1178,10 @@ export default function App() {
                         : item.kind === 'rsi-divergence'
                           ? 'RSI Divergence'
                           : item.kind === 'cm-williams-vix-fix'
-                          ? 'CM_Williams_Vix_Fix'
-                          : item.short === 'VOL'
-                            ? 'Volume'
-                            : item.short,
+                            ? 'CM_Williams_Vix_Fix'
+                            : item.short === 'VOL'
+                              ? 'Volume'
+                              : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -1488,6 +1528,7 @@ export default function App() {
   }
   const togglePeek = () => setPeekPreference(!peekVisible)
   const togglePulse = () => setPulsePreference(!pulseVisible)
+  const toggleMtfRsi = () => setMtfRsiPreference(!mtfRsiOpen)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1499,6 +1540,7 @@ export default function App() {
     openDocs,
     togglePeek,
     togglePulse,
+    toggleMtfRsi,
     toggleOscHud,
     draft,
     modal,
@@ -1515,6 +1557,7 @@ export default function App() {
     openDocs,
     togglePeek,
     togglePulse,
+    toggleMtfRsi,
     toggleOscHud,
     draft,
     modal,
@@ -1594,6 +1637,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleOscHud('tmo-scalper')
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'r') {
+        event.preventDefault()
+        cmd.toggleMtfRsi()
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1609,6 +1656,7 @@ export default function App() {
     (peekVisible ? 1 : 0) +
     (pulseVisible ? 1 : 0) +
     (rsiMeterOpen ? 1 : 0) +
+    (mtfRsiOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
@@ -1720,6 +1768,16 @@ export default function App() {
                   }}
                 >
                   {rsiMeterOpen ? 'Hide RSI meter' : 'Show RSI meter'}
+                </MenuItem>
+                <MenuItem
+                  icon={Activity}
+                  selected={mtfRsiOpen}
+                  onClick={() => {
+                    setMtfRsiPreference(!mtfRsiOpen)
+                    close()
+                  }}
+                >
+                  {mtfRsiOpen ? 'Hide MTF RSI window' : 'Show MTF RSI window'}
                 </MenuItem>
                 <MenuItem
                   icon={ChartColumnBig}
@@ -2045,6 +2103,15 @@ export default function App() {
                     RSI meter
                   </MenuItem>
                   <MenuItem
+                    className="floating-mtf-rsi"
+                    icon={Activity}
+                    selected={mtfRsiOpen}
+                    shortcut="Alt R"
+                    onClick={toggleMtfRsi}
+                  >
+                    MTF RSI
+                  </MenuItem>
+                  <MenuItem
                     className="floating-cm-macd"
                     icon={ChartColumnBig}
                     selected={cmHudOpen}
@@ -2279,6 +2346,13 @@ export default function App() {
                     feed={peekFeed}
                     upColor={settings.upColor}
                     downColor={settings.downColor}
+                  />
+                )}
+                {mtfRsiActive && hasData && (
+                  <MtfRsiWindow
+                    ticker={asset.ticker}
+                    rows={mtfRsiRows}
+                    onClose={() => setMtfRsiPreference(false)}
                   />
                 )}
                 {source !== 'demo' && !hasData && (

@@ -407,7 +407,7 @@ Drag it anywhere inside the chart (the position persists), minimize it to a sing
 
 ## MTF RSI window
 
-**MTF RSI** answers, all on one floating panel: for **1m, 5m, 15m, 30m and 1h**, what is the RSI and which way is that timeframe leaning — **bullish, bearish, or in range**. **Alt R** toggles it (the **Floating** selector and workspace menu also own it); it drags, minimizes to a bias line, and remembers its position.
+**MTF RSI** answers, all on one floating panel: for **1m, 5m, 15m, 30m and 1h**, what is the RSI and which way is that timeframe leaning — **bullish, bearish, or in range**. **Alt R** toggles it (the **Floating** selector and workspace menu also own it); it starts open on roomy viewports (1050×940+, the Candle Pulse rule), drags, minimizes to a bias line, and remembers its position.
 
 - **The tendency is not read off RSI alone.** RSI is momentum, and momentum is regime-dependent — an uptrend's healthy pullback spends time below 50, which a bare "RSI > 50" classifier calls bearish (Cardwell's range rules make the same point: bulls oscillate 40–80, bears 20–60, so a reading's meaning depends on the regime). The regime is classified first, by measures that are not RSI.
 - **Step 1 — is it trending?** A 0–100 trend-quality score fuses three independent measures: Wilder **ADX(14)** (45%), Kaufman's **efficiency ratio over 20 closes** (35%), and the **EMA(20) slope in ATR(14) units** (20%) — directional strength, path quality, and volatility-normalized velocity, each covering a blind spot of the others. The gate is hysteretic: **≥ 55 trending, < 45 ranging, in between the previous call stands** — a boundary value can never flip the verdict by itself.

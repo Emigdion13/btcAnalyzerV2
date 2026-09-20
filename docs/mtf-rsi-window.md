@@ -5,9 +5,11 @@ The **MTF RSI window** is a floating panel that answers one question five times 
 **bullish, bearish, or in range**.
 
 **Alt R** toggles it (the toolbar **Floating** selector and the workspace menu also own it).
-It drags anywhere inside the chart, minimizes to a single bias line, and remembers its
-position like every other floating window. It stays closed during bar replay, like the other
-live readouts.
+Like the Candle Pulse, it starts open only on **roomy viewports (1050×940+)** — a corner
+window should not sit on the chart where there is no room for it — and an explicit show or
+hide wins over that default and is remembered. It drags anywhere inside the chart, minimizes
+to a single bias line, and remembers its position like every other floating window. It stays
+closed during bar replay, like the other live readouts.
 
 ## Why the tendency is not read off RSI alone
 

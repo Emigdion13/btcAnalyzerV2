@@ -123,7 +123,7 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
-import { candlePulseDefaultVisible } from './lib/floating-window'
+import { candlePulseDefaultVisible, mtfRsiDefaultVisible } from './lib/floating-window'
 import {
   isRsiMeterIndicator,
   promotedRsiMeterIndicator,
@@ -347,7 +347,7 @@ export default function App() {
     'mtf-rsi-visible',
     null,
   )
-  const mtfRsiOpen = mtfRsiPreference ?? true
+  const mtfRsiOpen = mtfRsiPreference ?? mtfRsiDefaultVisible(window.innerWidth, window.innerHeight)
   // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
   // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
   // pane. Same contract as the RSI meter — null means "never chosen" and a real choice from the

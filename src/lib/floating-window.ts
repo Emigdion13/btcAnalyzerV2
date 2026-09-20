@@ -162,3 +162,18 @@ export const CANDLE_PULSE_ROOMY_HEIGHT = 940
 
 export const candlePulseDefaultVisible = (width: number, height: number): boolean =>
   width >= CANDLE_PULSE_ROOMY_WIDTH && height >= CANDLE_PULSE_ROOMY_HEIGHT
+
+/**
+ * Where the MTF RSI window starts.
+ *
+ * The same rule the Candle Pulse earns: the window covers a corner of the chart, so it only
+ * starts open where there is clearly room for it (1050×940+) — which also keeps it off the
+ * chart while browser tests drive the default layout at shorter viewports. An explicit show
+ * or hide wins over the default and is remembered, and it is one keystroke (Alt R) away in
+ * every viewport.
+ */
+export const MTF_RSI_ROOMY_WIDTH = 1050
+export const MTF_RSI_ROOMY_HEIGHT = 940
+
+export const mtfRsiDefaultVisible = (width: number, height: number): boolean =>
+  width >= MTF_RSI_ROOMY_WIDTH && height >= MTF_RSI_ROOMY_HEIGHT

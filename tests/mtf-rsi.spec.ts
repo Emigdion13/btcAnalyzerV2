@@ -35,30 +35,30 @@ test('opens from the Floating selector, shows the five-timeframe ladder, and rem
 
   // A corner window starts closed below the roomy viewport, like the Candle Pulse — it must
   // never sit on the chart by default where there is no room for it.
-  await expect(window_()).toHaveCount(0)
+  await expect(window_(page)).toHaveCount(0)
 
   await openFloatingMenu(page)
   await page.locator('.menu-item.floating-mtf-rsi').click()
-  const hud = window_()
+  const hud = window_(page)
   await expect(hud).toBeVisible()
 
   // One row per watched resolution, each with a tendency chip once its feed has history.
   await expect(hud.locator('.mtf-rsi-row')).toHaveCount(5)
   for (const label of ['1m', '5m', '15m', '30m', '1h']) {
-    await expect(hud.locator('.mtf-rsi-tf', { hasText: label })).toBeVisible()
+    await expect(hud.getByText(label, { exact: true })).toBeVisible()
   }
   await expect(hud.locator('.mtf-rsi-tendency').first()).toBeVisible()
   await expect(hud.locator('.mtf-rsi-bias')).toBeVisible()
 
   // The choice is remembered across reloads.
   await page.reload()
-  await expect(window_()).toBeVisible()
+  await expect(window_(page)).toBeVisible()
 
   // Its own close button is the same choice as the selector, and it persists too.
-  await window_().getByRole('button', { name: 'Hide the MTF RSI window' }).click()
-  await expect(window_()).toHaveCount(0)
+  await window_(page).getByRole('button', { name: 'Hide the MTF RSI window' }).click()
+  await expect(window_(page)).toHaveCount(0)
   await page.reload()
-  await expect(window_()).toHaveCount(0)
+  await expect(window_(page)).toHaveCount(0)
 })
 
 test('Alt R toggles it, and the methodology note explains the call', async ({
@@ -68,7 +68,7 @@ test('Alt R toggles it, and the methodology note explains the call', async ({
 }) => {
   await openDemoChart(page)
   await page.keyboard.press('Alt+r')
-  const hud = window_()
+  const hud = window_(page)
   await expect(hud).toBeVisible()
 
   // The window says how the tendency is determined instead of leaving the trader to guess.
@@ -77,5 +77,5 @@ test('Alt R toggles it, and the methodology note explains the call', async ({
   await expect(hud.locator('.mtf-rsi-note')).toContainText('efficiency')
 
   await page.keyboard.press('Alt+r')
-  await expect(window_()).toHaveCount(0)
+  await expect(window_(page)).toHaveCount(0)
 })

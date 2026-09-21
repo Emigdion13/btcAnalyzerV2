@@ -183,9 +183,14 @@ export const mtfRsiDefaultVisible = (width: number, height: number): boolean =>
  *
  * The panel is the shortest of the corner windows — a verdict line and eight rows — so it does not
  * need the roomy viewport the Candle Pulse and the MTF RSI window ask for. It starts open wherever
- * there is chart width for it (640px+, the retired AI decision window's rule) and docks above the
- * MTF RSI window on the left, which is also one keystroke (Alt L) away in every viewport. An
- * explicit show or hide wins over the default and is remembered.
+ * there is chart width for it (640px+, the retired AI decision window's rule), and it is one
+ * keystroke (Alt L) away in every viewport. An explicit show or hide wins over the default and is
+ * remembered.
+ *
+ * Because it starts open on a plain laptop viewport, its dock has to keep clear of everything the
+ * chart already owns: it sits on the bottom edge, to the right of the MTF RSI window's corner where
+ * there is room for both, and `max-height` keeps it inside the (clipping) chart container so it can
+ * cover neither the indicator legend above it nor the top bar. See `.chile-panel` in styles.css.
  */
 export const CHILE_PANEL_MIN_WIDTH = 640
 

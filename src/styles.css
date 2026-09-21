@@ -10734,6 +10734,14 @@ input[type='color']::-webkit-color-swatch {
   }
 }
 
+/* Wide enough for two windows on the bottom edge: the panel sits to the right of the MTF RSI
+   window's dock (10px + 292px + 10px) instead of on top of it. */
+@media (min-width: 1000px) {
+  .chile-panel {
+    left: 312px;
+  }
+}
+
 /* ============================================================
    Chile panel — the V17 score readout as a floating window
    ============================================================ */
@@ -10745,10 +10753,15 @@ input[type='color']::-webkit-color-swatch {
   --chile-amarillo: #ffc337;
   position: absolute;
   z-index: 7;
-  /* Bottom-left, above the MTF RSI window: the peek owns the bottom-right, the Candle Pulse the
-     top-left, and the oscillator strip the top-right. */
-  left: 10px;
-  bottom: 214px;
+  /* The chart container clips, so a docked window has to fit inside it. `max-height` is what
+     guarantees that: with the 46px bottom offset the panel's top edge stays at least 174px below
+     the container's top however tall the panel or short the chart — it can neither slide up under
+     the top bar nor cover the indicator legend block, which reaches 153px down. Taller content
+     scrolls inside the window instead of escaping it. */
+  left: 6px;
+  bottom: 46px;
+  max-height: calc(100% - 220px);
+  overflow-y: auto;
   width: var(--chile-panel-width);
   background: rgba(14, 19, 28, 0.9);
   backdrop-filter: blur(12px);

@@ -199,3 +199,18 @@ export const CHILE_PANEL_ROOMY_HEIGHT = 940
 
 export const chilePanelDefaultVisible = (width: number, height: number): boolean =>
   width >= CHILE_PANEL_ROOMY_WIDTH && height >= CHILE_PANEL_ROOMY_HEIGHT
+
+/**
+ * Where the Kalshi 15m window starts.
+ *
+ * The same rule the other corner windows earn: it docks over live candles in a
+ * corner of the chart, so it only starts open where there is clearly room for it
+ * (1050×940+). It polls once a second, so a chart it would crowd is one it
+ * should not poll until asked. An explicit show or hide wins over the default
+ * and is remembered, and it is one keystroke (Alt K) away in every viewport.
+ */
+export const KALSHI_FLOAT_ROOMY_WIDTH = 1050
+export const KALSHI_FLOAT_ROOMY_HEIGHT = 940
+
+export const kalshiFloatDefaultVisible = (width: number, height: number): boolean =>
+  width >= KALSHI_FLOAT_ROOMY_WIDTH && height >= KALSHI_FLOAT_ROOMY_HEIGHT

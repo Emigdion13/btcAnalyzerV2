@@ -75,6 +75,7 @@ import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { MtfRsiWindow } from './components/MtfRsiWindow'
 import type { MtfRsiRowFeed } from './components/MtfRsiWindow'
 import { ChilePanelWindow } from './components/ChilePanelWindow'
+import { KalshiFloatWindow } from './components/KalshiFloatWindow'
 import { MTF_RSI_TIMEFRAMES } from './lib/mtf-rsi'
 import {
   CHILE_MOMENTUM_TIMEFRAME,
@@ -133,6 +134,7 @@ import type { TimeframePeekSettings } from './lib/timeframe-peek'
 import {
   candlePulseDefaultVisible,
   chilePanelDefaultVisible,
+  kalshiFloatDefaultVisible,
   mtfRsiDefaultVisible,
 } from './lib/floating-window'
 import {
@@ -367,6 +369,17 @@ export default function App() {
   )
   const chilePanelOpen =
     chilePanelPreference ?? chilePanelDefaultVisible(window.innerWidth, window.innerHeight)
+  // The floating Kalshi 15m window: the running contract's target, the settlement
+  // index it is measuring, and the odds, polled once a second. Same contract as
+  // the other windows — null means "never chosen" and defers to the default.
+  const [kalshiFloatPreference, setKalshiFloatPreference] = useLocalState<boolean | null>(
+    'kalshi-float-visible',
+    null,
+  )
+  const kalshiFloatOpen =
+    (kalshiFloatPreference ??
+      kalshiFloatDefaultVisible(window.innerWidth, window.innerHeight)) &&
+    source !== 'demo'
   // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
   // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
   // pane. Same contract as the RSI meter — null means "never chosen" and a real choice from the
@@ -1601,6 +1614,7 @@ export default function App() {
   const togglePulse = () => setPulsePreference(!pulseVisible)
   const toggleMtfRsi = () => setMtfRsiPreference(!mtfRsiOpen)
   const toggleChilePanel = () => setChilePanelPreference(!chilePanelOpen)
+  const toggleKalshiFloat = () => setKalshiFloatPreference(!kalshiFloatOpen)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1614,6 +1628,7 @@ export default function App() {
     togglePulse,
     toggleMtfRsi,
     toggleChilePanel,
+    toggleKalshiFloat,
     toggleOscHud,
     draft,
     modal,
@@ -1632,6 +1647,7 @@ export default function App() {
     togglePulse,
     toggleMtfRsi,
     toggleChilePanel,
+    toggleKalshiFloat,
     toggleOscHud,
     draft,
     modal,
@@ -1719,6 +1735,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleChilePanel()
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        cmd.toggleKalshiFloat()
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1736,6 +1756,7 @@ export default function App() {
     (rsiMeterOpen ? 1 : 0) +
     (mtfRsiOpen ? 1 : 0) +
     (chilePanelOpen ? 1 : 0) +
+    (kalshiFloatOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
@@ -2210,6 +2231,15 @@ export default function App() {
                     Chile panel
                   </MenuItem>
                   <MenuItem
+                    className="floating-kalshi-float"
+                    icon={Crosshair}
+                    selected={kalshiFloatOpen}
+                    shortcut="Alt K"
+                    onClick={toggleKalshiFloat}
+                  >
+                    Kalshi 15m
+                  </MenuItem>
+                  <MenuItem
                     className="floating-cm-macd"
                     icon={ChartColumnBig}
                     selected={cmHudOpen}
@@ -2464,6 +2494,15 @@ export default function App() {
                     hasIndicator={!!chilePanelIndicator}
                     onAddIndicator={() => addBuiltIn('chile-reversal')}
                     onClose={() => setChilePanelPreference(false)}
+                  />
+                )}
+                {/* The running 15-minute contract, live: the window polls its own
+                    data (the coin is the window's own choice), so it needs no feed
+                    from the chart — just a default coin and a place to dock. */}
+                {kalshiFloatOpen && (
+                  <KalshiFloatWindow
+                    product={symbol}
+                    onClose={() => setKalshiFloatPreference(false)}
                   />
                 )}
                 {source !== 'demo' && !hasData && (

@@ -10,3 +10,6 @@ test-results/
 .DS_Store
 
 .arena/
+__pycache__/
+Kalshi-15min/kalshi_flotante.json
+Kalshi-15min/kalshi_flotante.log

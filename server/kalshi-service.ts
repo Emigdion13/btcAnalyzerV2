@@ -4,6 +4,7 @@ import {
   kalshiFeedForProduct,
   kalshiIsoSeconds,
   kalshiMarketRows,
+  kalshiNumeric,
   KALSHI_WINDOW_SECONDS,
   metalFeedForSymbol,
   parseBrtiAnchors,
@@ -17,6 +18,20 @@ import {
   type KalshiStrikeResponse,
   type MetalInterval,
 } from '../shared/kalshi.ts'
+import {
+  floatChance,
+  floatDecimals,
+  floatLiveSymbol,
+  floatPayout,
+  parseFeeMultiplier,
+  parseFloatOrderbook,
+  parseLastTradePrice,
+  parseLiveIndexTick,
+  selectFloatMarket,
+  type FloatMarket,
+  type KalshiFloatBook,
+  type KalshiFloatResponse,
+} from '../shared/kalshi-float.ts'
 import {
   mergeSettlementPoints,
   metalCoverage,
@@ -35,6 +50,19 @@ import { MarketError } from './rest-client.ts'
 /** Recommended production Trade API host. */
 export const KALSHI_REST_ORIGIN = 'https://external-api.kalshi.com'
 const API_ROOT = '/trade-api/v2'
+
+/**
+ * The host of Kalshi's LIVE index feed — the same public, UNDOCUMENTED endpoint
+ * Kalshi's own page reads its "Now" from (verified by the original floating
+ * window's author across all 16 ladders). There is no CF Benchmarks equivalent
+ * for the metals: gold answers here literally as `Metal.Index.1OZGOLD/USD`.
+ *
+ * If Kalshi changes or removes this, `floatFor` degrades by design: crypto falls
+ * back to a Coinbase print (labelled approximate) and the metals show no value.
+ * Nothing on this path is ever authenticated.
+ */
+export const KALSHI_LIVE_ORIGIN = 'https://api.elections.kalshi.com'
+const LIVE_INDEX_PATH = '/v1/live_data/assets'
 
 /** Settled markets per page when walking a metal ladder back through time. */
 export const METAL_PAGE_SIZE = 1000
@@ -102,6 +130,17 @@ export interface KalshiServiceOptions {
   metalPageSize?: number
   /** Maximum pages walked for one metals request. */
   metalPageCap?: number
+  /**
+   * Live Coinbase price for the "Now" fallback, used only when the Kalshi index
+   * feed is down AND the feed is a crypto one (the metals have no public
+   * substitute that is close enough on a 15-minute horizon). Must never throw
+   * to the caller's detriment: a rejection simply means "no fallback".
+   */
+  spotProvider?: (product: string) => Promise<number | null>
+  /** How long the real-time float readings (book, trades, index) are reused, ms. */
+  floatTtl?: number
+  /** Origin of the live index feed. Injectable so tests can point it at a fixture host. */
+  liveOrigin?: string
 }
 
 interface CacheEntry {
@@ -135,6 +174,9 @@ export class KalshiService {
   private metalTtl: number
   private metalPageSize: number
   private metalPageCap: number
+  private spotProvider: ((product: string) => Promise<number | null>) | null
+  private floatTtl: number
+  private liveOrigin: string
   private cache = new Map<string, CacheEntry>()
   private pending = new Map<string, Promise<unknown>>()
   private lastStarted = 0
@@ -142,6 +184,12 @@ export class KalshiService {
   /** Rolling per-product index samples accumulated from the live endpoint. */
   private sampleBuffers = new Map<string, BrtiSample[]>()
   private lastMessage = new Map<string, string>()
+  /** Float reads that just failed: endpoint key -> when to retry, unix ms. */
+  private floatPause = new Map<string, number>()
+  /** Live index symbols that stopped answering: symbol -> when to retry, unix ms. */
+  private liveDead = new Map<string, number>()
+  /** Last known trade per product, so a dropped /trades poll does not jump the %. */
+  private lastKnownTrade = new Map<string, { ticker: string; px: number }>()
 
   constructor(options: KalshiServiceOptions = {}) {
     this.fetcher = options.fetcher ?? fetch
@@ -151,6 +199,11 @@ export class KalshiService {
     this.samplesTtl = options.samplesTtl ?? 3_000
     this.spacing = options.spacing ?? 200
     this.anchorLimit = Math.min(200, Math.max(2, options.anchorLimit ?? 60))
+    this.spotProvider = options.spotProvider ?? null
+    // One client poll is ~1/s; a 1.2s reuse means two overlapping polls never
+    // double the load while the reading stays within ~1s of the data.
+    this.floatTtl = options.floatTtl ?? 1_200
+    this.liveOrigin = options.liveOrigin ?? KALSHI_LIVE_ORIGIN
     // The newest settled page gains a row each quarter hour, so it is cached briefly;
     // every page behind it is immutable and cached for an hour by the caller.
     this.metalTtl = options.metalTtl ?? 20_000
@@ -172,10 +225,20 @@ export class KalshiService {
     return this.keyId !== null && this.privateKey !== null
   }
 
-  private async fetchJson(path: string, ttl: number, authed: boolean): Promise<unknown> {
-    const cacheKey = `${authed ? 'a' : 'p'}:${path}`
-    const cached = this.cache.get(cacheKey)
-    if (cached && this.now() - cached.at < ttl) return cached.value
+  private async fetchJson(
+    path: string,
+    ttl: number,
+    authed: boolean,
+    origin: string = KALSHI_REST_ORIGIN,
+  ): Promise<unknown> {
+    // ttl <= 0 means "never cached" — not even read, not even stored. The real-time
+    // float readings change every second, and their paths turn over with every
+    // contract, so storing them would grow the cache without ever being hit.
+    const cacheKey = `${authed ? 'a' : 'p'}:${origin}${path}`
+    if (ttl > 0) {
+      const cached = this.cache.get(cacheKey)
+      if (cached && this.now() - cached.at < ttl) return cached.value
+    }
     const inflight = this.pending.get(cacheKey)
     if (inflight) return inflight
     if (this.closed) throw new MarketError('The Kalshi service is stopped.', 503, 'STOPPED')
@@ -198,7 +261,7 @@ export class KalshiService {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 10_000)
       try {
-        const response = await this.fetcher(`${KALSHI_REST_ORIGIN}${path}`, {
+        const response = await this.fetcher(`${origin}${path}`, {
           signal: controller.signal,
           headers,
           redirect: 'error',
@@ -229,7 +292,7 @@ export class KalshiService {
     this.pending.set(cacheKey, request)
     try {
       const value = await request
-      this.cache.set(cacheKey, { value, at: this.now() })
+      if (ttl > 0) this.cache.set(cacheKey, { value, at: this.now() })
       return value
     } finally {
       this.pending.delete(cacheKey)
@@ -353,6 +416,297 @@ export class KalshiService {
       asOf,
       message,
     }
+  }
+
+  /**
+   * Everything the floating Kalshi window needs to paint, for one product.
+   *
+   * Port of the snapshot cycle of the standalone floating window. The pieces are
+   * read at different cadences because they change at different speeds:
+   *
+   *   - the market LIST (ticker, target, hours) — short TTL; Kalshi serves it
+   *     from a 15-second cache upstream, and it is only ever used for what does
+   *     not change inside a contract;
+   *   - the order book and the last trade — near-live TTL; this is where the %
+   *     and the "x" multipliers come from, in real time;
+   *   - the live index — near-live TTL; the "Now" price, the number Kalshi
+   *     settles on;
+   *   - the series fee multiplier — an hour; it is a static property of the
+   *     ladder.
+   *
+   * Every failure degrades one labelled part of the response instead of
+   * failing the whole read: no book -> the % falls back to the cached list
+   * (and says so), no index -> a Coinbase print for crypto (and says so), no
+   * market -> a well-formed empty response with the clock still running.
+   */
+  async floatFor(product: string): Promise<KalshiFloatResponse> {
+    const feed = kalshiFeedForProduct(product)
+    if (!feed)
+      throw new MarketError(
+        'Kalshi runs no 15-minute market on this pair.',
+        404,
+        'NO_KALSHI_SERIES',
+      )
+    const asOf = this.now()
+    const nowSec = Math.floor(asOf / 1000)
+    const expectedStart = Math.floor(nowSec / KALSHI_WINDOW_SECONDS) * KALSHI_WINDOW_SECONDS
+
+    let market: FloatMarket | null = null
+    let marketFailure = ''
+    try {
+      let payload = await this.fetchJson(
+        this.marketsPath(feed, 'open', 10),
+        this.strikeTtl,
+        false,
+      )
+      market = selectFloatMarket(payload, nowSec)
+      // Rollover: Kalshi's list is cached 15s upstream and ours for strikeTtl, so
+      // right after the cut it can still carry only the NEXT (future) window.
+      // The clock governs — when the running window is missing from the list, bust
+      // the cache once, but only inside the first half minute of the window;
+      // outside it, a still-missing market is a real gap, not a stale cache, and
+      // this must not hammer the server.
+      const open = market ? kalshiIsoSeconds(market.open_time) : null
+      const staleList = market === null || open === null || open > expectedStart
+      if (staleList && (market === null || nowSec - expectedStart < 30)) {
+        try {
+          const bust = await this.fetchJson(
+            `${this.marketsPath(feed, 'open', 10)}&_=${asOf}`,
+            0,
+            false,
+          )
+          const fresh = selectFloatMarket(bust, nowSec)
+          const freshOpen = fresh ? kalshiIsoSeconds(fresh.open_time) : null
+          if (fresh && freshOpen !== null && freshOpen <= nowSec) {
+            payload = bust
+            market = fresh
+          } else if (market === null && fresh) {
+            market = fresh
+          }
+        } catch {
+          // The bust is an optimisation only: keep what the list had.
+        }
+      }
+    } catch (error) {
+      marketFailure = error instanceof MarketError ? error.message : 'Kalshi is unreachable.'
+    }
+
+    // A window that has not opened yet is not the contract to display: in the
+    // couple of seconds after the cut the list can carry only the NEXT window.
+    // That reads as "waiting for the next contract", the way the standalone
+    // window reads the just-closed one as liquidating — never as a live market
+    // with a countdown to a future cut.
+    if (market) {
+      const selectedOpen = kalshiIsoSeconds(market.open_time)
+      if (selectedOpen !== null && selectedOpen > nowSec) market = null
+    }
+
+    // The real-time readings go out together; each degrades on its own.
+    const symbol = floatLiveSymbol(feed.product)
+    const ticker = market && typeof market.ticker === 'string' ? market.ticker : null
+    const [book, tick, fee, lastTrade] = await Promise.all([
+      ticker ? this.readFloatBook(ticker) : Promise.resolve(null),
+      this.readLiveIndex(symbol),
+      market ? this.readFeeMultiplier(feed) : Promise.resolve(1),
+      ticker ? this.readLastTrade(ticker) : Promise.resolve(null),
+    ])
+    let last = lastTrade
+    if (last !== null && ticker) this.lastKnownTrade.set(feed.product, { ticker, px: last })
+    if (last === null && market) {
+      const known = this.lastKnownTrade.get(feed.product)
+      if (known && known.ticker === ticker) last = known.px
+    }
+
+    let yesBid: number | null = null
+    let yesAsk: number | null = null
+    let noAsk: number | null = null
+    let pctSource: KalshiFloatResponse['pctSource'] = null
+    if (market) {
+      if (book) {
+        yesBid = book.yesBid
+        yesAsk = book.yesAsk
+        noAsk = book.noAsk
+        pctSource = 'book'
+      } else {
+        // Fallback: the prices on the market list, which can be up to ~20s behind
+        // (15s upstream cache + ours). The window labels this in its footer.
+        yesBid = inUnit(market.yes_bid_dollars)
+        yesAsk = inUnit(market.yes_ask_dollars)
+        noAsk = inUnit(market.no_ask_dollars)
+        if (last === null) last = inUnit(market.last_price_dollars)
+        pctSource = 'list'
+      }
+    }
+
+    const upPct = market ? floatChance(yesBid, yesAsk, last) : null
+    const upX = market ? floatPayout(yesAsk, fee) : null
+    const downX = market ? floatPayout(noAsk, fee) : null
+
+    // "Now": the live settlement index; the labelled Coinbase fallback for crypto.
+    let nowPx: number | null = null
+    let nowSource: KalshiFloatResponse['nowSource'] = null
+    let quiet = false
+    if (tick === 'quiet') quiet = true
+    else if (typeof tick === 'number') {
+      nowPx = tick
+      nowSource = 'kalshi'
+    }
+    if (nowPx === null && !isMetalFeed(feed) && this.spotProvider) {
+      try {
+        const spot = await this.spotProvider(feed.product)
+        if (spot !== null && Number.isFinite(spot) && spot > 0) {
+          nowPx = spot
+          nowSource = 'coinbase'
+        }
+      } catch {
+        // No fallback: the footer will say the index is unavailable.
+      }
+    }
+
+    const target = market ? kalshiNumeric(market.floor_strike) : null
+    const openSec = market ? kalshiIsoSeconds(market.open_time) : null
+    const closeSec = market ? kalshiIsoSeconds(market.close_time) : null
+
+    return {
+      source: 'kalshi',
+      product: feed.product,
+      series: feed.series,
+      ticker,
+      target,
+      decimals: floatDecimals(market, target),
+      open: openSec,
+      close: closeSec,
+      upPct,
+      downPct: upPct === null ? null : 100 - upPct,
+      upX,
+      downX,
+      now: nowPx,
+      nowSource,
+      quiet,
+      pctSource,
+      asOf,
+      message: this.floatMessage({
+        feed,
+        hasMarket: !!market,
+        marketFailure,
+        quiet,
+        nowPx,
+        nowSource,
+        pctSource,
+      }),
+    }
+  }
+
+  /** One of the near-live float reads, with a short park after each failure. */
+  private readFloatBook(ticker: string): Promise<KalshiFloatBook | null> {
+    return this.guardedFloatRead('book', async () =>
+      parseFloatOrderbook(
+        await this.fetchJson(
+          `${API_ROOT}/markets/${encodeURIComponent(ticker)}/orderbook`,
+          0,
+          false,
+        ),
+      ),
+    )
+  }
+
+  private readLastTrade(ticker: string): Promise<number | null> {
+    return this.guardedFloatRead('trades', async () =>
+      parseLastTradePrice(
+        await this.fetchJson(
+          `${API_ROOT}/markets/trades?ticker=${encodeURIComponent(ticker)}&limit=1`,
+          0,
+          false,
+        ),
+      ),
+    )
+  }
+
+  /**
+   * Run a near-live read, parking that endpoint briefly on failure (longer when
+   * it is a rate limit) so one dead endpoint cannot stall the whole cycle —
+   * the same discipline the standalone window uses before it retries.
+   */
+  private async guardedFloatRead<T>(
+    key: string,
+    read: () => Promise<T | null>,
+  ): Promise<T | null> {
+    if (this.now() < (this.floatPause.get(key) ?? 0)) return null
+    try {
+      return await read()
+    } catch (error) {
+      const status = error instanceof MarketError ? error.status : 0
+      this.floatPause.set(key, this.now() + (status === 429 ? 30_000 : 5_000))
+      return null
+    }
+  }
+
+  /**
+   * The "Now" value from Kalshi's own live index feed, with per-symbol pauses:
+   * a dead symbol would otherwise cost a full timeout on EVERY poll and make
+   * the whole window flicker "stale" while Kalshi itself is fine.
+   */
+  private async readLiveIndex(symbol: string): Promise<number | 'quiet' | null> {
+    if (this.now() < (this.liveDead.get(symbol) ?? 0)) return null
+    const path = `${LIVE_INDEX_PATH}/${encodeURIComponent(symbol)}/1s?last_sec=10`
+    try {
+      const payload = await this.fetchJson(path, this.floatTtl, false, this.liveOrigin)
+      return parseLiveIndexTick(payload)
+    } catch (error) {
+      const status = error instanceof MarketError ? error.status : 0
+      const pause =
+        status === 400 || status === 404 ? 300_000 : status === 429 ? 60_000 : 15_000
+      this.liveDead.set(symbol, this.now() + pause)
+      return null
+    }
+  }
+
+  /**
+   * The ladder's fee multiplier, cached an hour by the fetch cache; on failure
+   * assume 1 and only retry after a minute, so the network being down never
+   * slows the price cycle down.
+   */
+  private async readFeeMultiplier(feed: KalshiCoinFeed): Promise<number> {
+    const key = `fee:${feed.series}`
+    if (this.now() < (this.floatPause.get(key) ?? 0)) return 1
+    try {
+      const payload = await this.fetchJson(
+        `${API_ROOT}/series/${encodeURIComponent(feed.series)}`,
+        3_600_000,
+        false,
+      )
+      return parseFeeMultiplier(payload)
+    } catch {
+      this.floatPause.set(key, this.now() + 60_000)
+      return 1
+    }
+  }
+
+  /** The footer line: one sentence about where the numbers on screen came from. */
+  private floatMessage(args: {
+    feed: KalshiCoinFeed
+    hasMarket: boolean
+    marketFailure: string
+    quiet: boolean
+    nowPx: number | null
+    nowSource: KalshiFloatResponse['nowSource']
+    pctSource: KalshiFloatResponse['pctSource']
+  }): string {
+    const { feed, hasMarket, marketFailure, quiet, nowPx, nowSource, pctSource } = args
+    let message: string
+    if (!hasMarket) {
+      message = isMetalFeed(feed)
+        ? 'No open contract right now — waiting for the next one'
+        : 'Waiting for the next contract…'
+    } else if (quiet) message = 'The index is not emitting ticks right now (underlying paused)'
+    else if (nowPx !== null && nowSource === 'coinbase')
+      message = 'Now ≈ Coinbase — approximate; the Kalshi index did not answer'
+    else if (nowPx === null) message = 'Now unavailable — the Kalshi index did not answer'
+    else if (pctSource === 'list')
+      message = '% from the market list, up to ~20s delayed (the order book did not answer)'
+    else message = 'Now = the index Kalshi settles on · % from the live order book · read-only'
+    if (marketFailure) message = `${message} · ${marketFailure}`
+    return message
   }
 
   /** One page of settled metal markets, bounded by close time in unix milliseconds. */
@@ -524,6 +878,9 @@ export class KalshiService {
     this.cache.clear()
     this.pending.clear()
     this.sampleBuffers.clear()
+    this.floatPause.clear()
+    this.liveDead.clear()
+    this.lastKnownTrade.clear()
   }
 
   /**
@@ -550,6 +907,11 @@ export class KalshiService {
         this.sampleBuffers.delete(product)
         sampleBuffers++
       }
+    // Expired float pauses and dead-index marks are one-time tripwires, not data.
+    for (const [key, until] of this.floatPause)
+      if (until < this.now()) this.floatPause.delete(key)
+    for (const [symbol, until] of this.liveDead)
+      if (until < this.now()) this.liveDead.delete(symbol)
     return { pages, sampleBuffers }
   }
 }
@@ -578,6 +940,18 @@ export function parseIndexPayload(body: unknown, feed: KalshiCoinFeed): BrtiSamp
     out.push({ time: seconds, value: roundStrike(value, feed.roundDigits) })
   }
   return out.sort((a, b) => a.time - b.time)
+}
+
+/**
+ * A contract price as published on the market list, in (0, 1) or null.
+ *
+ * On the LIST (unlike the order book) "no orders" arrives as 0.0000 / 1.0000
+ * rather than as an empty field, and those sentinels must read as "no quote"
+ * — a 1.0 ask would turn the payout into 1.00x, which is a lie.
+ */
+function inUnit(value: unknown): number | null {
+  const v = typeof value === 'string' ? Number(value) : value
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1 ? v : null
 }
 
 /** Seconds until the next window cut — used to pick a saner poll cadence. */

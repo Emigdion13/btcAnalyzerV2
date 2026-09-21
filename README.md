@@ -77,7 +77,8 @@ Outbound endpoints:
 
 - `https://api.exchange.coinbase.com`
 - `wss://ws-feed.exchange.coinbase.com`
-- `https://external-api.kalshi.com` (public, unauthenticated: strike overlay and silver settlements)
+- `https://external-api.kalshi.com` (public, unauthenticated: strike overlay, silver settlements, and the 15m floating window's order book / trades / series)
+- `https://api.elections.kalshi.com` (public, unauthenticated, **undocumented**: the live settlement index the Kalshi 15m window shows as "Now". Kalshi may change it without notice; when it stops answering, crypto falls back to a labelled Coinbase print and the metals show no value — see [Kalshi 15m floating window](docs/kalshi-float-window.md))
 
 If DNS, TLS, regional restrictions, or network policy prevent access, the UI displays **Coinbase is unavailable** (or a stale-data banner if verified history was already loaded). Use **Retry Coinbase**, check the hosting network, or explicitly switch to **Offline demo**. No API keys can fix blocked network access. This Arena sandbox currently fails direct Coinbase TLS connections; the failure state is intentional and the integration is tested with controlled Coinbase-format fixtures, not claimed to be live-verified here.
 
@@ -102,11 +103,12 @@ Coinbase has no equivalent silver USD product, so silver (`XAG-USD`) remains sou
 - **No synthetic fallback.** A venue failure produces an actionable stale/offline state instead of substituting prices.
 - The venue is named wherever a price appears: **Coinbase** for `PAXG-USD`, **Kalshi** for `XAG-USD`.
 
-Kalshi endpoints remain available for its published metal ladders:
+Kalshi endpoints for its published ladders and the floating window:
 
 - `GET /api/kalshi/metals`
 - `GET /api/kalshi/metals/history?symbol=XAG-USD&interval=15m&limit=300`
 - `GET /api/kalshi/strike?product=BTC-USD`
+- `GET /api/kalshi/float?product=BTC-USD` — the running 15-minute market: strike, the displayed % (live order book + last trade), the net payout multipliers, and the settlement index ("Now")
 
 ## What works
 
@@ -122,6 +124,7 @@ Kalshi endpoints remain available for its published metal ladders:
 - **RSI meter:** the RSI reading as a floating window on the chart instead of a whole oscillator pane — value, bar-over-bar change, the 30/50/70 meter and the overbought/oversold call, draggable and minimizable. The toolbar **RSI** button (and the workspace menu) own the window; RSI also stays in the indicator library, and the two share one length, so promoting the window's indicator gives you the pane without re-typing a period.
 - **MTF RSI window:** one floating panel with the RSI and a tendency call for 1m, 5m, 15m, 30m and 1h at once. The tendency — bullish / bearish / in range — is deliberately not read off RSI alone: a fused trend-quality score (Wilder ADX(14) 45%, Kaufman efficiency ratio 35%, ATR-normalized EMA(20) slope 20%) drives a hysteretic trend/range gate (≥55 in, <45 out), direction is a two-of-three vote of +DI/−DI, the slope's sign and RSI outside its 45–55 no-man's land, and a label only moves after two consecutive disagreeing readings. Higher timeframes carry more of the overall bias (1h weighs five times the 1m; ranges abstain). **Alt R** toggles it; see [MTF RSI window](docs/mtf-rsi-window.md).
 - **Chile panel:** the corner readout of _ROBEX IA CHILERA V17 PRO_ as a floating window — the call for the next round (UP / DOWN / WAIT), the countdown to it, each side's share of the 14-contributions-a-side score, buyers/sellers from close position in the bar, volume vs its 20-bar average, the round-timeframe RSI, the trend call and the S/R state, with the contributions behind the call as chips. It borrows the chart's Chile Reversal profile and reads the newest bar of that indicator's own engine result, so the panel and the overlay can never disagree. **Alt L** toggles it; see [Chile panel](docs/chile-panel.md).
+- **Kalshi 15m window:** the running Kalshi 15-minute up/down contract as a floating window, in the shape Kalshi's own page shows it — the target (the exact `floor_strike`) with its open time in Kalshi's US-Eastern clock, the **Now** value of the index the market settles on (the same public endpoint Kalshi's page reads, with a labelled Coinbase fallback for crypto), the Up/Down % **as Kalshi displays it** (last trade clamped to the live order book), the net payout multipliers, and a countdown to the cut with the window's progress bar. Coin chips follow the user, not the chart. Read-only market data polled once a second; a six-second-old snapshot is dimmed and stamped **STALE**, never drawn as live. **Alt K** toggles it; see [Kalshi 15m floating window](docs/kalshi-float-window.md).
 - **CM MACD, WaveTrend, RSI Divergence & VIX Fix windows:** the last twenty minutes of `CM_Ult_MacD_MTF`, `WaveTrend [LazyBear]`, `RSI Divergence`, and `CM_Williams_Vix_Fix` as floating windows on the chart, each zoomed to its own scale — bars wide enough to read a single wave, the original colour rules (aqua/blue/red/maroon histogram, lime MACD and yellow signal with the crossover dots; green wt1, dotted red wt2 and the blue area between them; violet RSI line with 70/50/30 levels and divergence detection; lime/gray fear histogram with the aqua upper band and orange range-high), and the overbought/oversold bands as soon as the window's own scale reaches them. They plot the values the pane plots, so a window and a pane can never disagree, and the numbers follow the bar your crosshair is on. The toolbar **Floating** selector — one dropdown for every floating window — owns the windows (or **Alt M**, **Alt W**, **Alt D**, **Alt V**); each one drags, minimizes, zooms by ±4 bars, and keeps its position and zoom. With no matching indicator on the chart a window runs the published defaults and offers the pane, so its settings stay one click away.
 - **Bar replay:** step backward/forward, pause/play, and 1×/2×/5×/10× playback through a frozen snapshot of the loaded history.
 - **Alerts:** one-time in-app price-condition notifications against the selected, connected feed. No email, background monitoring, or trading integration.
@@ -424,6 +427,19 @@ Drag it anywhere inside the chart (the position persists), minimize it to a sing
 - **One stream, not six.** The ladder rides the same shared indicator feeds every multi-timeframe consumer uses, de-duplicated against the chart's own resolution (that rung is the chart candles). Demo mode runs its synthetic history and says so; **bar replay never reads live candles** — the window stays closed.
 
 The arithmetic is pure and unit-tested in `src/lib/mtf-rsi.ts`; the panel is `src/components/MtfRsiWindow.tsx`. Methodology, thresholds, and their sources: [MTF RSI window](docs/mtf-rsi-window.md).
+
+## Kalshi 15m window
+
+**Kalshi 15m** answers, on one floating panel, the question the strike line leaves open: _what is the running 15-minute contract doing right now?_ **Alt K** toggles it (the **Floating** selector also owns it); it starts open on roomy viewports (1050×940+, the Candle Pulse rule), drags, minimizes to a coin/%/countdown line, and remembers its position and your coin. It is a port of the standalone floating window from the `Kalshi-15min/` folder, rebuilt on the app's same-origin Kalshi transport.
+
+- **The target, spelled Kalshi's way.** The market's `floor_strike` — the exact strike the contract settles on — with its open time in **US Eastern**, the clock Kalshi's own page shows.
+- **Now is the settlement index.** The live value comes from the same public, undocumented endpoint Kalshi's page reads its "Now" from (`api.elections.kalshi.com/v1/live_data/assets/{SYM}/1s`), green above the target, red below. Crypto falls back to a Coinbase print **labelled approximate**; the metals have no labelled substitute at all — nothing public is close enough on a 15-minute horizon.
+- **The % is what Kalshi displays: the last trade, clamped to the live book.** Not the bid, the ask, or the midpoint — deduced from real observations and pinned by tests. The order book and last trade come from the uncached endpoints; the 15-second-cached market list is a labelled amber fallback, never the primary source.
+- **The "x" is net of the taker fee.** `1 / (ask + 0.07 · m · ask · (1 − ask))` with the series' published `fee_multiplier` — the same numbers under each side on kalshi.com.
+- **The clock governs at the cut.** A window that opened in the future is not the running contract — the panel waits rather than counting down to a future cut — and the first half-minute after a cut busts the local cache once instead of trusting a stale list.
+- **Old never looks live.** Every failure degrades one labelled part of the snapshot (footer, amber), and once the last good snapshot is six seconds old the whole window dims and the tag reads **STALE**.
+
+Read-only like everything else: public market data, no API key, no orders — the pills are indicators, not buttons. The logic is pure and unit-tested in `shared/kalshi-float.ts`; the snapshot is `KalshiService.floatFor` (`/api/kalshi/float`); the window is `src/components/KalshiFloatWindow.tsx`. Methodology and failure modes: [Kalshi 15m floating window](docs/kalshi-float-window.md).
 
 ## AI — removed from the app, engines kept on disk
 

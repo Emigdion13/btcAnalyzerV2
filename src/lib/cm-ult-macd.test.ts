@@ -340,6 +340,19 @@ describe('multi-timeframe security() projection', () => {
     expect(requestedIndicatorTimeframes([cm, smc], '15m', ['1h'])).toEqual(['1h', '4h'])
     expect(requestedIndicatorTimeframes([], '15m', ['4h', '1h'])).toEqual(['1h', '4h'])
     expect(requestedIndicatorTimeframes([], '15m', ['15m'])).toEqual([])
+    // A Chile indicator reads two resolutions off the chart: the round its pivots come from and
+    // the 5m bar behind its momentum points. On a 15m chart the round feed is the chart itself.
+    const chile: Indicator = {
+      id: 'chile',
+      kind: 'chile-reversal',
+      name: 'Chile Reversal',
+      period: 2,
+      color: '#00e191',
+      visible: true,
+    }
+    expect(requestedIndicatorTimeframes([chile], '1m')).toEqual(['15m', '5m'])
+    expect(requestedIndicatorTimeframes([chile], '15m')).toEqual(['5m'])
+    expect(requestedIndicatorTimeframes([{ ...chile, visible: false }], '1m')).toEqual([])
     expect(cmMacdSettings({ ...indicator, cmMacd: { ...defaults, slowLength: 0 } })).toEqual(
       defaults,
     )

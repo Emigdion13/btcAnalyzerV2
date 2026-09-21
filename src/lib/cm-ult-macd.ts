@@ -10,7 +10,11 @@ import { williamsVixFixIndicatorLabel } from './cm-williams-vix-fix'
 import { rsiDivergenceIndicatorLabel } from './rsi-divergence'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
 import { srBreaksRetestsIndicatorLabel } from './sr-breaks-retests'
-import { chileReversalIndicatorLabel, chileReversalSettings } from './chile-reversal'
+import {
+  chileRequestedTimeframes,
+  chileReversalIndicatorLabel,
+  chileReversalSettings,
+} from './chile-reversal'
 import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
 import { tuxEmaScalperIndicatorLabel } from './tux-ema-scalper'
 import { tmoScalperFeeds, tmoScalperIndicatorLabel, tmoScalperSettings } from './tmo-scalper'
@@ -138,9 +142,11 @@ export function requestedIndicatorTimeframes(
     )
     .map((indicator) => smcSettings(indicator).fvgTimeframe)
     .filter((resolution): resolution is Timeframe => !!resolution)
+  // The Chile port reads two resolutions off the chart: the round its pivots come from, and the
+  // 5m bar behind the momentum points.
   const chileResolutions = indicators
     .filter((indicator) => indicator.kind === 'chile-reversal' && indicator.visible)
-    .map((indicator) => chileReversalSettings(indicator).resolution)
+    .flatMap((indicator) => chileRequestedTimeframes(chileReversalSettings(indicator), chart))
   const tmoResolutions = indicators
     .filter((indicator) => indicator.kind === 'tmo-scalper' && indicator.visible)
     .flatMap((indicator) => tmoScalperFeeds(tmoScalperSettings(indicator)))

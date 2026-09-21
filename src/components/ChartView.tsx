@@ -411,6 +411,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               timeframe,
               timeframes: indicatorTimeframes,
               replay,
+              // `barstate.isconfirmed`: on a live feed the newest bar has not closed yet, so it
+              // must not print an ARRIBA/ABAJO label that the next tick could contradict.
+              nowSeconds: Date.now() / 1000,
             }),
           }
         }),
@@ -2683,23 +2686,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (!overlay) return '—'
     const { result, settings } = overlay
     if (result.missingFeed) return `${result.resolution} feed…`
-    const last = result.signals.at(-1)
-    if (!last) return `${result.levels.length} levels`
-    const text =
-      last.kind === 'bounce-support'
-        ? 'Bounce'
-        : last.kind === 'reject-resistance'
-          ? 'Reject'
-          : last.kind === 'break-resistance'
-            ? 'Break R'
-            : 'Break S'
+    const last = result.last
+    const call = last ? `${last.scoreUp}/${last.scoreDown} pts` : ''
+    const signal = result.signals.at(-1)
+    if (!signal) return call ? `${call} · no call yet` : `${result.levels.length} levels`
     const latestTime = candles.at(-1)?.time
-    // Without the age a stale signal reads like a permanent fixture of the chart.
-    const age = latestTime === undefined ? '' : ` · ${chileSignalAge(latestTime - last.time)}`
-    // With a marker lifetime, say where the newest print stands in it: the
-    // legend is the only trace left once a marker has faded off the price pane.
+    // Without the age a stale label reads like a permanent fixture of the chart.
+    const age = latestTime === undefined ? '' : ` · ${chileSignalAge(latestTime - signal.time)}`
+    // With a marker lifetime, say where the newest label stands in it: the legend is the only
+    // trace left once it has faded off the price pane.
     const expiry = chileMarkerExpiry(
-      last,
+      signal,
       nowSeconds,
       barSeconds,
       settings.markerTtlSeconds,
@@ -2712,7 +2709,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         : expiry.fadeDelaySeconds <= 0
           ? ' · fading'
           : ''
-    return `${text} ${last.levelKind}${age}${state}`
+    return `${signal.kind === 'arriba' ? 'ARRIBA' : 'ABAJO'} ${signal.scoreUp}/${signal.scoreDown}${age}${state}`
   }
 
   const renderChileReversalOverlay = (overlay: (typeof chileReversalOverlays)[number]) => {
@@ -2720,47 +2717,153 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (!candles.length) return null
     const lastIndex = candles.length - 1
 
-    const zones = settings.showZones
+    /**
+     * A Pine `plot(..., style=plot.style_linebr)` as an SVG path: the pen lifts on `na`, so gaps in
+     * the series stay gaps instead of being bridged.
+     */
+    const linePath = (values: (number | null)[]) => {
+      let d = ''
+      let pen = false
+      for (let i = 0; i < candles.length; i++) {
+        const value = values[i]
+        const candle = candles[i]
+        if (value === null || value === undefined || !candle) {
+          pen = false
+          continue
+        }
+        const point = position({ time: candle.time, price: value })
+        if (!point) {
+          pen = false
+          continue
+        }
+        d += `${pen ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)} `
+        pen = true
+      }
+      return d.trim()
+    }
+
+    /** Pine `fill(pEMA9, pEMA21)` — the area between the two EMAs. */
+    const areaBetween = (upper: (number | null)[], lower: (number | null)[]) => {
+      const forward: string[] = []
+      const backward: string[] = []
+      for (let i = 0; i < candles.length; i++) {
+        const a = upper[i]
+        const b = lower[i]
+        const candle = candles[i]
+        if (a === null || a === undefined || b === null || b === undefined || !candle) continue
+        const top = position({ time: candle.time, price: a })
+        const bottom = position({ time: candle.time, price: b })
+        if (!top || !bottom) continue
+        forward.push(`${forward.length ? 'L' : 'M'}${top.x.toFixed(1)} ${top.y.toFixed(1)}`)
+        backward.unshift(`L${bottom.x.toFixed(1)} ${bottom.y.toFixed(1)}`)
+      }
+      if (forward.length < 2) return ''
+      return `${forward.join(' ')} ${backward.join(' ')} Z`
+    }
+
+    const emaColor =
+      (result.ema9[lastIndex] ?? 0) >= (result.ema21[lastIndex] ?? 0)
+        ? settings.supportColor
+        : settings.resistanceColor
+
+    const plots = (
+      <g data-testid="chile-reversal-plots">
+        {settings.showEma && (
+          <path
+            d={areaBetween(result.ema9, result.ema21)}
+            fill={emaColor}
+            fillOpacity={0.08}
+            stroke="none"
+          />
+        )}
+        {settings.showVwap && (
+          <path
+            d={linePath(result.vwap)}
+            fill="none"
+            stroke={CHILE_REVERSAL_COLORS.vwap}
+            strokeOpacity={0.65}
+            strokeWidth={1}
+          />
+        )}
+        {settings.showEma && (
+          <>
+            <path
+              d={linePath(result.ema9)}
+              fill="none"
+              stroke={emaColor}
+              strokeOpacity={0.9}
+              strokeWidth={2}
+            />
+            <path
+              d={linePath(result.ema21)}
+              fill="none"
+              stroke={emaColor}
+              strokeOpacity={0.65}
+              strokeWidth={1}
+            />
+          </>
+        )}
+        {settings.showTrend && (
+          <path
+            data-testid="chile-reversal-trend"
+            d={linePath(result.supertrend)}
+            fill="none"
+            stroke={
+              result.supertrendUp[lastIndex] === false
+                ? settings.resistanceColor
+                : settings.supportColor
+            }
+            strokeWidth={3}
+            strokeOpacity={0.9}
+          />
+        )}
+      </g>
+    )
+
+    // Pine `line.new(bar_index - largoLinea, nivel, bar_index + 5, nivel)` plus its price label.
+    const levels = settings.showLevels
       ? result.levels.map((level) => {
-          // The Pine boxes span `bar_index - largoZona` to `bar_index + 7`;
-          // here the zone is anchored to the visible window's right edge.
-          const left = srPoint(Math.max(0, lastIndex - 28), level.price + level.zone)
-          const right = srPoint(lastIndex + 2, level.price - level.zone)
+          const left = srPoint(Math.max(0, lastIndex - settings.lineLength), level.price)
+          const right = srPoint(lastIndex + 5, level.price)
           if (!left || !right) return null
-          const x = Math.min(left.x, right.x)
-          const width = Math.max(2, Math.abs(right.x - left.x))
-          const y = Math.min(left.y, right.y)
-          const height = Math.max(1, Math.abs(right.y - left.y))
-          const color = level.side === 'support' ? settings.supportColor : settings.resistanceColor
           const secondary = level.kind === 'R2' || level.kind === 'S2'
+          const color =
+            level.side === 'support'
+              ? secondary
+                ? CHILE_REVERSAL_COLORS.supportStrong
+                : settings.supportColor
+              : secondary
+                ? CHILE_REVERSAL_COLORS.resistanceStrong
+                : settings.resistanceColor
+          const labelAt = srPoint(lastIndex + 6, level.price)
           return (
-            <g key={`chile-level:${level.kind}`} data-testid="chile-reversal-zone">
+            <g key={`chile-level:${level.kind}`} data-testid="chile-reversal-level">
               <title>
                 {level.kind} {level.price.toFixed(2)}
                 {level.fallback ? ' · mini-range fallback' : ' · pivot'}
               </title>
-              <rect
-                x={x}
-                y={y}
-                width={width}
-                height={height}
-                fill={color}
-                fillOpacity={secondary ? 0.1 : 0.16}
+              <line
+                x1={left.x}
+                y1={left.y}
+                x2={right.x}
+                y2={right.y}
                 stroke={color}
-                strokeWidth={secondary ? 1 : 2}
+                strokeWidth={secondary ? 2 : 3}
                 strokeDasharray={level.fallback ? '4 3' : undefined}
               />
-              <ChartMessageText
-                x={x + width - 4}
-                y={y + height / 2 + 3}
-                color={color}
-                size={9}
-                weight={700}
-                anchor="end"
-                className="chile-reversal-label"
-              >
-                {level.kind}
-              </ChartMessageText>
+              {labelAt && (
+                <ChartMessageText
+                  x={labelAt.x}
+                  y={labelAt.y - 4}
+                  color={color}
+                  size={9}
+                  weight={700}
+                  anchor="start"
+                  className="chile-reversal-label"
+                >
+                  {`${level.kind}  ${level.price.toFixed(2)}`}
+                </ChartMessageText>
+              )}
             </g>
           )
         })
@@ -2768,13 +2871,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
 
     return (
       <g key={indicator.id} data-testid="chile-reversal-overlay">
-        {zones}
+        {plots}
+        {levels}
         {displayedChileSignals(result.signals)
           .map((signal) => ({
             signal,
-            // Markers are alerts, not annotations: each holds full strength for
-            // its lifetime, then the CSS fade takes it to nothing. A lifetime of
-            // 0 keeps the old always-on behavior (expiry null).
+            // Labels are alerts, not annotations: each holds full strength for its lifetime, then
+            // the CSS fade takes it to nothing. A lifetime of 0 keeps them until the count cap.
             expiry: chileMarkerExpiry(
               signal,
               chileNowSeconds,
@@ -2794,29 +2897,15 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             const candle = candles[signal.index]
             if (!candle) return null
             const bullish = signal.side === 'bullish'
-            const anchor = position({
-              time: candle.time,
-              price: bullish ? candle.low : candle.high,
-            })
+            const anchor = position({ time: candle.time, price: signal.price })
             if (!anchor) return null
-            const isBreak = signal.kind === 'break-resistance' || signal.kind === 'break-support'
-            const color = isBreak
-              ? CHILE_REVERSAL_COLORS.breakout
-              : bullish
-                ? settings.supportColor
-                : settings.resistanceColor
-            const size = 8
-            const gap = 9
+            const color = bullish ? settings.supportColor : settings.resistanceColor
+            const text = bullish ? 'ARRIBA' : 'ABAJO'
+            const size = 9
+            const gap = 8
+            // `shape.labelup` sits below the bar, `shape.labeldown` above it.
             const tipY = bullish ? anchor.y + gap : anchor.y - gap
             const baseY = bullish ? tipY + size : tipY - size
-            const glyph =
-              signal.kind === 'bounce-support'
-                ? 'Bounce'
-                : signal.kind === 'reject-resistance'
-                  ? 'Reject'
-                  : signal.kind === 'break-resistance'
-                    ? 'Break'
-                    : 'Break'
             return (
               <g
                 key={`chile-reversal:${signal.kind}:${signal.index}`}
@@ -2826,9 +2915,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                 style={
                   expiry
                     ? {
-                        // The class carries name/timing/fill-mode; the inline
-                        // duration and delay place this marker on the shared
-                        // fade timeline (a negative delay resumes mid-fade).
+                        // The class carries name/timing/fill-mode; the inline duration and delay
+                        // place this label on the shared fade timeline (a negative delay resumes
+                        // mid-fade).
                         animationDuration: `${Math.max(settings.markerFadeSeconds, 0.01)}s`,
                         animationDelay: `${expiry.fadeDelaySeconds}s`,
                       }
@@ -2836,25 +2925,15 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                 }
               >
                 <title>
-                  {glyph} · {signal.levelKind} {signal.level.toFixed(2)}
+                  {text} · {signal.scoreUp} vs {signal.scoreDown} points ·{' '}
+                  {signal.time.toLocaleString?.() ?? signal.time}
                 </title>
-                {isBreak ? (
-                  <rect
-                    x={anchor.x - size * 0.7}
-                    y={Math.min(tipY, baseY)}
-                    width={size * 1.4}
-                    height={size}
-                    fill={color}
-                    fillOpacity={0.9}
-                  />
-                ) : (
-                  <path
-                    d={`M ${anchor.x} ${tipY} L ${anchor.x - size * 0.85} ${baseY} L ${anchor.x + size * 0.85} ${baseY} Z`}
-                    fill={color}
-                    stroke={color}
-                    strokeWidth={0.7}
-                  />
-                )}
+                <path
+                  d={`M ${anchor.x} ${tipY} L ${anchor.x - size} ${baseY} L ${anchor.x + size} ${baseY} Z`}
+                  fill={color}
+                  stroke={color}
+                  strokeWidth={0.7}
+                />
                 <ChartMessageText
                   x={anchor.x}
                   y={bullish ? baseY + 12 : baseY - 6}
@@ -2864,7 +2943,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                   anchor="middle"
                   className="chile-reversal-label"
                 >
-                  {glyph}
+                  {text}
                 </ChartMessageText>
               </g>
             )

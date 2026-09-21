@@ -74,7 +74,14 @@ import { TimeframePeekBox } from './components/TimeframePeekBox'
 import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { MtfRsiWindow } from './components/MtfRsiWindow'
 import type { MtfRsiRowFeed } from './components/MtfRsiWindow'
+import { ChilePanelWindow } from './components/ChilePanelWindow'
 import { MTF_RSI_TIMEFRAMES } from './lib/mtf-rsi'
+import {
+  CHILE_MOMENTUM_TIMEFRAME,
+  calculateChileReversal,
+  chileRequestedTimeframes,
+  chileReversalSettings,
+} from './lib/chile-reversal'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
@@ -123,7 +130,11 @@ import {
   timeframePeekSettings,
 } from './lib/timeframe-peek'
 import type { TimeframePeekSettings } from './lib/timeframe-peek'
-import { candlePulseDefaultVisible, mtfRsiDefaultVisible } from './lib/floating-window'
+import {
+  candlePulseDefaultVisible,
+  chilePanelDefaultVisible,
+  mtfRsiDefaultVisible,
+} from './lib/floating-window'
 import {
   isRsiMeterIndicator,
   promotedRsiMeterIndicator,
@@ -348,6 +359,14 @@ export default function App() {
     null,
   )
   const mtfRsiOpen = mtfRsiPreference ?? mtfRsiDefaultVisible(window.innerWidth, window.innerHeight)
+  // The floating Chile panel: the V17 score readout for the next round. Same contract as the
+  // other windows — null means "never chosen" and defers to the default.
+  const [chilePanelPreference, setChilePanelPreference] = useLocalState<boolean | null>(
+    'chile-panel-visible',
+    null,
+  )
+  const chilePanelOpen =
+    chilePanelPreference ?? chilePanelDefaultVisible(window.innerWidth, window.innerHeight)
   // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
   // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
   // pane. Same contract as the RSI meter — null means "never chosen" and a real choice from the
@@ -574,6 +593,24 @@ export default function App() {
   const pulseActive = pulseVisible && replayIndex === null
   // The MTF RSI window reads real feeds for its ladder; in replay it stays closed with the rest.
   const mtfRsiActive = mtfRsiOpen && replayIndex === null
+  /**
+   * The Chile panel's profile: the chart's own Chile Reversal indicator when there is one, so the
+   * window and the overlay always read the same pivots and zone; the published defaults when there
+   * is not, which is what every other window-only readout does. A hidden indicator still supplies
+   * the profile, exactly as the oscillator windows do.
+   */
+  const chilePanelIndicator = useMemo(
+    () => indicators.find((indicator) => indicator.kind === 'chile-reversal') ?? null,
+    [indicators],
+  )
+  const chilePanelSettings = useMemo(
+    () =>
+      chilePanelIndicator
+        ? chileReversalSettings(chilePanelIndicator)
+        : { ...CHILE_REVERSAL_DEFAULTS },
+    [chilePanelIndicator],
+  )
+  const chilePanelActive = chilePanelOpen && replayIndex === null
   const indicatorTimeframes = useMemo(
     () =>
       requestedIndicatorTimeframes(indicators, timeframe, [
@@ -585,6 +622,9 @@ export default function App() {
         // A window-only CM MACD on another resolution cannot be computed from chart candles, so
         // its source feed has to be asked for here: the visible-indicator walk above misses it.
         ...oscHudRequestedTimeframes(indicators, timeframe, oscHudOpen),
+        // The Chile panel's two reads off the chart resolution: its round (pivot) timeframe and
+        // the 5m momentum bar. A visible indicator's own walk already asks for both.
+        ...(chilePanelActive ? chileRequestedTimeframes(chilePanelSettings, timeframe) : []),
       ]),
     [
       indicators,
@@ -595,6 +635,8 @@ export default function App() {
       effectivePulseTimeframe,
       mtfRsiActive,
       oscHudOpen,
+      chilePanelActive,
+      chilePanelSettings,
     ],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
@@ -715,6 +757,35 @@ export default function App() {
     source,
     feedActive,
   ])
+  /**
+   * Everything the Chile panel window reads. The overlay engine runs here too, on the same
+   * candles and the same profile the chart uses, so the panel's reversal points and S/R state are
+   * the markers on the chart and not a second opinion of them. Feeds that have not answered yet
+   * stay empty: the window says so instead of scoring against invented bars.
+   */
+  const chilePanelModel = useMemo(() => {
+    if (!chilePanelActive || !candles.length) return null
+    const resolution: Timeframe = chilePanelSettings.resolution
+    const roundFeed = resolution === timeframe ? undefined : nativeTimeframes[resolution]
+    const momentumFeed =
+      CHILE_MOMENTUM_TIMEFRAME === timeframe
+        ? undefined
+        : nativeTimeframes[CHILE_MOMENTUM_TIMEFRAME]
+    const timeframes: Record<string, { candles: Candle[] }> = {}
+    if (resolution !== timeframe)
+      timeframes[resolution] = { candles: roundFeed?.candles ?? EMPTY_CANDLES }
+    if (CHILE_MOMENTUM_TIMEFRAME !== timeframe)
+      timeframes[CHILE_MOMENTUM_TIMEFRAME] = { candles: momentumFeed?.candles ?? EMPTY_CANDLES }
+    return {
+      result: calculateChileReversal(candles, chilePanelSettings, {
+        timeframe,
+        timeframes,
+        nowSeconds: Date.now() / 1000,
+      }),
+      roundState: roundFeed?.state ?? feedState,
+      momentumState: momentumFeed?.state ?? feedState,
+    }
+  }, [chilePanelActive, chilePanelSettings, candles, timeframe, nativeTimeframes, feedState])
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
   const history = drawingHistory[drawKey]
@@ -1529,6 +1600,7 @@ export default function App() {
   const togglePeek = () => setPeekPreference(!peekVisible)
   const togglePulse = () => setPulsePreference(!pulseVisible)
   const toggleMtfRsi = () => setMtfRsiPreference(!mtfRsiOpen)
+  const toggleChilePanel = () => setChilePanelPreference(!chilePanelOpen)
   const commandsRef = useRef({
     saveScript,
     applyScript,
@@ -1541,6 +1613,7 @@ export default function App() {
     togglePeek,
     togglePulse,
     toggleMtfRsi,
+    toggleChilePanel,
     toggleOscHud,
     draft,
     modal,
@@ -1558,6 +1631,7 @@ export default function App() {
     togglePeek,
     togglePulse,
     toggleMtfRsi,
+    toggleChilePanel,
     toggleOscHud,
     draft,
     modal,
@@ -1641,6 +1715,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleMtfRsi()
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        cmd.toggleChilePanel()
+      }
       if (event.key === '+' || event.key === '=') chartRef.current?.zoom(0.75)
       if (event.key === '-') chartRef.current?.zoom(1.3)
       if (event.key === '?') cmd.openDocs('shortcuts')
@@ -1657,6 +1735,7 @@ export default function App() {
     (pulseVisible ? 1 : 0) +
     (rsiMeterOpen ? 1 : 0) +
     (mtfRsiOpen ? 1 : 0) +
+    (chilePanelOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
@@ -1778,6 +1857,16 @@ export default function App() {
                   }}
                 >
                   {mtfRsiOpen ? 'Hide MTF RSI window' : 'Show MTF RSI window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Flame}
+                  selected={chilePanelOpen}
+                  onClick={() => {
+                    toggleChilePanel()
+                    close()
+                  }}
+                >
+                  {chilePanelOpen ? 'Hide Chile panel' : 'Show Chile panel'}
                 </MenuItem>
                 <MenuItem
                   icon={ChartColumnBig}
@@ -2112,6 +2201,15 @@ export default function App() {
                     MTF RSI
                   </MenuItem>
                   <MenuItem
+                    className="floating-chile-panel"
+                    icon={Flame}
+                    selected={chilePanelOpen}
+                    shortcut="Alt L"
+                    onClick={toggleChilePanel}
+                  >
+                    Chile panel
+                  </MenuItem>
+                  <MenuItem
                     className="floating-cm-macd"
                     icon={ChartColumnBig}
                     selected={cmHudOpen}
@@ -2353,6 +2451,19 @@ export default function App() {
                     ticker={asset.ticker}
                     rows={mtfRsiRows}
                     onClose={() => setMtfRsiPreference(false)}
+                  />
+                )}
+                {chilePanelActive && hasData && chilePanelModel && (
+                  <ChilePanelWindow
+                    ticker={asset.ticker}
+                    source={source}
+                    settings={chilePanelSettings}
+                    result={chilePanelModel.result}
+                    roundState={chilePanelModel.roundState}
+                    momentumState={chilePanelModel.momentumState}
+                    hasIndicator={!!chilePanelIndicator}
+                    onAddIndicator={() => addBuiltIn('chile-reversal')}
+                    onClose={() => setChilePanelPreference(false)}
                   />
                 )}
                 {source !== 'demo' && !hasData && (

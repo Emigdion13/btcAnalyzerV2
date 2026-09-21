@@ -1140,6 +1140,7 @@ const SHORTCUTS = [
   ['CM Williams VIX Fix window', 'Alt V'],
   ['TMO Scalper window', 'Alt O'],
   ['MTF RSI window', 'Alt R'],
+  ['Chile panel window', 'Alt L'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

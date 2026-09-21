@@ -933,9 +933,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const base = {
       // Outlier-resistant fit: one glitch print in a wick must not flatten the
       // candles (see price-autoscale). Applies to every auto-fit of the pane.
+      // Line/area draw closes only, so they keep the native close-based range.
       autoscaleInfoProvider: candleAutoscale(
         () => propsRef.current.candles,
         () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null,
+        chartType === 'candles' || chartType === 'hollow' || chartType === 'bars',
       ),
       priceFormat: {
         type: 'custom' as const,

@@ -94,13 +94,19 @@ export function robustPriceRange(
  * range, with the base implementation's pixel margins preserved. Falls back to
  * the native range whenever the robust one cannot be computed (no data, no
  * visible window yet).
+ *
+ * `useWicks` should only be set for series that draw OHLC bars (candles, hollow,
+ * bars). Line and area charts draw closes only — their native close-based range
+ * is already glitch-resistant enough, and wick clamping has no meaning there.
  */
 export function candleAutoscale(
   getCandles: () => readonly Ohlc[],
   getVisibleLogicalRange: () => IRange<Logical> | null,
+  useWicks = true,
 ): AutoscaleInfoProvider {
   return (baseImplementation): AutoscaleInfo | null => {
     const base = baseImplementation()
+    if (!useWicks) return base
     const window = getVisibleLogicalRange()
     if (!window) return base
     // One bar of slack on each side: the scale's visible window can differ

@@ -116,6 +116,22 @@ describe('candleAutoscale provider', () => {
     expect(info!.margins).toEqual({ above: 3, below: 4 })
   })
 
+  it('leaves line/area charts on the native close-based range', () => {
+    const candles = quietMarket()
+    candles[100] = { ...candles[100], high: 200_000 }
+    const native = {
+      priceRange: { minValue: 66_000, maxValue: 67_500 },
+      margins: { above: 1, below: 1 },
+    }
+    expect(
+      candleAutoscale(
+        () => candles,
+        () => logicals(candles),
+        false,
+      )(() => native),
+    ).toEqual(native)
+  })
+
   it('falls back to the native range with no visible window or data', () => {
     const candles = quietMarket()
     expect(

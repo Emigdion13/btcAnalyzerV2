@@ -448,74 +448,71 @@ export const TUX_EMA_SCALPER_DEFAULTS: Readonly<TuxEmaScalperSettings> = {
 }
 
 /**
- * Settings for Chile Reversal — the reversal core of "ROBEX IA CHILERA V18
- * PRO", ported to Atlas. The fields mirror the Pine inputs the reversal logic
- * actually depends on; the trend-scoring inputs are deliberately absent.
+ * Settings for Chile Reversal — the Atlas port of "ROBEX IA CHILERA V17 PRO".
+ * The fields mirror the Pine inputs one for one; the two marker-lifetime fields
+ * are Atlas additions, because an SVG overlay has no `max_labels_count` to
+ * garbage-collect behind it.
  */
 export interface ChileReversalSettings {
-  /** Timeframe the pivots come from. Pine hard-codes "15". */
+  /** Timeframe the pivots and the round come from. Pine hard-codes "15". */
   resolution: Timeframe
+  /** Pine input: "Fuerza minima" (6) — points one side needs before it is called. */
+  minScore: number
+  /** Pine input: "Ventaja minima" (2) — points one side needs over the other. */
+  minEdge: number
   /** Pine input: "Pivot 15M izquierda" (2). */
   pivotLeft: number
   /** Pine input: "Pivot 15M derecha" (2). */
   pivotRight: number
   /** Pine input: "Distancia maxima S/R en ATR" (2.5). */
   maxDistanceAtr: number
-  /** Pine input: "Grosor rectangulo S/R en ATR" (0.10) — zone half-thickness. */
-  zoneThicknessAtr: number
+  /** Pine input: "Largo lineas S/R" (35) — how many bars back the level lines reach. */
+  lineLength: number
+  /** Pine input: "Sensibilidad ROBEX Trend" (2.4) — supertrend ATR multiplier. */
+  trendFactor: number
+  /** Pine input: "ATR ROBEX Trend" (10) — supertrend ATR length. */
+  trendAtrLength: number
+  /** Pine input: "Mostrar ROBEX Trend". */
+  showTrend: boolean
+  /** Pine input: "Mostrar EMA 9/21". */
+  showEma: boolean
+  /** Pine input: "Mostrar VWAP". */
+  showVwap: boolean
+  /** Pine input: "Mostrar S/R 15M cercanos". */
+  showLevels: boolean
   /**
-   * Seconds a Bounce/Reject/Break marker stays at full strength after its bar
-   * closes. 0 keeps markers on screen until the 40-marker cap, as before.
+   * Seconds an ARRIBA/ABAJO marker stays at full strength after its bar closes.
+   * 0 keeps markers until the 40-marker cap — the closest thing to Pine's
+   * `max_labels_count` behaviour.
    */
   markerTtlSeconds: number
   /** Seconds the fade-out takes once `markerTtlSeconds` elapses. */
   markerFadeSeconds: number
-  /** Draw the S/R zone rectangles. Pine input: "Mostrar zonas S/R 15M". */
-  showZones: boolean
-  /** Include the `rompeResistencia`/`rompeSoporte` break markers. */
-  showBreaks: boolean
-  /** Apply the Pine scalping gates (close vs EMA9/VWAP/RSI50 + impulse body). */
-  requireConfirmation: boolean
-  /**
-   * V17 panel engine inputs. These drive the floating Chile panel window (the Pine `table`),
-   * not the overlay: the reversal markers above are the V18 core and are untouched by them.
-   */
-  /** Pine input: "Fuerza minima" (6) — points one side needs before the panel calls it. */
-  panelMinScore: number
-  /** Pine input: "Ventaja minima" (2) — points one side needs over the other. */
-  panelMinEdge: number
-  /** Pine input: "Sensibilidad ROBEX Trend" (2.4) — supertrend ATR multiplier. */
-  panelTrendFactor: number
-  /** Pine input: "ATR ROBEX Trend" (10) — supertrend ATR length. */
-  panelTrendAtrLength: number
-  /** Pine `velaImpulso`: minimum body/range ratio (0.45). */
-  impulseBodyRatio: number
-  /** Support zone color. Pine `verde` rgb(0, 225, 145). */
+  /** Support color. Pine `verde` rgb(0, 225, 145). */
   supportColor: string
-  /** Resistance zone color. Pine `rojo` rgb(250, 65, 90). */
+  /** Resistance color. Pine `rojo` rgb(250, 65, 90). */
   resistanceColor: string
 }
 
 /** Defaults taken from the Pine script's own input defaults. */
 export const CHILE_REVERSAL_DEFAULTS: Readonly<ChileReversalSettings> = {
   resolution: '15m',
+  minScore: 6,
+  minEdge: 2,
   pivotLeft: 2,
   pivotRight: 2,
   maxDistanceAtr: 2.5,
-  zoneThicknessAtr: 0.1,
+  lineLength: 35,
+  trendFactor: 2.4,
+  trendAtrLength: 10,
+  showTrend: true,
+  showEma: true,
+  showVwap: true,
+  showLevels: true,
   // Markers are transient alerts, not permanent annotations: one minute on the
   // chart, then a slow fade to nothing.
   markerTtlSeconds: 60,
   markerFadeSeconds: 15,
-  showZones: true,
-  showBreaks: true,
-  requireConfirmation: false,
-  impulseBodyRatio: 0.45,
-  // The V17 panel's published inputs.
-  panelMinScore: 6,
-  panelMinEdge: 2,
-  panelTrendFactor: 2.4,
-  panelTrendAtrLength: 10,
   supportColor: '#00e191',
   resistanceColor: '#fa415a',
 }

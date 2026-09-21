@@ -76,8 +76,12 @@ import { MtfRsiWindow } from './components/MtfRsiWindow'
 import type { MtfRsiRowFeed } from './components/MtfRsiWindow'
 import { ChilePanelWindow } from './components/ChilePanelWindow'
 import { MTF_RSI_TIMEFRAMES } from './lib/mtf-rsi'
-import { calculateChileReversal, chileReversalSettings } from './lib/chile-reversal'
-import { CHILE_PANEL_MOMENTUM_TIMEFRAME, chilePanelRequestedTimeframes } from './lib/chile-panel'
+import {
+  CHILE_MOMENTUM_TIMEFRAME,
+  calculateChileReversal,
+  chileRequestedTimeframes,
+  chileReversalSettings,
+} from './lib/chile-reversal'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
@@ -618,8 +622,8 @@ export default function App() {
         // its source feed has to be asked for here: the visible-indicator walk above misses it.
         ...oscHudRequestedTimeframes(indicators, timeframe, oscHudOpen),
         // The Chile panel's two reads off the chart resolution: its round (pivot) timeframe and
-        // the 5m momentum bar. Hidden indicators already contribute their resolution above.
-        ...(chilePanelActive ? chilePanelRequestedTimeframes(chilePanelSettings, timeframe) : []),
+        // the 5m momentum bar. A visible indicator's own walk already asks for both.
+        ...(chilePanelActive ? chileRequestedTimeframes(chilePanelSettings, timeframe) : []),
       ]),
     [
       indicators,
@@ -760,23 +764,24 @@ export default function App() {
    */
   const chilePanelModel = useMemo(() => {
     if (!chilePanelActive || !candles.length) return null
-    const resolution = chilePanelSettings.resolution
-    const roundIsChart = resolution === timeframe
-    const roundFeed = roundIsChart ? undefined : nativeTimeframes[resolution]
-    const momentumIsChart = CHILE_PANEL_MOMENTUM_TIMEFRAME === timeframe
-    const momentumFeed = momentumIsChart
-      ? undefined
-      : nativeTimeframes[CHILE_PANEL_MOMENTUM_TIMEFRAME]
-    const roundCandles = roundFeed?.candles ?? (roundIsChart ? candles : EMPTY_CANDLES)
-    const momentumCandles = momentumFeed?.candles ?? (momentumIsChart ? candles : EMPTY_CANDLES)
+    const resolution: Timeframe = chilePanelSettings.resolution
+    const roundFeed = resolution === timeframe ? undefined : nativeTimeframes[resolution]
+    const momentumFeed =
+      CHILE_MOMENTUM_TIMEFRAME === timeframe
+        ? undefined
+        : nativeTimeframes[CHILE_MOMENTUM_TIMEFRAME]
+    const timeframes: Record<string, { candles: Candle[] }> = {}
+    if (resolution !== timeframe)
+      timeframes[resolution] = { candles: roundFeed?.candles ?? EMPTY_CANDLES }
+    if (CHILE_MOMENTUM_TIMEFRAME !== timeframe)
+      timeframes[CHILE_MOMENTUM_TIMEFRAME] = { candles: momentumFeed?.candles ?? EMPTY_CANDLES }
     return {
-      reversal: calculateChileReversal(candles, chilePanelSettings, {
+      result: calculateChileReversal(candles, chilePanelSettings, {
         timeframe,
-        timeframes: { [resolution]: { candles: roundCandles } },
+        timeframes,
+        nowSeconds: Date.now() / 1000,
       }),
-      roundCandles,
       roundState: roundFeed?.state ?? feedState,
-      momentumCandles,
       momentumState: momentumFeed?.state ?? feedState,
     }
   }, [chilePanelActive, chilePanelSettings, candles, timeframe, nativeTimeframes, feedState])
@@ -2451,13 +2456,9 @@ export default function App() {
                   <ChilePanelWindow
                     ticker={asset.ticker}
                     source={source}
-                    candles={candles}
-                    timeframe={timeframe}
                     settings={chilePanelSettings}
-                    reversal={chilePanelModel.reversal}
-                    roundCandles={chilePanelModel.roundCandles}
+                    result={chilePanelModel.result}
                     roundState={chilePanelModel.roundState}
-                    momentumCandles={chilePanelModel.momentumCandles}
                     momentumState={chilePanelModel.momentumState}
                     hasIndicator={!!chilePanelIndicator}
                     onAddIndicator={() => addBuiltIn('chile-reversal')}

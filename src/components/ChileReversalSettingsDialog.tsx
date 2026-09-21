@@ -55,62 +55,65 @@ export function ChileReversalSettingsDialog({
   const initial = chileReversalSettings(indicator)
   const [resolution, setResolution] = useState<Timeframe>(initial.resolution)
   const [numbers, setNumbers] = useState({
+    minScore: String(initial.minScore),
+    minEdge: String(initial.minEdge),
     pivotLeft: String(initial.pivotLeft),
     pivotRight: String(initial.pivotRight),
     maxDistanceAtr: String(initial.maxDistanceAtr),
-    zoneThicknessAtr: String(initial.zoneThicknessAtr),
-    impulseBodyRatio: String(initial.impulseBodyRatio),
+    lineLength: String(initial.lineLength),
+    trendFactor: String(initial.trendFactor),
+    trendAtrLength: String(initial.trendAtrLength),
     markerTtlSeconds: String(initial.markerTtlSeconds),
     markerFadeSeconds: String(initial.markerFadeSeconds),
-    panelMinScore: String(initial.panelMinScore),
-    panelMinEdge: String(initial.panelMinEdge),
-    panelTrendFactor: String(initial.panelTrendFactor),
-    panelTrendAtrLength: String(initial.panelTrendAtrLength),
   })
   const [colors, setColors] = useState<Record<ColorKey, string>>({
     supportColor: initial.supportColor,
     resistanceColor: initial.resistanceColor,
   })
-  const [showZones, setShowZones] = useState(initial.showZones)
-  const [showBreaks, setShowBreaks] = useState(initial.showBreaks)
-  const [requireConfirmation, setRequireConfirmation] = useState(initial.requireConfirmation)
+  const [showTrend, setShowTrend] = useState(initial.showTrend)
+  const [showEma, setShowEma] = useState(initial.showEma)
+  const [showVwap, setShowVwap] = useState(initial.showVwap)
+  const [showLevels, setShowLevels] = useState(initial.showLevels)
   const [visible, setVisible] = useState(indicator.visible)
   const [error, setError] = useState('')
+
+  const setNumber = (key: keyof typeof numbers) => (event: { target: { value: string } }) =>
+    setNumbers((current) => ({ ...current, [key]: event.target.value }))
 
   const reset = () => {
     const d = CHILE_REVERSAL_DEFAULTS
     setResolution(d.resolution)
     setNumbers({
+      minScore: String(d.minScore),
+      minEdge: String(d.minEdge),
       pivotLeft: String(d.pivotLeft),
       pivotRight: String(d.pivotRight),
       maxDistanceAtr: String(d.maxDistanceAtr),
-      zoneThicknessAtr: String(d.zoneThicknessAtr),
-      impulseBodyRatio: String(d.impulseBodyRatio),
+      lineLength: String(d.lineLength),
+      trendFactor: String(d.trendFactor),
+      trendAtrLength: String(d.trendAtrLength),
       markerTtlSeconds: String(d.markerTtlSeconds),
       markerFadeSeconds: String(d.markerFadeSeconds),
-      panelMinScore: String(d.panelMinScore),
-      panelMinEdge: String(d.panelMinEdge),
-      panelTrendFactor: String(d.panelTrendFactor),
-      panelTrendAtrLength: String(d.panelTrendAtrLength),
     })
     setColors({ supportColor: d.supportColor, resistanceColor: d.resistanceColor })
-    setShowZones(d.showZones)
-    setShowBreaks(d.showBreaks)
-    setRequireConfirmation(d.requireConfirmation)
+    setShowTrend(d.showTrend)
+    setShowEma(d.showEma)
+    setShowVwap(d.showVwap)
+    setShowLevels(d.showLevels)
     setError('')
   }
 
   return (
     <Modal
       title="Chile Reversal"
-      description="The reversal core of ROBEX IA CHILERA V18: pivot support and resistance zones sized in ATR, with bounce, rejection and break markers — plus the V17 score inputs the floating Chile panel reads."
+      description="ROBEX IA CHILERA V17: the round-timeframe pivot levels, the score, the ARRIBA/ABAJO call on every confirmed round close, and the panel that reads it."
       eyebrow="INDICATOR SETTINGS"
       className="compact-modal"
       onClose={onClose}
       footer={
         <>
           <button type="button" className="button button-quiet" onClick={reset}>
-            <RotateCcw size={13} /> (15m, 2, 2, 0.10) defaults
+            <RotateCcw size={13} /> (15m, 2, 2, 6/2) defaults
           </button>
           <button type="submit" form="chile-reversal-form" className="button button-primary">
             Apply changes
@@ -124,26 +127,26 @@ export function ChileReversalSettingsDialog({
           event.preventDefault()
           const settings: ChileReversalSettings = {
             resolution,
+            minScore: Number(numbers.minScore),
+            minEdge: Number(numbers.minEdge),
             pivotLeft: Number(numbers.pivotLeft),
             pivotRight: Number(numbers.pivotRight),
             maxDistanceAtr: Number(numbers.maxDistanceAtr),
-            zoneThicknessAtr: Number(numbers.zoneThicknessAtr),
+            lineLength: Number(numbers.lineLength),
+            trendFactor: Number(numbers.trendFactor),
+            trendAtrLength: Number(numbers.trendAtrLength),
             markerTtlSeconds: Number(numbers.markerTtlSeconds),
             markerFadeSeconds: Number(numbers.markerFadeSeconds),
-            showZones,
-            showBreaks,
-            requireConfirmation,
-            impulseBodyRatio: Number(numbers.impulseBodyRatio),
-            panelMinScore: Number(numbers.panelMinScore),
-            panelMinEdge: Number(numbers.panelMinEdge),
-            panelTrendFactor: Number(numbers.panelTrendFactor),
-            panelTrendAtrLength: Number(numbers.panelTrendAtrLength),
+            showTrend,
+            showEma,
+            showVwap,
+            showLevels,
             supportColor: colors.supportColor.trim().toLowerCase(),
             resistanceColor: colors.resistanceColor.trim().toLowerCase(),
           }
           if (!isChileReversalSettings(settings)) {
             setError(
-              'Pivot legs must be whole numbers from 1–5, max distance 0.5–6 ATR, zone thickness 0.03–0.50 ATR, impulse ratio 0–1, marker lifetime 0–3600 s, marker fade 0–600 s, panel strength 3–20, panel edge 1–8, ROBEX trend sensitivity 1–5 with an ATR length of 5–30, and colors six-digit hex values.',
+              'Minimum strength 3–20, minimum edge 1–8, pivot legs whole numbers from 1–5, max distance 0.5–6 ATR, line length 10–100 bars, ROBEX trend sensitivity 1–5 with an ATR length of 5–30, marker lifetime 0–3600 s, marker fade 0–600 s, and colors six-digit hex values.',
             )
             return
           }
@@ -158,12 +161,63 @@ export function ChileReversalSettingsDialog({
         }}
       >
         <section className="settings-section">
+          <h3>Score</h3>
+          <p className="settings-hint">
+            The call for the next round needs both: <strong>minimum strength</strong> points on one
+            side and a <strong>minimum edge</strong> over the other. A sideways market — EMA 9 and
+            21 braided inside 0.025 ATR with the local RSI between 47 and 53 — calls nothing.
+          </p>
+          <div className="smc-grid smc-grid-two">
+            <label className="field smc-number-field">
+              Minimum strength
+              <input
+                aria-label="Minimum strength"
+                inputMode="numeric"
+                value={numbers.minScore}
+                onChange={setNumber('minScore')}
+              />
+              <small>Pine Fuerza minima. Points one side needs to be called. Default 6.</small>
+            </label>
+            <label className="field smc-number-field">
+              Minimum edge
+              <input
+                aria-label="Minimum edge"
+                inputMode="numeric"
+                value={numbers.minEdge}
+                onChange={setNumber('minEdge')}
+              />
+              <small>Pine Ventaja minima. Points of lead over the other side. Default 2.</small>
+            </label>
+            <label className="field smc-number-field">
+              ROBEX trend sensitivity
+              <input
+                aria-label="ROBEX trend sensitivity"
+                inputMode="decimal"
+                value={numbers.trendFactor}
+                onChange={setNumber('trendFactor')}
+              />
+              <small>Pine Sensibilidad ROBEX Trend — supertrend ATR multiplier. Default 2.4.</small>
+            </label>
+            <label className="field smc-number-field">
+              ROBEX trend ATR
+              <input
+                aria-label="ROBEX trend ATR length"
+                inputMode="numeric"
+                value={numbers.trendAtrLength}
+                onChange={setNumber('trendAtrLength')}
+              />
+              <small>Pine ATR ROBEX Trend. Default 10.</small>
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-section">
           <h3>Levels</h3>
           <div className="smc-grid smc-grid-two">
             <label className="field smc-number-field">
-              Pivot timeframe
+              Round timeframe
               <select
-                aria-label="Pivot timeframe"
+                aria-label="Round timeframe"
                 value={resolution}
                 onChange={(event) => setResolution(event.target.value as Timeframe)}
               >
@@ -173,19 +227,20 @@ export function ChileReversalSettingsDialog({
                   </option>
                 ))}
               </select>
-              <small>Pine hard-codes “15”. Only closed bars of it are read.</small>
+              <small>
+                Pine hard-codes “15”. Only its closed bars are read, and it is the round the
+                countdown runs to.
+              </small>
             </label>
             <label className="field smc-number-field">
-              Zone thickness (ATR)
+              Max distance (ATR)
               <input
-                aria-label="Zone thickness in ATR"
+                aria-label="Max distance in ATR"
                 inputMode="decimal"
-                value={numbers.zoneThicknessAtr}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, zoneThicknessAtr: event.target.value }))
-                }
+                value={numbers.maxDistanceAtr}
+                onChange={setNumber('maxDistanceAtr')}
               />
-              <small>Pine grosorZonaATR. Default 0.10.</small>
+              <small>Pine maxDistATR. Discard levels further than this. Default 2.5.</small>
             </label>
             <label className="field smc-number-field">
               Pivot left
@@ -193,9 +248,7 @@ export function ChileReversalSettingsDialog({
                 aria-label="Pivot left"
                 inputMode="numeric"
                 value={numbers.pivotLeft}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, pivotLeft: event.target.value }))
-                }
+                onChange={setNumber('pivotLeft')}
               />
               <small>Bars left of the pivot. Default 2.</small>
             </label>
@@ -205,35 +258,19 @@ export function ChileReversalSettingsDialog({
                 aria-label="Pivot right"
                 inputMode="numeric"
                 value={numbers.pivotRight}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, pivotRight: event.target.value }))
-                }
+                onChange={setNumber('pivotRight')}
               />
               <small>Confirmation delay. Default 2.</small>
             </label>
             <label className="field smc-number-field">
-              Max distance (ATR)
+              Line length
               <input
-                aria-label="Max distance in ATR"
-                inputMode="decimal"
-                value={numbers.maxDistanceAtr}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, maxDistanceAtr: event.target.value }))
-                }
+                aria-label="Line length in bars"
+                inputMode="numeric"
+                value={numbers.lineLength}
+                onChange={setNumber('lineLength')}
               />
-              <small>Discard levels further than this. Default 2.5.</small>
-            </label>
-            <label className="field smc-number-field">
-              Impulse body ratio
-              <input
-                aria-label="Impulse body ratio"
-                inputMode="decimal"
-                value={numbers.impulseBodyRatio}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, impulseBodyRatio: event.target.value }))
-                }
-              />
-              <small>Pine velaImpulso. Used only with confirmation on.</small>
+              <small>Pine largoLinea. How far back each level line reaches. Default 35.</small>
             </label>
           </div>
           <div className="smc-grid pivot-color-grid">
@@ -251,130 +288,59 @@ export function ChileReversalSettingsDialog({
         </section>
 
         <section className="settings-section">
-          <h3>Panel score</h3>
-          <p className="settings-hint">
-            Inputs of the V17 scoring engine behind the floating <strong>Chile panel</strong> window
-            (Floating → Chile panel, Alt L). They do not move the markers on the chart.
-          </p>
-          <div className="smc-grid smc-grid-two">
-            <label className="field smc-number-field">
-              Minimum strength
-              <input
-                aria-label="Panel minimum strength"
-                inputMode="numeric"
-                value={numbers.panelMinScore}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, panelMinScore: event.target.value }))
-                }
-              />
-              <small>Pine Fuerza minima. Points one side needs to be called. Default 6.</small>
-            </label>
-            <label className="field smc-number-field">
-              Minimum edge
-              <input
-                aria-label="Panel minimum edge"
-                inputMode="numeric"
-                value={numbers.panelMinEdge}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, panelMinEdge: event.target.value }))
-                }
-              />
-              <small>Pine Ventaja minima. Points of lead over the other side. Default 2.</small>
-            </label>
-            <label className="field smc-number-field">
-              ROBEX trend sensitivity
-              <input
-                aria-label="ROBEX trend sensitivity"
-                inputMode="decimal"
-                value={numbers.panelTrendFactor}
-                onChange={(event) =>
-                  setNumbers((current) => ({ ...current, panelTrendFactor: event.target.value }))
-                }
-              />
-              <small>Pine Sensibilidad ROBEX Trend — supertrend ATR multiplier. Default 2.4.</small>
-            </label>
-            <label className="field smc-number-field">
-              ROBEX trend ATR
-              <input
-                aria-label="ROBEX trend ATR length"
-                inputMode="numeric"
-                value={numbers.panelTrendAtrLength}
-                onChange={(event) =>
-                  setNumbers((current) => ({
-                    ...current,
-                    panelTrendAtrLength: event.target.value,
-                  }))
-                }
-              />
-              <small>Pine ATR ROBEX Trend. Default 10.</small>
-            </label>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>Signals</h3>
+          <h3>Draw</h3>
           <div className="setting-row">
             <div>
-              <strong>Show S/R zones</strong>
-              <p>Draw the R1/R2 and S1/S2 rectangles the reversals are measured against.</p>
+              <strong>ROBEX Trend</strong>
+              <p>The supertrend line the score reads its first two points from.</p>
             </div>
-            <Toggle checked={showZones} onChange={setShowZones} label="Show S/R zones" />
+            <Toggle checked={showTrend} onChange={setShowTrend} label="Show ROBEX Trend" />
           </div>
           <div className="setting-row">
             <div>
-              <strong>Show breaks</strong>
-              <p>Include rompeResistencia and rompeSoporte markers alongside the reversals.</p>
+              <strong>EMA 9 / 21</strong>
+              <p>The chart-timeframe EMA pair and the fill between them.</p>
             </div>
-            <Toggle checked={showBreaks} onChange={setShowBreaks} label="Show breaks" />
+            <Toggle checked={showEma} onChange={setShowEma} label="Show EMA 9/21" />
+          </div>
+          <div className="setting-row">
+            <div>
+              <strong>VWAP</strong>
+              <p>Session VWAP, worth one point either side of it.</p>
+            </div>
+            <Toggle checked={showVwap} onChange={setShowVwap} label="Show VWAP" />
+          </div>
+          <div className="setting-row">
+            <div>
+              <strong>Nearby S/R levels</strong>
+              <p>R1/R2 and S1/S2 lines with their prices, from the remembered round pivots.</p>
+            </div>
+            <Toggle checked={showLevels} onChange={setShowLevels} label="Show S/R levels" />
           </div>
           <div className="smc-grid smc-grid-two">
             <label className="field smc-number-field">
-              Marker lifetime (s)
+              Label lifetime (s)
               <input
-                aria-label="Marker lifetime in seconds"
+                aria-label="Label lifetime in seconds"
                 inputMode="numeric"
                 value={numbers.markerTtlSeconds}
-                onChange={(event) =>
-                  setNumbers((current) => ({
-                    ...current,
-                    markerTtlSeconds: event.target.value,
-                  }))
-                }
+                onChange={setNumber('markerTtlSeconds')}
               />
               <small>
-                How long a marker stays after its bar closes, then it fades. 0 keeps markers until
-                the 40-marker cap. Default 60.
+                How long an ARRIBA/ABAJO label stays after its bar closes, then it fades. 0 keeps
+                labels until the 40-label cap. Default 60.
               </small>
             </label>
             <label className="field smc-number-field">
-              Marker fade (s)
+              Label fade (s)
               <input
-                aria-label="Marker fade in seconds"
+                aria-label="Label fade in seconds"
                 inputMode="decimal"
                 value={numbers.markerFadeSeconds}
-                onChange={(event) =>
-                  setNumbers((current) => ({
-                    ...current,
-                    markerFadeSeconds: event.target.value,
-                  }))
-                }
+                onChange={setNumber('markerFadeSeconds')}
               />
               <small>How long the fade-out takes once the lifetime ends. Default 15.</small>
             </label>
-          </div>
-          <div className="setting-row">
-            <div>
-              <strong>Require Pine confirmation</strong>
-              <p>
-                Apply the original scalping gates — close beyond EMA 9 and VWAP, RSI past 50, and an
-                impulse body. Fewer marks, and each one prints only after price has already turned.
-              </p>
-            </div>
-            <Toggle
-              checked={requireConfirmation}
-              onChange={setRequireConfirmation}
-              label="Require confirmation"
-            />
           </div>
           <div className="setting-row">
             <div>

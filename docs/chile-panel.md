@@ -1,13 +1,12 @@
 # Chile panel
 
-The scoring engine and corner readout of **ROBEX IA CHILERA V17 PRO**, ported to Atlas as a
-floating window.
+The corner readout of **ROBEX IA CHILERA V17 PRO**, ported to Atlas as a floating window.
 
-[Chile Reversal](chile-reversal.md) ports the _reversal core_ of the same Pine family — the four
-price-vs-level patterns that paint markers. This is the other half of V17: the score that turns
-those patterns plus a trend, momentum and flow stack into one call for the next round, and the
-panel that shows it. **Alt L** toggles the window; the toolbar **Floating** selector and the
-workspace menu also own it.
+[Chile Reversal](chile-reversal.md) is the script's engine: the round-timeframe pivot levels, the
+four price-vs-level patterns, and the score that turns them plus a trend, momentum and flow stack
+into one call for the next round. This window is that engine's `table` — the same result, read off
+its newest bar, so the panel and the chart can never disagree about a level or a call. **Alt L**
+toggles the window; the toolbar **Floating** selector and the workspace menu also own it.
 
 ```pine
 minScore = input.int(6, "Fuerza minima", minval=3, maxval=20)
@@ -74,33 +73,32 @@ the bar the original would print its signals on (`fin15 and barstate.isconfirmed
 number is where in the bar the close landed. A bar that closes at its high reads 100% buyers
 whether it was bought up or shorted into. The tooltip says so.
 
-## Two deliberate differences
+## One engine, two surfaces
 
-**1. Reversal points come from the overlay engine.** V17 recomputes `reboteSoporte`,
-`rechazoResistencia`, `rompeResistencia` and `rompeSoporte` inline against the bare level. Atlas
-takes them from `calculateChileReversal` instead, so they carry the indicator's zone thickness,
-distance filter, break toggle and confirmation gates. One workspace, one definition of a bounce:
-the panel cannot cheer a marker that is not on the chart, and a bounce you can see is always worth
-its +3. The same is true of the S/R row, whose proximity band is the original's `0.20 × ATR`.
+`lib/chile-panel.ts` computes nothing. It reads `ChileReversalResult.last` — the newest bar the
+engine scored — and shapes it for the window, so the reversal points, the S/R row (whose proximity
+band is the original's `0.20 × ATR`) and the score split are the same numbers the overlay drew.
+The panel cannot cheer a pattern the chart has not got, because it never evaluates one itself.
 
-**2. The 5m momentum read is live.** The original requests the 5m series _without_ `[1]`:
+The one live read is inherited from the engine. The original requests the 5m series _without_ `[1]`:
 
 ```pine
 ema9_5 = request.security(syminfo.tickerid, "5", ta.ema(close, 9))
 ```
 
-so it is the forming 5m bar. Every other higher-timeframe read in the score is the closed-bar
-idiom (`x[1]` under `lookahead_on`) and goes through the same mapper the overlay uses, so the panel
-and the chart read one and the same round candle. A 5m feed that has not answered contributes
-nothing rather than a made-up 2 points, and the round feed being down stops the score entirely —
-the window says `15m feed loading…` instead of showing zeros.
+so it is the forming 5m bar — two points of the score can move as that bar develops. Every other
+higher-timeframe read is the closed-bar idiom (`x[1]` under `lookahead_on`) through the same mapper
+the overlay uses, so the panel and the chart read one and the same round candle. A 5m feed that has
+not answered contributes nothing rather than a made-up 2 points, and the round feed being down
+stops the score entirely — the window says `15m feed loading…` instead of showing zeros, and
+`Warming the 15m ATR…` while `ta.atr(14)` has not filled.
 
 ## Profile
 
-The window borrows its profile from the chart's **Chile Reversal** indicator — pivots, zone
-thickness, and the four score inputs — so the panel and the overlay can never disagree about which
-levels they are reading. With no Chile indicator on the chart it runs the published defaults and
-offers to add one, which is where the inputs live:
+The window borrows the whole profile of the chart's **Chile Reversal** indicator — pivots, distance
+filter, and the four score inputs — because it is the same engine run with the same settings. With
+no Chile indicator on the chart it runs the published defaults and offers to add one, which is
+where the inputs live:
 
 | Setting                 | Pine input    | Default |
 | ----------------------- | ------------- | ------- |
@@ -121,6 +119,6 @@ the Pine script's `alertcondition`s, the panel only ever describes the current b
 
 ## Files
 
-- `src/lib/chile-panel.ts` — the engine (pure, unit-tested in `chile-panel.test.ts`)
+- `src/lib/chile-reversal.ts` — the engine: levels, patterns, score, plots (`chile-reversal.test.ts`)
+- `src/lib/chile-panel.ts` — the readout layer over `ChileReversalResult.last` (`chile-panel.test.ts`)
 - `src/components/ChilePanelWindow.tsx` — the floating window (`ChilePanelWindow.test.tsx`)
-- `src/lib/chile-reversal.ts` — levels, reversal events and the shared closed-bar mapper

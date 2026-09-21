@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChilePanelWindow } from './ChilePanelWindow'
 import type { ChilePanelWindowProps } from './ChilePanelWindow'
+import { calculateChileReversal } from '../lib/chile-reversal'
 import type { ChileReversalResult } from '../lib/chile-reversal'
 import { CHILE_REVERSAL_DEFAULTS, type Candle } from '../lib/types'
 
@@ -31,27 +32,38 @@ const trending = (count: number, step: number, firstTime: number, start = 100): 
 
 const LAST_TIME = 31500
 
-const engine = (bars: number): ChileReversalResult => ({
-  levels: [],
-  signals: [],
-  atr: Array.from({ length: bars }, () => 4),
-  warmupBars: 14,
-  resolution: '15m',
-  missingFeed: false,
-})
+/** The real engine over a rising market: 16 points up, nothing down. */
+const engine = (): ChileReversalResult =>
+  calculateChileReversal(
+    trending(40, 60, LAST_TIME - 39 * 60),
+    { ...CHILE_REVERSAL_DEFAULTS },
+    {
+      timeframe: '1m',
+      timeframes: {
+        '15m': { candles: trending(40, 900, 0) },
+        '5m': { candles: trending(40, 300, LAST_TIME - 39 * 300) },
+      },
+    },
+  )
+
+/** A round feed that answered, but not with enough bars for ATR(14). */
+const warming = (): ChileReversalResult =>
+  calculateChileReversal(
+    trending(40, 60, LAST_TIME - 39 * 60),
+    { ...CHILE_REVERSAL_DEFAULTS },
+    {
+      timeframe: '1m',
+      timeframes: { '15m': { candles: trending(6, 900, 0) } },
+    },
+  )
 
 function props(overrides: Partial<ChilePanelWindowProps> = {}): ChilePanelWindowProps {
-  const candles = trending(40, 60, LAST_TIME - 39 * 60)
   return {
     ticker: 'BTC-USD',
     source: 'coinbase',
-    candles,
-    timeframe: '1m',
     settings: { ...CHILE_REVERSAL_DEFAULTS },
-    reversal: engine(candles.length),
-    roundCandles: trending(40, 900, 0),
+    result: engine(),
     roundState: 'live',
-    momentumCandles: trending(40, 300, LAST_TIME - 39 * 300),
     momentumState: 'live',
     hasIndicator: true,
     onAddIndicator: () => {},
@@ -102,14 +114,22 @@ describe('ChilePanelWindow', () => {
   })
 
   it('says a missing round feed instead of scoring against nothing', () => {
-    const html = render({ roundCandles: [], roundState: 'offline' })
+    const unfed = calculateChileReversal(
+      trending(40, 60, LAST_TIME - 39 * 60),
+      {
+        ...CHILE_REVERSAL_DEFAULTS,
+      },
+      { timeframe: '1m', timeframes: { '15m': { candles: [] } } },
+    )
+    expect(unfed.missingFeed).toBe(true)
+    const html = render({ result: unfed, roundState: 'offline' })
     expect(html).toContain('15m feed loading…')
     expect(html).toContain('>WAIT</')
     expect(html).toContain('DEGRADED')
   })
 
   it('says when the round ATR is still warming', () => {
-    const html = render({ reversal: { ...engine(40), atr: Array(40).fill(null) } })
+    const html = render({ result: warming() })
     expect(html).toContain('Warming the 15m ATR…')
   })
 

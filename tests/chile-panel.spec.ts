@@ -98,17 +98,17 @@ test('borrows the chart indicator profile, and offers the overlay when there is 
   const add = hud.getByRole('button', { name: 'Add the Chile Reversal overlay to the chart' })
   await expect(add).toBeVisible()
   await add.click()
-  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 0.1)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' })).toBeVisible()
   await expect(add).toHaveCount(0)
 
   // The panel's score inputs are the indicator's, so changing them changes what the window shows.
-  await page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 0.1)' }).click()
+  await page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' }).click()
   const dialog = page.getByRole('dialog', { name: 'Chile Reversal' })
-  await expect(dialog.getByLabel('Panel minimum strength')).toHaveValue('6')
-  await expect(dialog.getByLabel('Panel minimum edge')).toHaveValue('2')
+  await expect(dialog.getByLabel('Minimum strength')).toHaveValue('6')
+  await expect(dialog.getByLabel('Minimum edge')).toHaveValue('2')
   await expect(dialog.getByLabel('ROBEX trend sensitivity')).toHaveValue('2.4')
   await expect(dialog.getByLabel('ROBEX trend ATR length')).toHaveValue('10')
-  await dialog.getByLabel('Pivot timeframe').selectOption('1h')
+  await dialog.getByLabel('Round timeframe').selectOption('1h')
   await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
 
   // The window follows the profile it is borrowing.

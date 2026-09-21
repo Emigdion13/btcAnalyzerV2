@@ -217,7 +217,7 @@ export const INDICATOR_CATALOG: {
     name: 'Chile Reversal',
     short: 'Chile Reversal',
     description:
-      'The reversal core of ROBEX IA CHILERA V18 PRO: 15m pivot support/resistance zones sized in ATR, with bounce, rejection and break markers — the four price-vs-level patterns, without the trend score around them.',
+      'ROBEX IA CHILERA V17 PRO: 15m pivot support/resistance lines, the ROBEX supertrend, EMA 9/21 and VWAP, and the score that calls the next round with an ARRIBA/ABAJO label.',
     category: 'Price Action',
     period: 2,
     color: '#00e191',

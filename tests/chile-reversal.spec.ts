@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('adds, renders, and persists the Chile Reversal overlay', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  // A 1m chart so the default 15m pivot feed is genuinely a higher timeframe.
+  // A 1m chart so the default 15m round feed is genuinely a higher timeframe.
   await page.goto('/?source=demo&interval=1m')
   await expect(page.locator('canvas').first()).toBeVisible()
 
@@ -13,47 +13,57 @@ test('adds, renders, and persists the Chile Reversal overlay', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Added', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
 
-  // The legend carries the active profile: pivot timeframe, both legs, zone thickness.
-  const legend = page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 0.1)' })
+  // The legend carries the active profile: round timeframe, both pivot legs, and the two score
+  // gates (minimum strength / minimum edge).
+  const legend = page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' })
   await expect(legend).toBeVisible()
   await expect(page.getByTestId('chile-reversal-overlay').first()).toBeAttached()
 
-  // Demo mode supplies the 15m pivot feed locally, so the engine runs without the
-  // exchange. Zones are drawn only for levels that currently qualify — as in Pine,
-  // where price further than the ATR filter from every pivot legitimately shows
-  // none — so assert the overlay produced either a zone or a reversal marker.
+  // Demo mode supplies the 15m round feed and the 5m momentum feed locally, so the engine runs
+  // without the exchange. What the script paints is drawn as one overlay: the ROBEX Trend line,
+  // the EMA pair, VWAP, and the nearby levels.
+  await expect(page.getByTestId('chile-reversal-plots').first()).toBeAttached()
+  await expect(page.getByTestId('chile-reversal-trend').first()).toBeAttached()
+
+  // Levels are drawn only when a remembered pivot is inside the ATR filter — as in Pine, where
+  // price further than `maxDistATR` from every pivot legitimately shows none — so assert the
+  // overlay produced either a level line or one of the ARRIBA/ABAJO labels.
   await expect
     .poll(
       async () =>
-        (await page.getByTestId('chile-reversal-zone').count()) +
-        (await page.locator('[data-testid^="chile-reversal-"][data-index]').count()),
+        (await page.getByTestId('chile-reversal-level').count()) +
+        (await page.locator('[data-testid^="chile-reversal-a"][data-index]').count()),
     )
     .toBeGreaterThan(0)
 
-  // Markers are ephemeral by default and the legend carries an eraser to wipe
-  // the ones on screen without waiting for them to fade.
+  // Labels are ephemeral by default and the legend carries an eraser to wipe the ones on screen
+  // without waiting for them to fade.
   await expect(page.getByRole('button', { name: 'Clear Chile Reversal markers' })).toBeVisible()
 
   await legend.click()
   const dialog = page.getByRole('dialog', { name: 'Chile Reversal' })
   await expect(dialog).toBeVisible()
-  await expect(page.getByLabel('Pivot left')).toHaveValue('2')
-  await expect(page.getByLabel('Pivot right')).toHaveValue('2')
-  await expect(page.getByLabel('Max distance in ATR')).toHaveValue('2.5')
-  await expect(page.getByLabel('Zone thickness in ATR')).toHaveValue('0.1')
-  await expect(page.getByLabel('Marker lifetime in seconds')).toHaveValue('60')
-  await expect(page.getByLabel('Marker fade in seconds')).toHaveValue('15')
+  await expect(dialog.getByLabel('Round timeframe')).toHaveValue('15m')
+  await expect(dialog.getByLabel('Minimum strength')).toHaveValue('6')
+  await expect(dialog.getByLabel('Minimum edge')).toHaveValue('2')
+  await expect(dialog.getByLabel('Pivot left')).toHaveValue('2')
+  await expect(dialog.getByLabel('Pivot right')).toHaveValue('2')
+  await expect(dialog.getByLabel('Max distance in ATR')).toHaveValue('2.5')
+  await expect(dialog.getByLabel('Line length in bars')).toHaveValue('35')
+  await expect(dialog.getByLabel('ROBEX trend sensitivity')).toHaveValue('2.4')
+  await expect(dialog.getByLabel('Label lifetime in seconds')).toHaveValue('60')
+  await expect(dialog.getByLabel('Label fade in seconds')).toHaveValue('15')
 
   // Changing the profile re-renders and is reflected in the legend.
-  await page.getByLabel('Pivot left').fill('3')
-  await page.getByLabel('Zone thickness in ATR').fill('0.2')
+  await dialog.getByLabel('Pivot left').fill('3')
+  await dialog.getByLabel('Minimum strength').fill('8')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 3, 2, 0.2)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 3, 2, 8/2)' })).toBeVisible()
 
   // Settings survive a reload, like every other indicator.
   await page.reload()
   await expect(page.locator('canvas').first()).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 3, 2, 0.2)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 3, 2, 8/2)' })).toBeVisible()
 
   expect(errors).toEqual([])
 })
@@ -67,11 +77,11 @@ test('rejects an out-of-range Chile Reversal profile instead of drawing it', asy
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 0.1)' }).click()
+  await page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' }).click()
   await page.getByLabel('Pivot left').fill('99')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
 
   // The dialog stays open with an explanation; the chart keeps the last good profile.
-  await expect(page.getByRole('alert')).toContainText(/Pivot legs must be whole numbers from 1–5/)
+  await expect(page.getByRole('alert')).toContainText(/pivot legs whole numbers from 1–5/)
   await expect(page.getByRole('dialog', { name: 'Chile Reversal' })).toBeVisible()
 })

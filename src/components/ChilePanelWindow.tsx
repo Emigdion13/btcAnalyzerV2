@@ -1,22 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, GripVertical, Info, Minus, Plus, RotateCcw, X } from 'lucide-react'
-import type {
-  Candle,
-  ChileReversalSettings,
-  ConnectionState,
-  DataSource,
-  Timeframe,
-} from '../lib/types'
-import type { ChileReversalResult } from '../lib/chile-reversal'
+import type { ChileReversalSettings, ConnectionState, DataSource } from '../lib/types'
+import type { ChileLevelState, ChileReversalResult } from '../lib/chile-reversal'
 import { chilePanelSnapshot } from '../lib/chile-panel'
-import type { ChilePanelLevelState } from '../lib/chile-panel'
 import { useFloatingWindow } from '../lib/floating-window'
 import { useLocalState } from '../lib/storage'
 
 const POSITION_KEY = 'chile-panel-pos'
 
 /** English labels for the Pine `srTexto` states; the Pine string stays in the tooltip. */
-const LEVEL_TEXT: Record<ChilePanelLevelState, string> = {
+const LEVEL_TEXT: Record<ChileLevelState, string> = {
   none: 'NO LEVEL NEARBY',
   'near-r1': 'NEAR R1',
   'near-r2': 'NEAR R2',
@@ -37,17 +30,12 @@ const VOLUME_TEXT = { normal: 'NORMAL', high: 'HIGH', 'very-high': 'VERY HIGH' }
 export interface ChilePanelWindowProps {
   ticker: string
   source: DataSource
-  /** The chart series — the Pine script's "local" reads run on whatever it is attached to. */
-  candles: Candle[]
-  timeframe: Timeframe
   /** The profile the window scores with: the chart's Chile indicator, or the published defaults. */
   settings: ChileReversalSettings
-  /** The overlay engine's own result, so the panel's reversal points match the markers. */
-  reversal: ChileReversalResult
-  /** The panel resolution's feed; empty is reported, never guessed around. */
-  roundCandles: Candle[]
+  /** The engine's own result for these candles — the same one the overlay draws. */
+  result: ChileReversalResult
+  /** The round resolution's feed state; a feed that has not answered is reported, not guessed. */
   roundState: ConnectionState
-  momentumCandles: Candle[]
   momentumState: ConnectionState
   /** False when the chart has no Chile Reversal indicator, so the window runs defaults. */
   hasIndicator: boolean
@@ -70,13 +58,9 @@ export interface ChilePanelWindowProps {
 export function ChilePanelWindow({
   ticker,
   source,
-  candles,
-  timeframe,
   settings,
-  reversal,
-  roundCandles,
+  result,
   roundState,
-  momentumCandles,
   momentumState,
   hasIndicator,
   onAddIndicator,
@@ -96,21 +80,12 @@ export function ChilePanelWindow({
   }, [])
 
   const snapshot = useMemo(
-    () =>
-      chilePanelSnapshot({
-        candles,
-        timeframe,
-        settings,
-        reversal,
-        roundCandles,
-        momentumCandles,
-        nowSeconds: now,
-      }),
-    [candles, timeframe, settings, reversal, roundCandles, momentumCandles, now],
+    () => chilePanelSnapshot({ result, settings, nowSeconds: now }),
+    [result, settings, now],
   )
 
   const demo = source === 'demo'
-  const roundUnfed = !roundCandles.length && roundState !== 'live'
+  const roundUnfed = result.missingFeed
   const degraded = !demo && (roundState !== 'live' || momentumState !== 'live')
   const dotColor =
     snapshot.call === 'up'
@@ -289,8 +264,8 @@ export function ChilePanelWindow({
       ) : (
         <>
           <p className="chile-panel-sub">
-            {ticker} · next {settings.resolution} round · min {settings.panelMinScore} pts, edge{' '}
-            {settings.panelMinEdge}
+            {ticker} · next {settings.resolution} round · min {settings.minScore} pts, edge{' '}
+            {settings.minEdge}
           </p>
 
           <div className="chile-panel-verdict">
@@ -392,9 +367,9 @@ export function ChilePanelWindow({
               cross and slope, its RSI, higher highs and lows, 5m momentum, the chart's own EMA
               stack and VWAP, close position in the bar, volume, the round so far, and ±3 for a
               bounce, a rejection or a break of the pivot levels the overlay draws. Each side needs{' '}
-              {settings.panelMinScore} points and a {settings.panelMinEdge}-point lead, and a
-              sideways market scores nothing at all. It is a summary of what has already printed,
-              not a forecast, and it places no orders.
+              {settings.minScore} points and a {settings.minEdge}-point lead, and a sideways market
+              scores nothing at all. It is a summary of what has already printed, not a forecast,
+              and it places no orders.
             </p>
           ) : null}
         </>

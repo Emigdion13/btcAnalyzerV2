@@ -1,0 +1,225 @@
+//@version=5
+// ===========================================================================
+// COMUNIDAD JD + KALSHI
+// ===========================================================================
+//
+// Base: "COMUNIDAD JD" (Supertrend V1.0 de Rajandran R + TonyUX EMA Scalper
+// de tux), sin tocar. Encima se agregan:
+//
+//   - Linea horizontal del TARGET de Kalshi cruzando todo el chart
+//   - % UP / DOWN de Kalshi en una tabla arriba a la derecha
+//   - Tabla de tendencia (Dia / 1 hora / 15 min) abajo a la izquierda,
+//     calculada con el mismo SuperTrend en cada temporalidad
+//
+// ---------------------------------------------------------------------------
+// SOBRE LA API DE KALSHI
+//
+// Pine Script NO puede hacer peticiones HTTP. El lenguaje no tiene ninguna
+// funcion de red: el script corre en los servidores de TradingView y solo ve
+// datos de mercado. No hay forma de pegar aqui una URL o una API key y que el
+// script la consulte.
+//
+// Por eso el target y el % de Kalshi entran como INPUTS:
+//     Ajustes del indicador -> grupo "Kalshi" -> dos numeros.
+// Se copian de kalshi.com, o los imprime el puente local:
+//     python kalshi_now.py
+// ---------------------------------------------------------------------------
+indicator("COMUNIDAD JD + Kalshi", shorttitle = "JD+Kalshi", overlay = true)
+
+// =============================================
+// KALSHI - inputs manuales
+// =============================================
+grpK    = "Kalshi"
+kTarget = input.float(0.0,  "Target (strike) de Kalshi", minval = 0, step = 0.01, group = grpK,
+     tooltip = "Precio del mercado, p.ej. 81249.99. Con 0 no se dibuja la linea.")
+kYesPct = input.float(50.0, "YES % de Kalshi (probabilidad UP)", minval = 0, maxval = 100, step = 0.5, group = grpK,
+     tooltip = "Precio del YES en centavos = probabilidad de cerrar por encima del target. DOWN = 100 - YES.")
+kNombre = input.string("",  "Nombre del mercado (opcional)", group = grpK,
+     tooltip = "Solo para la etiqueta, p.ej. 'BTC $81,250 or above'.")
+kColor  = input.color(#f0b429, "Color de la linea del target", group = grpK)
+
+kNoPct = 100.0 - kYesPct
+kUp    = kYesPct >= kNoPct
+
+// Paleta de los paneles
+cUp  = color.new(#26a69a, 0)
+cDn  = color.new(#ef5350, 0)
+cDim = color.new(#8b949e, 0)
+cTxt = color.new(#e6edf3, 0)
+cBg  = color.new(#161b22, 10)
+cBrd = color.new(#30363d, 0)
+
+// =============================================
+// PARTE 1 - Supertrend V1.0
+// =============================================
+Factor = input.int(3, "Factor", minval = 1, maxval = 100)
+Pd     = input.int(7, "Pd",     minval = 1, maxval = 100)
+
+Up = hl2 - (Factor * ta.atr(Pd))
+Dn = hl2 + (Factor * ta.atr(Pd))
+
+var float TrendUp   = na
+var float TrendDown = na
+var int   Trend     = 1
+
+TrendUp   := close[1] > nz(TrendUp[1], Up)   ? math.max(Up, nz(TrendUp[1], Up))   : Up
+TrendDown := close[1] < nz(TrendDown[1], Dn) ? math.min(Dn, nz(TrendDown[1], Dn)) : Dn
+
+Trend := close > nz(TrendDown[1], Dn) ?  1 :
+         close < nz(TrendUp[1],   Up) ? -1 : nz(Trend[1], 1)
+
+Tsl = Trend == 1 ? TrendUp : TrendDown
+
+// =============================================
+// PARTE 2 - TonyUX EMA Scalper
+// =============================================
+len = input.int(20,       "Length", minval = 1)
+src = input.source(close, "Source")
+
+out    = ta.ema(src, len)
+last8h = ta.highest(close, 8)   // resistencia: cierre mas alto de las ultimas 8 velas
+lastl8 = ta.lowest(close,  8)   // soporte:     cierre mas bajo de las ultimas 8 velas
+
+// Cruce del precio con la EMA 20, con la vela confirmando la direccion
+bearish = ta.cross(close, out) and close[1] > close
+bullish = ta.cross(close, out) and close[1] < close
+
+// =============================================
+// PLOTS - en el orden del indicador original
+// =============================================
+
+// 1. Linea SuperTrend
+plot(Tsl, title = "SuperTrend", linewidth = 2,
+     color = Trend == 1 ? color.new(color.green, 0) : color.new(color.red, 0))
+
+// 2-3. Triangulos en el cruce del precio con la linea SuperTrend
+upArrow   = ta.cross(close, Tsl) and close > Tsl ? 1 : 0
+downArrow = ta.cross(Tsl, close) and close < Tsl ? 1 : 0
+
+plotshape(upArrow,   title = "Up Arrow",   style = shape.triangleup,
+     location = location.belowbar, color = color.new(color.green, 0))
+plotshape(downArrow, title = "Down Arrow", style = shape.triangledown,
+     location = location.abovebar, color = color.new(color.red, 0))
+
+// 4-5. Flechas grandes en el giro de tendencia.
+//      El valor que reciben es Trend (+1 / -1); su signo elige el color.
+plotarrow(Trend ==  1 and Trend[1] == -1 ? Trend : na, title = "Up Entry Arrow",
+     colorup = color.new(#008000, 0), colordown = color.new(#B22222, 0),
+     maxheight = 60, minheight = 50)
+plotarrow(Trend == -1 and Trend[1] ==  1 ? Trend : na, title = "Down Entry Arrow",
+     colorup = color.new(#00FF00, 0), colordown = color.new(#FF00FF, 0),
+     maxheight = 60, minheight = 50)
+
+// 6. EMA
+plot(out, title = "EMA", color = color.new(#0000FF, 0), linewidth = 1)
+
+// 7-8. Canal de soporte / resistencia del scalper
+plot(last8h, title = "고가선", color = color.new(#D81B60, 0), linewidth = 2)
+plot(lastl8, title = "저가선", color = color.new(#81C784, 0), linewidth = 2)
+
+// 9-10. Senales Buy / Sell del scalper
+plotshape(bearish ? 1 : 0, title = "Shapes", style = shape.arrowdown, text = "Sell",
+     location = location.abovebar, color = color.new(color.red, 0),
+     textcolor = color.new(#2962FF, 0))
+plotshape(bullish ? 1 : 0, title = "Shapes", style = shape.arrowup,  text = "Buy",
+     location = location.belowbar, color = color.new(#006400, 0),
+     textcolor = color.new(#2962FF, 0))
+
+// =============================================
+// TENDENCIA MULTI-TEMPORALIDAD
+// =============================================
+// El mismo Supertrend V1.0 de arriba, empaquetado en una funcion para poder
+// pedirlo en otras temporalidades con request.security. Devuelve el estado
+// (+1 alcista / -1 bajista) y cuantas velas lleva sin girar.
+f_trend(int _factor, int _pd) =>
+    _up = hl2 - (_factor * ta.atr(_pd))
+    _dn = hl2 + (_factor * ta.atr(_pd))
+    var float _trendUp   = na
+    var float _trendDown = na
+    var int   _trend     = 1
+    _trendUp   := close[1] > nz(_trendUp[1], _up)   ? math.max(_up, nz(_trendUp[1], _up))   : _up
+    _trendDown := close[1] < nz(_trendDown[1], _dn) ? math.min(_dn, nz(_trendDown[1], _dn)) : _dn
+    _trend := close > nz(_trendDown[1], _dn) ?  1 :
+              close < nz(_trendUp[1],   _up) ? -1 : nz(_trend[1], 1)
+    _bars = ta.barssince(_trend != _trend[1])
+    [_trend, _bars]
+
+// lookahead_off: no se asoma al futuro. La fila de la temporalidad mayor
+// cambia mientras su vela sigue abierta, igual que en cualquier tabla MTF.
+[tD,  bD ] = request.security(syminfo.tickerid, "D",  f_trend(Factor, Pd), lookahead = barmerge.lookahead_off)
+[t60, b60] = request.security(syminfo.tickerid, "60", f_trend(Factor, Pd), lookahead = barmerge.lookahead_off)
+[t15, b15] = request.security(syminfo.tickerid, "15", f_trend(Factor, Pd), lookahead = barmerge.lookahead_off)
+
+f_txt(int _t) => _t == 1 ? "▲ Alcista" : _t == -1 ? "▼ Bajista" : "—"
+f_col(int _t) => _t == 1 ? cUp : _t == -1 ? cDn : cDim
+f_bars(int _b) => na(_b) ? "" : str.tostring(_b) + "v"
+
+// =============================================
+// LINEA DEL TARGET - de izquierda a derecha
+// =============================================
+var line  kLine  = na
+var label kLabel = na
+
+if barstate.islast
+    if not na(kLine)
+        line.delete(kLine)
+    if not na(kLabel)
+        label.delete(kLabel)
+    if kTarget > 0
+        kLine  := line.new(bar_index - 1, kTarget, bar_index, kTarget,
+             extend = extend.both, color = kColor, width = 2)
+        kLabel := label.new(bar_index, kTarget,
+             "TARGET " + str.tostring(kTarget, format.mintick),
+             style = label.style_label_left, color = kColor,
+             textcolor = color.black, size = size.small)
+
+// =============================================
+// % UP / DOWN - arriba a la derecha
+// =============================================
+var table kTab = table.new(position.top_right, 1, 4,
+     bgcolor = cBg, frame_width = 1, frame_color = cBrd)
+
+if barstate.islast
+    table.cell(kTab, 0, 0, kNombre == "" ? "KALSHI" : kNombre,
+         text_color = cDim, text_size = size.small, text_halign = text.align_right)
+    table.cell(kTab, 0, 1,
+         (kUp ? "▲ UP " : "▼ DOWN ") + str.tostring(kUp ? kYesPct : kNoPct, "#.#") + "%",
+         text_color = kUp ? cUp : cDn, text_size = size.huge, text_halign = text.align_right)
+    table.cell(kTab, 0, 2,
+         "UP " + str.tostring(kYesPct, "#.#") + "%   ·   DOWN " + str.tostring(kNoPct, "#.#") + "%",
+         text_color = cDim, text_size = size.small, text_halign = text.align_right)
+    table.cell(kTab, 0, 3,
+         kTarget > 0 ? "Target  " + str.tostring(kTarget, format.mintick) : "Target  —",
+         text_color = kColor, text_size = size.normal, text_halign = text.align_right)
+
+// =============================================
+// TABLA DE TENDENCIA - abajo a la izquierda
+// =============================================
+var table tTab = table.new(position.bottom_left, 3, 4,
+     bgcolor = cBg, frame_width = 1, frame_color = cBrd)
+
+if barstate.islast
+    table.cell(tTab, 0, 0, "TENDENCIA", text_color = cDim, text_size = size.small, text_halign = text.align_left)
+    table.cell(tTab, 1, 0, "", text_size = size.small)
+    table.cell(tTab, 2, 0, "SuperTrend " + str.tostring(Factor) + "," + str.tostring(Pd),
+         text_color = cDim, text_size = size.tiny, text_halign = text.align_right)
+
+    table.cell(tTab, 0, 1, "Día",    text_color = cDim, text_size = size.small, text_halign = text.align_left)
+    table.cell(tTab, 1, 1, f_txt(tD),  text_color = f_col(tD),  text_size = size.normal, text_halign = text.align_left)
+    table.cell(tTab, 2, 1, f_bars(bD), text_color = cDim, text_size = size.tiny, text_halign = text.align_right)
+
+    table.cell(tTab, 0, 2, "1 hora", text_color = cDim, text_size = size.small, text_halign = text.align_left)
+    table.cell(tTab, 1, 2, f_txt(t60), text_color = f_col(t60), text_size = size.normal, text_halign = text.align_left)
+    table.cell(tTab, 2, 2, f_bars(b60), text_color = cDim, text_size = size.tiny, text_halign = text.align_right)
+
+    table.cell(tTab, 0, 3, "15 min", text_color = cDim, text_size = size.small, text_halign = text.align_left)
+    table.cell(tTab, 1, 3, f_txt(t15), text_color = f_col(t15), text_size = size.normal, text_halign = text.align_left)
+    table.cell(tTab, 2, 3, f_bars(b15), text_color = cDim, text_size = size.tiny, text_halign = text.align_right)
+
+// =============================================
+// ALERTAS (no estaban en los originales)
+// =============================================
+alertcondition(bullish, title = "Buy",   message = "Buy: cruce alcista de EMA 20 en {{ticker}} @ {{close}}")
+alertcondition(bearish, title = "Sell",  message = "Sell: cruce bajista de EMA 20 en {{ticker}} @ {{close}}")
+alertcondition(Trend ==  1 and Trend[1] == -1, title = "Long",  message = "LONG: giro alcista de SuperTrend en {{ticker}} @ {{close}}")
+alertcondition(Trend == -1 and Trend[1] ==  1, title = "Short", message = "SHORT: giro bajista de SuperTrend en {{ticker}} @ {{close}}")

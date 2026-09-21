@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COMUNIDAD JD · Kalshi</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:rgba(22,27,34,.93); --line:#30363d;
+    --txt:#e6edf3; --dim:#8b949e;
+    --up:#26a69a; --down:#ef5350; --flat:#c9a227; --target:#f0b429;
+    --st-up:#00a000; --st-dn:#e01e1e; --ema:#3b82f6;
+    --res:#D81B60; --sup:#81C784;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);
+       font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+
+  #chart{position:absolute;inset:0}
+
+  .panel{position:absolute;z-index:5;background:var(--panel);border:1px solid var(--line);
+         border-radius:10px;backdrop-filter:blur(8px);padding:12px 14px}
+
+  /* ---- arriba a la derecha: % up / down de Kalshi ---- */
+  #pct{top:12px;right:12px;min-width:224px;text-align:right}
+  #pct .lbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
+  #pct .big{font-size:46px;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums}
+  #pct .big.up{color:var(--up)} #pct .big.down{color:var(--down)}
+  #pct .sub{font-size:12px;color:var(--dim);margin-top:2px;font-variant-numeric:tabular-nums}
+  #pct .tgt{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--dim)}
+  #pct .tgt b{color:var(--target);font-size:16px;font-variant-numeric:tabular-nums}
+
+  /* ---- abajo a la izquierda: tabla de tendencia ---- */
+  #trend{bottom:12px;left:12px;min-width:284px}
+  #trend h3{font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+            color:var(--dim);font-weight:600;margin-bottom:8px}
+  #trend h3 span{text-transform:none;letter-spacing:0;font-weight:400;opacity:.65}
+  table{border-collapse:collapse;width:100%}
+  td{padding:5px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:first-child td{border-top:none}
+  td.tf{color:var(--dim);width:64px}
+  td.tr{font-weight:600}
+  td.bars{text-align:right;width:44px;font-size:11px;color:var(--dim)}
+  td.ch{text-align:right;width:64px;font-size:12px}
+  .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:5px;
+       vertical-align:middle;background:var(--dim)}
+  .dot.on{background:var(--up)} .dot.off{background:var(--down)}
+
+  /* ---- arriba a la izquierda ---- */
+  #top{top:12px;left:12px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;max-width:60vw}
+  #top .name{font-weight:600}
+  #top .spot{color:var(--dim);font-variant-numeric:tabular-nums;margin-right:4px}
+  .btn{background:transparent;border:1px solid var(--line);color:var(--dim);
+       border-radius:6px;padding:3px 9px;cursor:pointer;font:inherit;font-size:12px}
+  .btn.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+  .sep{width:1px;height:18px;background:var(--line);margin:0 2px}
+  .btn.tog.on{background:#30363d;border-color:#484f58;color:var(--txt)}
+
+  #status{position:absolute;bottom:12px;right:12px;z-index:5;font-size:11px;color:var(--dim)}
+  #err{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;
+       display:none;max-width:520px;text-align:center;color:var(--down);
+       background:var(--panel);border:1px solid var(--down);border-radius:10px;padding:14px 18px}
+</style>
+</head>
+<body>
+
+<div id="chart"></div>
+
+<div class="panel" id="top">
+  <span class="name" id="mktName">Cargando…</span>
+  <span class="spot" id="spot"></span>
+  <button class="btn" data-tf="m15">15m</button>
+  <button class="btn" data-tf="h1">1H</button>
+  <button class="btn" data-tf="day">1D</button>
+  <span class="sep"></span>
+  <button class="btn tog on" data-tog="st">SuperTrend</button>
+  <button class="btn tog on" data-tog="ema">EMA</button>
+  <button class="btn tog on" data-tog="sr">S/R</button>
+  <button class="btn tog on" data-tog="sig">Señales</button>
+</div>
+
+<div class="panel" id="pct">
+  <div class="lbl" id="pctLbl">Probabilidad</div>
+  <div class="big" id="pctBig">–</div>
+  <div class="sub" id="pctSub"></div>
+  <div class="tgt">Target Kalshi<br><b id="tgtVal">–</b></div>
+</div>
+
+<div class="panel" id="trend">
+  <h3>Tendencia <span>· SuperTrend (3, 7)</span></h3>
+  <table>
+    <tr><td class="tf">Día</td>   <td class="tr" id="t-day">–</td><td class="bars" id="b-day"></td><td class="ch" id="c-day"></td></tr>
+    <tr><td class="tf">1 hora</td><td class="tr" id="t-h1">–</td> <td class="bars" id="b-h1"></td> <td class="ch" id="c-h1"></td></tr>
+    <tr><td class="tf">15 min</td><td class="tr" id="t-m15">–</td><td class="bars" id="b-m15"></td><td class="ch" id="c-m15"></td></tr>
+  </table>
+</div>
+
+<div id="status">—</div>
+<div class="panel" id="err"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const P = new URLSearchParams(location.search);
+const SERIES  = P.get('series')  || 'KXBTCD';
+const PRODUCT = P.get('product') || 'BTC-USD';
+const TICKER  = P.get('ticker')  || '';
+
+let tf = 'm15';
+let targetLine = null;
+let data = null;                                   // ultima respuesta del server
+const show = {st:true, ema:true, sr:true, sig:true};
+
+const chart = LightweightCharts.createChart($('chart'), {
+  layout:{ background:{color:'#0d1117'}, textColor:'#8b949e', fontSize:12 },
+  grid:{ vertLines:{color:'#1c2128'}, horzLines:{color:'#1c2128'} },
+  rightPriceScale:{ borderColor:'#30363d', scaleMargins:{top:.12, bottom:.12} },
+  timeScale:{ borderColor:'#30363d', timeVisible:true, secondsVisible:false },
+  crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+});
+
+const candleSeries = chart.addCandlestickSeries({
+  upColor:'#26a69a', downColor:'#ef5350', borderVisible:false,
+  wickUpColor:'#26a69a', wickDownColor:'#ef5350',
+});
+
+const mkLine = (color, width) => chart.addLineSeries({
+  color, lineWidth:width, priceLineVisible:false, lastValueVisible:false,
+  crosshairMarkerVisible:false,
+});
+
+// SuperTrend bicolor: una sola serie, cada punto trae su color segun Trend
+const stSeries   = mkLine('#00a000', 2);
+const emaSeries  = mkLine('#3b82f6', 1);
+const resSeries  = mkLine('#D81B60', 2);
+const supSeries  = mkLine('#81C784', 2);
+
+addEventListener('resize', () =>
+  chart.applyOptions({ width: innerWidth, height: innerHeight }));
+
+// ---- botones ----
+document.querySelectorAll('[data-tf]').forEach(b => {
+  b.onclick = () => {
+    tf = b.dataset.tf;
+    document.querySelectorAll('[data-tf]').forEach(x => x.classList.toggle('on', x === b));
+    render(); chart.timeScale().fitContent();
+  };
+});
+document.querySelector('[data-tf="m15"]').classList.add('on');
+
+document.querySelectorAll('[data-tog]').forEach(b => {
+  b.onclick = () => { show[b.dataset.tog] = !show[b.dataset.tog];
+                      b.classList.toggle('on', show[b.dataset.tog]); render(); };
+});
+
+const money = n => n == null ? '–'
+  : '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
+const cls   = t => t === 'Alcista' ? 'up' : t === 'Bajista' ? 'down' : 'flat';
+const arrow = t => t === 'Alcista' ? '▲' : t === 'Bajista' ? '▼' : '▬';
+
+// Estilo de cada marcador, igual que los plots del Pine original
+const MARKER = {
+  upArrow:    {position:'belowBar', shape:'arrowUp',   color:'#00a000'},
+  downArrow:  {position:'aboveBar', shape:'arrowDown', color:'#e01e1e'},
+  longEntry:  {position:'belowBar', shape:'arrowUp',   color:'#008000', text:'LONG'},
+  shortEntry: {position:'aboveBar', shape:'arrowDown', color:'#FF00FF', text:'SHORT'},
+  buy:        {position:'belowBar', shape:'arrowUp',   color:'#006400', text:'Buy'},
+  sell:       {position:'aboveBar', shape:'arrowDown', color:'#ef5350', text:'Sell'},
+};
+
+function render(){
+  if (!data) return;
+  const cs = data.candles?.[tf] || [];
+  const ind = data.indicators?.[tf];
+  candleSeries.setData(cs);
+  if (!ind) return;
+
+  // SuperTrend: verde con Trend=+1, rojo con -1, igual que el plot del Pine.
+  // En el giro la linea salta de TrendUp a TrendDown, como en TradingView.
+  stSeries.setData(show.st
+    ? ind.tsl.map(p => ({time:p.time, value:p.value,
+                         color: p.trend === 1 ? '#00a000' : '#e01e1e'}))
+    : []);
+
+  emaSeries.setData(show.ema ? ind.ema : []);
+  resSeries.setData(show.sr ? ind.last8h : []);
+  supSeries.setData(show.sr ? ind.lastl8 : []);
+
+  const marks = show.sig
+    ? ind.markers.map(m => ({time:m.time, size:1, ...MARKER[m.kind]}))
+                 .sort((a,b) => a.time - b.time)
+    : [];
+  candleSeries.setMarkers(marks);
+
+  // Linea del target de Kalshi, de izquierda a derecha
+  if (targetLine){ candleSeries.removePriceLine(targetLine); targetLine = null; }
+  const m = data.market;
+  if (m && m.target != null){
+    targetLine = candleSeries.createPriceLine({
+      price: m.target, color:'#f0b429', lineWidth:2,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      axisLabelVisible:true, title:`TARGET ${m.yes_pct.toFixed(0)}%`,
+    });
+  }
+}
+
+function paintTrend(key, d){
+  if (!d) return;
+  const el = $('t-'+key), bs = $('b-'+key), ch = $('c-'+key);
+  const dot = d.ema_ok == null ? '<i class="dot"></i>'
+            : `<i class="dot ${d.ema_ok ? 'on':'off'}" title="EMA ${d.ema_ok?'confirma':'no confirma'}"></i>`;
+  el.innerHTML = `${arrow(d.trend)} ${d.trend}${d.strength === 2 ? ' fuerte' : ''}${dot}`;
+  el.className = 'tr ' + cls(d.trend);
+  bs.textContent = d.bars ? d.bars + 'v' : '';
+  ch.textContent = (d.change > 0 ? '+' : '') + d.change + '%';
+  ch.className = 'ch ' + (d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'flat');
+}
+
+async function tick(){
+  try{
+    const u = new URL('/api/state', location.origin);
+    u.searchParams.set('series', SERIES);
+    u.searchParams.set('product', PRODUCT);
+    if (TICKER) u.searchParams.set('ticker', TICKER);
+    ['factor','pd','len'].forEach(k => P.get(k) && u.searchParams.set(k, P.get(k)));
+
+    const r = await fetch(u);
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error + (d.detail ? ': ' + d.detail : ''));
+    $('err').style.display = 'none';
+
+    data = d;
+    render();
+
+    $('spot').textContent = money(d.spot);
+    ['day','h1','m15'].forEach(k => paintTrend(k, d.trends?.[k]));
+    document.querySelector('#trend h3 span').textContent =
+      `· SuperTrend (${d.params.factor}, ${d.params.pd}) · EMA ${d.params.len}`;
+
+    const m = d.market;
+    if (m){
+      $('mktName').textContent = `${d.product} · ${m.subtitle || m.ticker}`;
+      const yes = m.yes_pct, no = m.no_pct, isUp = yes >= no;
+      $('pctLbl').textContent = isUp ? 'Probabilidad ▲ UP' : 'Probabilidad ▼ DOWN';
+      $('pctBig').textContent = (isUp ? yes : no).toFixed(1) + '%';
+      $('pctBig').className = 'big ' + (isUp ? 'up' : 'down');
+      $('pctSub').textContent = `UP ${yes.toFixed(1)}%  ·  DOWN ${no.toFixed(1)}%`;
+      $('tgtVal').textContent = money(m.target);
+    } else {
+      $('mktName').textContent = `${d.product} · sin mercado abierto en ${SERIES}`;
+    }
+
+    $('status').textContent = 'Actualizado ' + new Date(d.ts*1000).toLocaleTimeString('es-MX');
+  } catch(e){
+    $('err').style.display = 'block';
+    $('err').textContent = 'Error: ' + e.message;
+    $('status').textContent = 'Sin conexión';
+  }
+}
+
+chart.applyOptions({ width: innerWidth, height: innerHeight });
+tick().then(() => chart.timeScale().fitContent());
+setInterval(tick, 5000);
+</script>
+</body>
+</html>

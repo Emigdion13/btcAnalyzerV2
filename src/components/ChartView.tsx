@@ -590,12 +590,17 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     .join(';')
   const visibleVolume = indicators.some((i) => i.kind === 'volume' && i.visible)
 
+  /** Manual price zoom must not be overwritten by the auto-scale setting until reset. */
+  const pricePinnedRef = useRef(false)
   const zoom = (factor: number) => {
     const scale = chartRef.current?.timeScale(),
       range = scale?.getVisibleLogicalRange()
     if (scale && range) {
       const center = (range.from + range.to) / 2
-      const half = Math.min(900, Math.max(8, ((range.to - range.from) * factor) / 2))
+      const length = Math.max(8, propsRef.current.candles.length)
+      // Allow seeing the whole tape; minBarSpacing (not this cap) is what used
+      // to stop zoom-out after a handful of clicks.
+      const half = Math.min(length, Math.max(8, ((range.to - range.from) * factor) / 2))
       scale.setVisibleLogicalRange({ from: center - half, to: center + half })
     }
   }
@@ -611,6 +616,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (scale && range) {
       const center = (range.from + range.to) / 2,
         half = Math.max(1e-8, ((range.to - range.from) * factor) / 2)
+      pricePinnedRef.current = true
       scale.applyOptions({ autoScale: false })
       scale.setVisibleRange({ from: center - half, to: center + half })
     }
@@ -618,6 +624,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   useImperativeHandle(ref, () => ({
     fit: () => {
       chartRef.current?.timeScale().fitContent()
+      pricePinnedRef.current = false
       mainRef.current?.priceScale().applyOptions({ autoScale: true })
     },
     zoom,
@@ -634,6 +641,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       chartRef.current
         ?.timeScale()
         .setVisibleLogicalRange({ from: Math.max(0, length - 145), to: length + 8 })
+      pricePinnedRef.current = false
       mainRef.current?.priceScale().applyOptions({ autoScale: true })
     },
     priceRange: () => mainRef.current?.priceScale().getVisibleRange() ?? null,
@@ -727,7 +735,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         secondsVisible: false,
         rightOffset: 8,
         barSpacing: 6,
-        minBarSpacing: 2.5,
+        minBarSpacing: 0.2,
         ticksVisible: false,
       },
       crosshair: {
@@ -1203,7 +1211,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             : settings.priceMode === 'percent'
               ? PriceScaleMode.Percentage
               : PriceScaleMode.Normal,
-        autoScale: settings.autoScale,
+        autoScale: pricePinnedRef.current ? false : settings.autoScale,
       })
       if (chartType === 'candles' || chartType === 'hollow')
         (series as ISeriesApi<'Candlestick'>).applyOptions({

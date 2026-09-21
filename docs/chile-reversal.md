@@ -2,7 +2,7 @@
 
 The reversal core of **ROBEX IA CHILERA V18 PRO**, ported to Atlas as a native price overlay.
 
-Atlas indicators are JavaScript, not Pine Script. This is a behavioral port of one part of a published Pine v6 script: the four price-vs-level patterns that encode reversal behavior. Everything else in the original — the 20-point trend score, the 15m prediction panel, the countdown, the alerts — is deliberately not reproduced.
+Atlas indicators are JavaScript, not Pine Script. This is a behavioral port of one part of a published Pine v6 script: the four price-vs-level patterns that encode reversal behavior. The other half of the family — the score, the next-round prediction, the countdown and the corner panel of V17 — is ported separately as the floating [Chile panel](chile-panel.md) window, and it reads the levels and reversal events computed here. The original's `alertcondition`s are not reproduced.
 
 ## Why only the reversal core
 
@@ -72,19 +72,26 @@ These are what make the Pine signals late by design: at the moment of a true bot
 
 ## Inputs
 
-| Setting              | Pine input                               | Default |
-| -------------------- | ---------------------------------------- | ------- |
-| Pivot timeframe      | hard-coded `"15"`                        | 15m     |
-| Pivot left           | `pivotIzq`                               | 2       |
-| Pivot right          | `pivotDer`                               | 2       |
-| Max distance (ATR)   | `maxDistATR`                             | 2.5     |
-| Zone thickness (ATR) | `grosorZonaATR`                          | 0.10    |
-| Marker lifetime (s)  | —                                        | 60      |
-| Marker fade (s)      | —                                        | 15      |
-| Show S/R zones       | `mostrarSR`                              | on      |
-| Show breaks          | —                                        | on      |
-| Require confirmation | `confirmacionLong/Short` + `velaImpulso` | off     |
-| Impulse body ratio   | `velaImpulso` 0.45                       | 0.45    |
+| Setting                 | Pine input                               | Default |
+| ----------------------- | ---------------------------------------- | ------- |
+| Pivot timeframe         | hard-coded `"15"`                        | 15m     |
+| Pivot left              | `pivotIzq`                               | 2       |
+| Pivot right             | `pivotDer`                               | 2       |
+| Max distance (ATR)      | `maxDistATR`                             | 2.5     |
+| Zone thickness (ATR)    | `grosorZonaATR`                          | 0.10    |
+| Marker lifetime (s)     | —                                        | 60      |
+| Marker fade (s)         | —                                        | 15      |
+| Show S/R zones          | `mostrarSR`                              | on      |
+| Show breaks             | —                                        | on      |
+| Require confirmation    | `confirmacionLong/Short` + `velaImpulso` | off     |
+| Impulse body ratio      | `velaImpulso` 0.45                       | 0.45    |
+| Minimum strength        | `minScore`                               | 6       |
+| Minimum edge            | `minVentaja`                             | 2       |
+| ROBEX trend sensitivity | `factorTrend`                            | 2.4     |
+| ROBEX trend ATR         | `atrTrendLen`                            | 10      |
+
+The last four drive the [Chile panel](chile-panel.md) window's score, not the overlay: nothing you
+set there moves a marker on the chart.
 
 ## Not a recommendation
 

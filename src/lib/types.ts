@@ -476,6 +476,18 @@ export interface ChileReversalSettings {
   showBreaks: boolean
   /** Apply the Pine scalping gates (close vs EMA9/VWAP/RSI50 + impulse body). */
   requireConfirmation: boolean
+  /**
+   * V17 panel engine inputs. These drive the floating Chile panel window (the Pine `table`),
+   * not the overlay: the reversal markers above are the V18 core and are untouched by them.
+   */
+  /** Pine input: "Fuerza minima" (6) — points one side needs before the panel calls it. */
+  panelMinScore: number
+  /** Pine input: "Ventaja minima" (2) — points one side needs over the other. */
+  panelMinEdge: number
+  /** Pine input: "Sensibilidad ROBEX Trend" (2.4) — supertrend ATR multiplier. */
+  panelTrendFactor: number
+  /** Pine input: "ATR ROBEX Trend" (10) — supertrend ATR length. */
+  panelTrendAtrLength: number
   /** Pine `velaImpulso`: minimum body/range ratio (0.45). */
   impulseBodyRatio: number
   /** Support zone color. Pine `verde` rgb(0, 225, 145). */
@@ -499,6 +511,11 @@ export const CHILE_REVERSAL_DEFAULTS: Readonly<ChileReversalSettings> = {
   showBreaks: true,
   requireConfirmation: false,
   impulseBodyRatio: 0.45,
+  // The V17 panel's published inputs.
+  panelMinScore: 6,
+  panelMinEdge: 2,
+  panelTrendFactor: 2.4,
+  panelTrendAtrLength: 10,
   supportColor: '#00e191',
   resistanceColor: '#fa415a',
 }

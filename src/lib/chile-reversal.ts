@@ -45,6 +45,12 @@ import { CHILE_REVERSAL_DEFAULTS } from './types'
  * The `confirmacionLong/Short` + `velaImpulso` gates from the scalping engine
  * are preserved as an optional filter, off by default, because in the original
  * they are what suppress a signal until price has already reclaimed EMA9/VWAP.
+ *
+ * The other half of the Pine script — the 20-point trend score, the "next 15m"
+ * prediction, the countdown and the corner panel — lives in `lib/chile-panel.ts`
+ * as the floating Chile panel window. It reads the levels and reversal events
+ * computed here, so the panel's reversal points and the markers on the chart are
+ * always the same events. See docs/chile-panel.md.
  */
 
 /** Pine `ta.atr(14)` on the higher timeframe. */
@@ -142,6 +148,12 @@ export function isChileReversalSettings(value: unknown): value is ChileReversalS
     typeof s.showBreaks === 'boolean' &&
     typeof s.requireConfirmation === 'boolean' &&
     num(s.impulseBodyRatio, 0, 1) &&
+    // The V17 panel inputs are optional for the same reason: a profile persisted before the
+    // panel existed keeps validating, and chileReversalSettings() fills the defaults in.
+    (s.panelMinScore === undefined || int(s.panelMinScore, 3, 20)) &&
+    (s.panelMinEdge === undefined || int(s.panelMinEdge, 1, 8)) &&
+    (s.panelTrendFactor === undefined || num(s.panelTrendFactor, 1, 5)) &&
+    (s.panelTrendAtrLength === undefined || int(s.panelTrendAtrLength, 5, 30)) &&
     typeof s.supportColor === 'string' &&
     HEX_COLOR.test(s.supportColor) &&
     typeof s.resistanceColor === 'string' &&
@@ -169,8 +181,40 @@ export interface ChileReversalContext {
   replay?: boolean
 }
 
+/**
+ * Maps every chart bar to the index of the newest higher-timeframe bar that had already
+ * CLOSED — what `request.security(..., x[1], lookahead=barmerge.lookahead_on)` delivers. A
+ * developing HTF candle never reaches an earlier chart bar. When the source resolution is at or
+ * below the chart's own, the request degenerates to the previous chart bar.
+ *
+ * Shared with the Chile panel port (`lib/chile-panel.ts`), so the window and the overlay read
+ * the same closed bar and can never disagree about which one that is.
+ */
+export function closedHtfIndexes(
+  chartTimes: number[],
+  htf: { time: number }[],
+  resolution: Timeframe,
+  higher: boolean,
+): (number | null)[] {
+  const out: (number | null)[] = []
+  let cursor = -1
+  for (const time of chartTimes) {
+    if (higher) {
+      const bucket = bucketStart(time, resolution)
+      while (cursor + 1 < htf.length && htf[cursor + 1]!.time <= bucket) cursor++
+      // `[1]`: the bar before the developing one.
+      const closedIndex = htf[cursor]?.time === bucket ? cursor - 1 : cursor
+      out.push(closedIndex >= 0 ? closedIndex : null)
+    } else {
+      cursor++
+      out.push(cursor > 0 ? cursor - 1 : null)
+    }
+  }
+  return out
+}
+
 /** Wilder ATR, matching Pine `ta.atr(length)`. */
-function wilderAtr(candles: Candle[], length: number): (number | null)[] {
+export function wilderAtr(candles: Candle[], length: number): (number | null)[] {
   const out: (number | null)[] = []
   let previousClose: number | null = null
   let sum = 0
@@ -358,20 +402,12 @@ export function calculateChileReversal(
 
   // Map every chart bar to the newest HTF bar that had already CLOSED, which is
   // what `request.security(..., x[1], lookahead_on)` delivers.
-  const perBar: (HtfState | null)[] = []
-  let cursor = -1
-  for (const candle of candles) {
-    if (higher) {
-      const bucket = bucketStart(candle.time, settings.resolution)
-      while (cursor + 1 < states.length && states[cursor + 1].time <= bucket) cursor++
-      // `[1]`: the bar before the developing one.
-      const closedIndex = states[cursor]?.time === bucket ? cursor - 1 : cursor
-      perBar.push(closedIndex >= 0 ? states[closedIndex] : null)
-    } else {
-      cursor++
-      perBar.push(cursor > 0 ? states[cursor - 1] : null)
-    }
-  }
+  const perBar: (HtfState | null)[] = closedHtfIndexes(
+    candles.map((candle) => candle.time),
+    states,
+    settings.resolution,
+    higher,
+  ).map((index) => (index === null ? null : states[index]!))
 
   const closes = candles.map((c) => c.close)
   const ema9 = pineEmaSeries(closes, CHILE_EMA_LENGTH)
@@ -603,8 +639,11 @@ export function chileMarkerNowSeconds(
   return Math.abs(wallNowSeconds - edge) <= barSeconds ? wallNowSeconds : edge
 }
 
-/** Pine `ta.ema` seeded from the first value (not the Studio's SMA-seeded ema). */
-function pineEmaSeries(values: number[], length: number): (number | null)[] {
+/**
+ * Pine `ta.ema` seeded from the first value (not the Studio's SMA-seeded ema). Shared with the
+ * Chile panel port, which needs the same EMA on three resolutions.
+ */
+export function pineEmaSeries(values: number[], length: number): (number | null)[] {
   const alpha = 2 / (length + 1)
   let previous: number | null = null
   return values.map((value, i) => {
@@ -613,8 +652,8 @@ function pineEmaSeries(values: number[], length: number): (number | null)[] {
   })
 }
 
-/** Wilder RSI, matching Pine `ta.rsi`. */
-function wilderRsi(values: number[], length: number): (number | null)[] {
+/** Wilder RSI, matching Pine `ta.rsi`. Shared with the Chile panel port. */
+export function wilderRsi(values: number[], length: number): (number | null)[] {
   const out: (number | null)[] = []
   let gain = 0
   let loss = 0
@@ -648,8 +687,11 @@ function wilderRsi(values: number[], length: number): (number | null)[] {
   return out
 }
 
-/** Pine `ta.vwap(hlc3)`, reset each UTC day like Atlas's built-in VWAP. */
-function sessionVwap(candles: Candle[]): (number | null)[] {
+/**
+ * Pine `ta.vwap(hlc3)`, reset each UTC day like Atlas's built-in VWAP. Shared with the Chile
+ * panel port, whose `sobreVWAP`/`bajoVWAP` points read it.
+ */
+export function sessionVwap(candles: Candle[]): (number | null)[] {
   let day: number | null = null
   let pv = 0
   let vol = 0

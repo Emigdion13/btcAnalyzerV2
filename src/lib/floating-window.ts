@@ -177,3 +177,17 @@ export const MTF_RSI_ROOMY_HEIGHT = 940
 
 export const mtfRsiDefaultVisible = (width: number, height: number): boolean =>
   width >= MTF_RSI_ROOMY_WIDTH && height >= MTF_RSI_ROOMY_HEIGHT
+
+/**
+ * Where the Chile panel starts.
+ *
+ * The panel is the shortest of the corner windows — a verdict line and eight rows — so it does not
+ * need the roomy viewport the Candle Pulse and the MTF RSI window ask for. It starts open wherever
+ * there is chart width for it (640px+, the retired AI decision window's rule) and docks above the
+ * MTF RSI window on the left, which is also one keystroke (Alt L) away in every viewport. An
+ * explicit show or hide wins over the default and is remembered.
+ */
+export const CHILE_PANEL_MIN_WIDTH = 640
+
+export const chilePanelDefaultVisible = (viewportWidth: number): boolean =>
+  viewportWidth >= CHILE_PANEL_MIN_WIDTH

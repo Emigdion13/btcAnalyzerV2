@@ -9622,7 +9622,12 @@ input[type='color']::-webkit-color-swatch {
   right: 0;
   top: -40px;
   height: 36px;
-  background: linear-gradient(180deg, transparent, rgba(89, 216, 242, 0.05) 70%, rgba(89, 216, 242, 0.16));
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(89, 216, 242, 0.05) 70%,
+    rgba(89, 216, 242, 0.16)
+  );
   pointer-events: none;
   animation: pulse-scan 4.6s linear infinite;
   z-index: 1;
@@ -10724,6 +10729,374 @@ input[type='color']::-webkit-color-swatch {
 
 @media (max-width: 720px) {
   .mtf-rsi-window {
+    left: 6px;
+    bottom: 40px;
+  }
+}
+
+/* ============================================================
+   Chile panel — the V17 score readout as a floating window
+   ============================================================ */
+
+.chile-panel {
+  --chile-panel-width: 272px;
+  --chile-verde: #00e191;
+  --chile-rojo: #fa415a;
+  --chile-amarillo: #ffc337;
+  position: absolute;
+  z-index: 7;
+  /* Bottom-left, above the MTF RSI window: the peek owns the bottom-right, the Candle Pulse the
+     top-left, and the oscillator strip the top-right. */
+  left: 10px;
+  bottom: 214px;
+  width: var(--chile-panel-width);
+  background: rgba(14, 19, 28, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(80, 95, 115, 0.3);
+  border-radius: 9px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  color: var(--text);
+  user-select: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.chile-panel.is-degraded {
+  opacity: 0.82;
+}
+.chile-panel.is-dragging {
+  cursor: grabbing;
+  transition: none;
+  border-color: #3d4a5c;
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.65),
+    0 0 20px rgba(144, 182, 255, 0.16);
+}
+/* The frame answers the call: green when the score leans up, red when it leans down. */
+.chile-panel[data-call='up'] {
+  border-color: rgba(0, 225, 145, 0.5);
+  box-shadow:
+    0 0 16px rgba(0, 225, 145, 0.16),
+    0 14px 34px rgba(0, 0, 0, 0.46);
+}
+.chile-panel[data-call='down'] {
+  border-color: rgba(250, 65, 90, 0.5);
+  box-shadow:
+    0 0 16px rgba(250, 65, 90, 0.16),
+    0 14px 34px rgba(0, 0, 0, 0.46);
+}
+.chile-panel.is-minimized {
+  width: auto;
+}
+
+.chile-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 5px 5px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: grab;
+  touch-action: none;
+}
+.chile-panel.is-minimized .chile-panel-head {
+  border-bottom: 0;
+}
+.chile-panel-grip {
+  flex-shrink: 0;
+  color: #556274;
+  opacity: 0.6;
+}
+.chile-panel:hover .chile-panel-grip {
+  opacity: 1;
+}
+.chile-panel.is-dragging .chile-panel-head {
+  cursor: grabbing;
+}
+.chile-panel-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.chile-panel-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.chile-panel-tag {
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  color: var(--dim, var(--muted));
+  padding: 1px 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+}
+.chile-panel-tag.is-live {
+  color: var(--chile-verde);
+  border-color: rgba(0, 225, 145, 0.4);
+}
+.chile-panel-head-space {
+  flex: 1;
+}
+.chile-panel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chile-panel-button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.chile-panel-button.is-close:hover {
+  color: var(--chile-rojo);
+}
+
+.chile-panel-sub {
+  margin: 0;
+  padding: 5px 9px 0;
+  font-size: 8.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chile-panel-verdict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px 4px;
+}
+.chile-panel-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+.chile-panel-call.is-up {
+  color: #04150f;
+  background: var(--chile-verde);
+  border-color: var(--chile-verde);
+}
+.chile-panel-call.is-down {
+  color: #1a0308;
+  background: var(--chile-rojo);
+  border-color: var(--chile-rojo);
+}
+.chile-panel-clock {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.chile-panel-clock.is-closing {
+  color: var(--chile-amarillo);
+}
+.chile-panel-clock.is-final {
+  color: var(--chile-rojo);
+}
+.chile-panel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  cursor: default;
+}
+button.chile-panel-chip {
+  cursor: pointer;
+}
+.chile-panel-chip.is-lateral {
+  color: var(--chile-amarillo);
+  border-color: rgba(255, 195, 55, 0.4);
+}
+.chile-panel-chip.is-official {
+  color: var(--text);
+  border-color: rgba(144, 182, 255, 0.45);
+}
+.chile-panel-chip:hover,
+.chile-panel-chip.is-on {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.chile-panel-waiting {
+  margin: 0;
+  padding: 2px 9px 10px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.chile-panel-force {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 9px 6px;
+}
+.chile-panel-force-bar {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(250, 65, 90, 0.35);
+  overflow: hidden;
+}
+.chile-panel-force-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--chile-verde);
+}
+.chile-panel-force-numbers {
+  font-size: 8.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chile-panel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0 7px 4px;
+}
+.chile-panel-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 3px;
+  border-radius: 4px;
+}
+.chile-panel-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.chile-panel-row > dt {
+  flex: 1;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.chile-panel-row > dd {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--text);
+}
+.chile-panel-row.is-up > dd {
+  color: var(--chile-verde);
+}
+.chile-panel-row.is-down > dd {
+  color: var(--chile-rojo);
+}
+.chile-panel-row.is-warn > dd {
+  color: var(--chile-amarillo);
+}
+.chile-panel-row.is-dim > dd {
+  color: var(--muted);
+}
+
+.chile-panel-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 7px 6px;
+}
+.chile-panel-factor {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 7.5px;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+.chile-panel-factor > b {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.chile-panel-factor.is-up {
+  border-color: rgba(0, 225, 145, 0.35);
+}
+.chile-panel-factor.is-up > b {
+  color: var(--chile-verde);
+}
+.chile-panel-factor.is-down {
+  border-color: rgba(250, 65, 90, 0.35);
+}
+.chile-panel-factor.is-down > b {
+  color: var(--chile-rojo);
+}
+
+.chile-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.chile-panel-round {
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.chile-panel-unfed {
+  font-size: 8px;
+  color: var(--chile-amarillo);
+}
+.chile-panel-foot-space {
+  flex: 1;
+}
+.chile-panel-min-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px 6px;
+}
+.chile-panel-min-force {
+  margin-left: auto;
+  font-size: 8px;
+  color: var(--muted);
+}
+.chile-panel-note {
+  margin: 0;
+  padding: 0 9px 8px;
+  font-size: 8.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Short viewports have no room for the stacked corner: the MTF RSI window starts closed below
+   1050px, so the panel takes the corner itself instead of running off the top of the chart. */
+@media (max-height: 820px), (max-width: 1050px) {
+  .chile-panel {
+    bottom: 46px;
+  }
+}
+@media (max-width: 720px) {
+  .chile-panel {
     left: 6px;
     bottom: 40px;
   }

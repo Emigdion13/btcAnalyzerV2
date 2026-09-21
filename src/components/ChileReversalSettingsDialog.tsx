@@ -62,6 +62,10 @@ export function ChileReversalSettingsDialog({
     impulseBodyRatio: String(initial.impulseBodyRatio),
     markerTtlSeconds: String(initial.markerTtlSeconds),
     markerFadeSeconds: String(initial.markerFadeSeconds),
+    panelMinScore: String(initial.panelMinScore),
+    panelMinEdge: String(initial.panelMinEdge),
+    panelTrendFactor: String(initial.panelTrendFactor),
+    panelTrendAtrLength: String(initial.panelTrendAtrLength),
   })
   const [colors, setColors] = useState<Record<ColorKey, string>>({
     supportColor: initial.supportColor,
@@ -84,6 +88,10 @@ export function ChileReversalSettingsDialog({
       impulseBodyRatio: String(d.impulseBodyRatio),
       markerTtlSeconds: String(d.markerTtlSeconds),
       markerFadeSeconds: String(d.markerFadeSeconds),
+      panelMinScore: String(d.panelMinScore),
+      panelMinEdge: String(d.panelMinEdge),
+      panelTrendFactor: String(d.panelTrendFactor),
+      panelTrendAtrLength: String(d.panelTrendAtrLength),
     })
     setColors({ supportColor: d.supportColor, resistanceColor: d.resistanceColor })
     setShowZones(d.showZones)
@@ -95,7 +103,7 @@ export function ChileReversalSettingsDialog({
   return (
     <Modal
       title="Chile Reversal"
-      description="The reversal core of ROBEX IA CHILERA V18: pivot support and resistance zones sized in ATR, with bounce, rejection and break markers."
+      description="The reversal core of ROBEX IA CHILERA V18: pivot support and resistance zones sized in ATR, with bounce, rejection and break markers — plus the V17 score inputs the floating Chile panel reads."
       eyebrow="INDICATOR SETTINGS"
       className="compact-modal"
       onClose={onClose}
@@ -126,12 +134,16 @@ export function ChileReversalSettingsDialog({
             showBreaks,
             requireConfirmation,
             impulseBodyRatio: Number(numbers.impulseBodyRatio),
+            panelMinScore: Number(numbers.panelMinScore),
+            panelMinEdge: Number(numbers.panelMinEdge),
+            panelTrendFactor: Number(numbers.panelTrendFactor),
+            panelTrendAtrLength: Number(numbers.panelTrendAtrLength),
             supportColor: colors.supportColor.trim().toLowerCase(),
             resistanceColor: colors.resistanceColor.trim().toLowerCase(),
           }
           if (!isChileReversalSettings(settings)) {
             setError(
-              'Pivot legs must be whole numbers from 1–5, max distance 0.5–6 ATR, zone thickness 0.03–0.50 ATR, impulse ratio 0–1, marker lifetime 0–3600 s, marker fade 0–600 s, and colors six-digit hex values.',
+              'Pivot legs must be whole numbers from 1–5, max distance 0.5–6 ATR, zone thickness 0.03–0.50 ATR, impulse ratio 0–1, marker lifetime 0–3600 s, marker fade 0–600 s, panel strength 3–20, panel edge 1–8, ROBEX trend sensitivity 1–5 with an ATR length of 5–30, and colors six-digit hex values.',
             )
             return
           }
@@ -235,6 +247,67 @@ export function ChileReversalSettingsDialog({
               value={colors.resistanceColor}
               onChange={(value) => setColors((current) => ({ ...current, resistanceColor: value }))}
             />
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Panel score</h3>
+          <p className="settings-hint">
+            Inputs of the V17 scoring engine behind the floating <strong>Chile panel</strong> window
+            (Floating → Chile panel, Alt L). They do not move the markers on the chart.
+          </p>
+          <div className="smc-grid smc-grid-two">
+            <label className="field smc-number-field">
+              Minimum strength
+              <input
+                aria-label="Panel minimum strength"
+                inputMode="numeric"
+                value={numbers.panelMinScore}
+                onChange={(event) =>
+                  setNumbers((current) => ({ ...current, panelMinScore: event.target.value }))
+                }
+              />
+              <small>Pine Fuerza minima. Points one side needs to be called. Default 6.</small>
+            </label>
+            <label className="field smc-number-field">
+              Minimum edge
+              <input
+                aria-label="Panel minimum edge"
+                inputMode="numeric"
+                value={numbers.panelMinEdge}
+                onChange={(event) =>
+                  setNumbers((current) => ({ ...current, panelMinEdge: event.target.value }))
+                }
+              />
+              <small>Pine Ventaja minima. Points of lead over the other side. Default 2.</small>
+            </label>
+            <label className="field smc-number-field">
+              ROBEX trend sensitivity
+              <input
+                aria-label="ROBEX trend sensitivity"
+                inputMode="decimal"
+                value={numbers.panelTrendFactor}
+                onChange={(event) =>
+                  setNumbers((current) => ({ ...current, panelTrendFactor: event.target.value }))
+                }
+              />
+              <small>Pine Sensibilidad ROBEX Trend — supertrend ATR multiplier. Default 2.4.</small>
+            </label>
+            <label className="field smc-number-field">
+              ROBEX trend ATR
+              <input
+                aria-label="ROBEX trend ATR length"
+                inputMode="numeric"
+                value={numbers.panelTrendAtrLength}
+                onChange={(event) =>
+                  setNumbers((current) => ({
+                    ...current,
+                    panelTrendAtrLength: event.target.value,
+                  }))
+                }
+              />
+              <small>Pine ATR ROBEX Trend. Default 10.</small>
+            </label>
           </div>
         </section>
 

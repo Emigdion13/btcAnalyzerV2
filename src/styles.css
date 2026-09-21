@@ -11114,3 +11114,309 @@ button.chile-panel-chip {
     bottom: 40px;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Kalshi 15m floating window                                          */
+/* Docked top-right: Candle Pulse owns the top-left, the peek the      */
+/* bottom-right, MTF RSI the bottom-left.                              */
+/* ------------------------------------------------------------------ */
+.kalshi-float-window {
+  --kalshi-amber: #f0b429;
+  position: absolute;
+  z-index: 7;
+  top: 10px;
+  right: 10px;
+  width: 300px;
+  background: rgba(14, 19, 28, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(80, 95, 115, 0.3);
+  border-radius: 9px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  color: var(--text);
+  user-select: none;
+}
+.kalshi-float-window.is-stale {
+  opacity: 0.78;
+}
+.kalshi-float-window.is-stale .kalshi-float-value,
+.kalshi-float-window.is-stale .kalshi-float-pill-label {
+  color: var(--muted);
+}
+.kalshi-float-window.is-stale .kalshi-float-pill {
+  background: #23262b;
+  box-shadow: none;
+}
+.kalshi-float-window.is-stale .kalshi-float-pill-x,
+.kalshi-float-window.is-stale .kalshi-float-kicker {
+  color: var(--dim);
+}
+.kalshi-float-window.is-dragging {
+  cursor: grabbing;
+  border-color: #3d4a5c;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
+}
+.kalshi-float-window.is-minimized {
+  width: auto;
+}
+
+.kalshi-float-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 5px 5px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: grab;
+  touch-action: none;
+}
+.kalshi-float-window.is-minimized .kalshi-float-head {
+  border-bottom: 0;
+}
+.kalshi-float-grip {
+  flex-shrink: 0;
+  color: #556274;
+  opacity: 0.6;
+}
+.kalshi-float-window:hover .kalshi-float-grip {
+  opacity: 1;
+}
+.kalshi-float-window.is-dragging .kalshi-float-head {
+  cursor: grabbing;
+}
+.kalshi-float-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.kalshi-float-tag {
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.kalshi-float-tag.is-live {
+  color: var(--green);
+  background: rgba(43, 185, 155, 0.12);
+}
+.kalshi-float-tag.is-stale {
+  color: var(--kalshi-amber);
+  background: rgba(240, 180, 41, 0.12);
+}
+.kalshi-float-tag.is-waiting {
+  color: var(--dim);
+  background: rgba(89, 99, 113, 0.15);
+}
+.kalshi-float-head-space {
+  flex: 1;
+}
+.kalshi-float-button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+.kalshi-float-button:hover {
+  background: rgba(129, 138, 152, 0.16);
+  color: var(--text);
+}
+.kalshi-float-button.is-close:hover {
+  color: var(--red);
+}
+
+.kalshi-float-min-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+}
+.kalshi-float-min-coin {
+  font-size: 10px;
+  font-weight: 600;
+}
+.kalshi-float-min-pct.is-up {
+  color: var(--green);
+}
+.kalshi-float-min-pct.is-down {
+  color: var(--red);
+}
+.kalshi-float-min-clock {
+  color: var(--muted);
+}
+
+/* Target | Now — the two panels divided like Kalshi's own page. */
+.kalshi-float-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+  padding: 8px 12px 4px;
+}
+.kalshi-float-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.kalshi-float-panel + .kalshi-float-panel {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 12px;
+}
+.kalshi-float-kicker {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.kalshi-float-kicker.is-up {
+  color: var(--green);
+}
+.kalshi-float-kicker.is-down {
+  color: var(--red);
+}
+.kalshi-float-value {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.kalshi-float-value.is-up {
+  color: var(--green);
+}
+.kalshi-float-value.is-down {
+  color: var(--red);
+}
+
+/* Up / Down pills: the odds and the net payout, the way Kalshi shows them. */
+.kalshi-float-pills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.kalshi-float-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 7px 4px 5px;
+  border-radius: 11px;
+  background: #23262b;
+  transition: background 180ms ease;
+}
+.kalshi-float-pill.is-up {
+  background: var(--green);
+}
+.kalshi-float-pill.is-down {
+  background: var(--red);
+}
+.kalshi-float-pill-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #08130e;
+}
+.kalshi-float-pill-x {
+  font-size: 9px;
+  color: rgba(8, 19, 14, 0.72);
+}
+.kalshi-float-window.is-stale .kalshi-float-pill-x {
+  color: var(--dim);
+}
+
+/* Countdown + progress of the running contract. */
+.kalshi-float-clock {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.kalshi-float-clock-label {
+  font-size: 9px;
+  color: var(--muted);
+}
+.kalshi-float-clock-label.is-waiting {
+  color: var(--kalshi-amber);
+}
+.kalshi-float-countdown {
+  font-size: 14px;
+  font-weight: 700;
+}
+.kalshi-float-countdown.is-white {
+  color: var(--text);
+}
+.kalshi-float-countdown.is-amber {
+  color: var(--kalshi-amber);
+}
+.kalshi-float-countdown.is-red {
+  color: var(--red);
+}
+.kalshi-float-progress {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: #1c2026;
+  overflow: hidden;
+}
+.kalshi-float-progress i {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition: width 1s linear;
+}
+.kalshi-float-clock-coin {
+  font-size: 8px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+/* Coin chips: the crypto ladder, then the metals. */
+.kalshi-float-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 12px 8px;
+}
+.kalshi-float-chip {
+  flex: 0 1 auto;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: #171a1f;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.kalshi-float-chip:hover {
+  color: var(--text);
+  background: #22262d;
+}
+.kalshi-float-chip.is-active {
+  background: #22262d;
+  border-color: var(--green);
+  color: var(--text);
+}
+.kalshi-float-chips-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 2px;
+  background: var(--line-soft);
+}
+
+/* The footer: where the numbers on screen actually came from. */
+.kalshi-float-foot {
+  padding: 4px 12px 8px;
+  font-size: 8px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.kalshi-float-foot.is-caution {
+  color: var(--kalshi-amber);
+}

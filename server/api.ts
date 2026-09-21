@@ -72,7 +72,17 @@ function kalshiCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): {
 
 export function createMarketApi(
   service = new CoinbaseService(),
-  kalshi = new KalshiService(kalshiCredentialsFromEnv()),
+  kalshi = new KalshiService({
+    ...kalshiCredentialsFromEnv(),
+    // The "Now" fallback for the floating window: only used when Kalshi's own
+    // index feed is down, and only for crypto — the metals have no public
+    // substitute close enough on a 15-minute horizon.
+    spotProvider: async (product) => {
+      if (isMetalSymbol(product)) return null
+      const { quotes } = await service.getQuotes([product])
+      return quotes[product]?.price ?? null
+    },
+  }),
 ) {
   const connections = new Set<ServerResponse>()
   /**
@@ -136,6 +146,26 @@ export function createMarketApi(
           'NO_KALSHI_SERIES',
         )
       json(res, 200, await kalshi.strikeFor(product))
+      return
+    }
+    /**
+     * One real-time snapshot of the running 15-minute market: the strike, the
+     * UP/DOWN % as Kalshi displays it (live order book + last trade), the net
+     * payout multipliers, and the "Now" index value the market settles on.
+     *
+     * Read-only like every other route here: public market data, no
+     * authentication, and the only upstream the browser will ever see is this
+     * origin — Kalshi itself 403s requests that carry an Origin header.
+     */
+    if (url.pathname === '/api/kalshi/float') {
+      const product = url.searchParams.get('product')
+      if (!isProductId(product) || !kalshiFeedForProduct(product))
+        throw new MarketError(
+          'Kalshi runs no 15-minute market on this pair.',
+          400,
+          'NO_KALSHI_SERIES',
+        )
+      json(res, 200, await kalshi.floatFor(product))
       return
     }
     if (url.pathname === '/api/kalshi/coins') {

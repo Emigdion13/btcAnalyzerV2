@@ -1,3 +1,4 @@
+import { indicatorAutoscale } from '../lib/indicator-autoscale'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
   AreaSeries,
@@ -1054,6 +1055,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: false,
+          autoscaleInfoProvider: indicatorAutoscale(pane, rsi),
           priceFormat: { type: 'price' as const, precision: 2, minMove: 0.01 },
         }
         // Every non-line Pine style is drawn by the native renderer so that
@@ -1071,13 +1073,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                 {
                   ...base,
                   lineVisible: plot.horizontalLine === undefined,
-                  ...(rsi
-                    ? {
-                        autoscaleInfoProvider: () => ({
-                          priceRange: { minValue: 0, maxValue: 100 },
-                        }),
-                      }
-                    : {}),
                 },
                 pane,
               )

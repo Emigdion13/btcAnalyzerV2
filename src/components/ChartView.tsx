@@ -1,3 +1,4 @@
+import { candleAutoscale } from '../lib/price-autoscale'
 import { indicatorAutoscale } from '../lib/indicator-autoscale'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import {
@@ -25,6 +26,7 @@ import type {
 } from 'lightweight-charts'
 import {
   ChevronDown,
+  ChevronUp,
   Eraser,
   Eye,
   EyeOff,
@@ -151,9 +153,12 @@ import { OscHudCard } from './OscHudCard'
 export interface ChartHandle {
   fit: () => void
   zoom: (factor: number) => void
+  zoomPrice: (factor: number) => void
   setRange: (bars: number) => void
   latest: () => void
   snapshot: () => Promise<Blob | null>
+  /** The price range the scale currently shows (auto-fit or manual), for tests and HUDs. */
+  priceRange: () => { from: number; to: number } | null
 }
 interface Props {
   source: DataSource
@@ -594,12 +599,29 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       scale.setVisibleLogicalRange({ from: center - half, to: center + half })
     }
   }
+  /**
+   * Vertical zoom of the price scale: factor < 1 grows the candles (narrower
+   * price range around its center). Time zoom alone cannot reveal candle bodies
+   * when the visible price range is wide, so the chart controls need both.
+   * Manual scaling wins over auto-fit until the user resets the view.
+   */
+  const zoomPrice = (factor: number) => {
+    const scale = mainRef.current?.priceScale(),
+      range = scale?.getVisibleRange()
+    if (scale && range) {
+      const center = (range.from + range.to) / 2,
+        half = Math.max(1e-8, ((range.to - range.from) * factor) / 2)
+      scale.applyOptions({ autoScale: false })
+      scale.setVisibleRange({ from: center - half, to: center + half })
+    }
+  }
   useImperativeHandle(ref, () => ({
     fit: () => {
       chartRef.current?.timeScale().fitContent()
       mainRef.current?.priceScale().applyOptions({ autoScale: true })
     },
     zoom,
+    zoomPrice,
     setRange: (bars: number) => {
       const length = propsRef.current.candles.length
       chartRef.current?.timeScale().setVisibleLogicalRange({
@@ -614,6 +636,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         .setVisibleLogicalRange({ from: Math.max(0, length - 145), to: length + 8 })
       mainRef.current?.priceScale().applyOptions({ autoScale: true })
     },
+    priceRange: () => mainRef.current?.priceScale().getVisibleRange() ?? null,
     snapshot: async () => {
       const chart = chartRef.current
       if (!chart || !propsRef.current.candles.length) return null
@@ -908,6 +931,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             ? 4
             : 2
     const base = {
+      // Outlier-resistant fit: one glitch print in a wick must not flatten the
+      // candles (see price-autoscale). Applies to every auto-fit of the pane.
+      // Line/area draw closes only, so they keep the native close-based range.
+      autoscaleInfoProvider: candleAutoscale(
+        () => propsRef.current.candles,
+        () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null,
+        chartType === 'candles' || chartType === 'hollow' || chartType === 'bars',
+      ),
       priceFormat: {
         type: 'custom' as const,
         formatter: (value: number) => formatPrice(value, false, digits),
@@ -4071,6 +4102,9 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       <div className="chart-navigation" style={{ top: geometry.height - 42 }}>
         <IconButton icon={Minus} label="Zoom out" onClick={() => zoom(1.3)} />
         <IconButton icon={Plus} label="Zoom in" onClick={() => zoom(0.75)} />
+        <span />
+        <IconButton icon={ChevronUp} label="Zoom prices in" onClick={() => zoomPrice(0.75)} />
+        <IconButton icon={ChevronDown} label="Zoom prices out" onClick={() => zoomPrice(1.33)} />
         <span />
         <IconButton
           icon={RotateCcw}

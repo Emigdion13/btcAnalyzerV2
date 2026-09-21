@@ -181,18 +181,21 @@ export const mtfRsiDefaultVisible = (width: number, height: number): boolean =>
 /**
  * Where the Chile panel starts.
  *
- * The panel is the shortest of the corner windows — a verdict line and eight rows — so it does not
- * need the roomy viewport the Candle Pulse and the MTF RSI window ask for. It starts open wherever
- * there is chart width for it (640px+, the retired AI decision window's rule), and it is one
- * keystroke (Alt L) away in every viewport. An explicit show or hide wins over the default and is
- * remembered.
+ * The same rule the Candle Pulse and the MTF RSI window earn, and for the same reason: on a plain
+ * laptop viewport there is no free corner left to put it in. The indicator legend owns the
+ * top-left, the oscillator HUD cards tile the whole width just below it (`top: 146px`), the peek
+ * window owns the bottom-right and the MTF RSI window the bottom-left — so a window that starts
+ * open there lands on top of something the chart already uses, and a window you cannot click past
+ * is worse than one you have to summon. Below the roomy size it starts closed and is one keystroke
+ * (Alt L), one Floating-selector click, away; an explicit show or hide wins and is remembered.
  *
- * Because it starts open on a plain laptop viewport, its dock has to keep clear of everything the
- * chart already owns: it sits on the bottom edge, to the right of the MTF RSI window's corner where
- * there is room for both, and `max-height` keeps it inside the (clipping) chart container so it can
- * cover neither the indicator legend above it nor the top bar. See `.chile-panel` in styles.css.
+ * Where it does open, the dock still has to respect the same furniture: it sits on the bottom
+ * edge, right of the MTF RSI window's corner when there is room for both, and `max-height` keeps it
+ * inside the (clipping) chart container so it covers neither the legend above it nor the top bar.
+ * See `.chile-panel` in styles.css.
  */
-export const CHILE_PANEL_MIN_WIDTH = 640
+export const CHILE_PANEL_ROOMY_WIDTH = 1050
+export const CHILE_PANEL_ROOMY_HEIGHT = 940
 
-export const chilePanelDefaultVisible = (viewportWidth: number): boolean =>
-  viewportWidth >= CHILE_PANEL_MIN_WIDTH
+export const chilePanelDefaultVisible = (width: number, height: number): boolean =>
+  width >= CHILE_PANEL_ROOMY_WIDTH && height >= CHILE_PANEL_ROOMY_HEIGHT

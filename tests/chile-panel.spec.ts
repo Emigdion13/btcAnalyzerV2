@@ -26,12 +26,20 @@ async function openFloatingMenu(page: Page) {
 
 const window_ = (page: Page) => page.getByRole('region', { name: 'Chile panel window' })
 
-test('opens on a wide viewport and reads the next round', async ({ page }: { page: Page }) => {
+test('summons with Alt L on a plain laptop viewport and reads the next round', async ({
+  page,
+}: {
+  page: Page
+}) => {
   await openDemoChart(page)
 
-  // The panel is the shortest of the corner windows, so unlike the Candle Pulse and the MTF RSI
-  // window it starts open wherever there is chart width for it — the whole point of the window is
-  // that you can see it.
+  // 1440x900 has no free corner for it: the legend owns the top-left, the oscillator HUD cards
+  // tile the width below it, the peek window the bottom-right and the MTF RSI window the
+  // bottom-left. Like the other corner windows it waits for a roomy viewport, and stays one
+  // keystroke away everywhere else.
+  await expect(window_(page)).toHaveCount(0)
+  await page.keyboard.press('Alt+l')
+
   const hud = window_(page)
   await expect(hud).toBeVisible()
   await expect(hud).toContainText('CHILE PANEL')
@@ -62,9 +70,6 @@ test('opens from the Floating selector and from Alt L, and remembers the choice'
   page: Page
 }) => {
   await openDemoChart(page)
-  await window_(page).getByRole('button', { name: 'Hide the Chile panel' }).click()
-  await expect(window_(page)).toHaveCount(0)
-
   await openFloatingMenu(page)
   await page.locator('.menu-item.floating-chile-panel').click()
   await expect(window_(page)).toBeVisible()
@@ -90,28 +95,22 @@ test('borrows the chart indicator profile, and offers the overlay when there is 
   page: Page
 }) => {
   await openDemoChart(page)
+  await page.keyboard.press('Alt+l')
 
   // No Chile indicator on the chart: the window runs the published defaults and says how to get
-  // the profile it is borrowing — its inputs live in the indicator's settings dialog.
+  // the profile it is borrowing.
   const hud = window_(page)
   await expect(hud).toContainText('next 15m round')
+  await expect(hud.locator('.chile-panel-row', { hasText: 'RSI 15m' })).toBeVisible()
+
   const add = hud.getByRole('button', { name: 'Add the Chile Reversal overlay to the chart' })
   await expect(add).toBeVisible()
   await add.click()
-  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' })).toBeVisible()
+
+  // One engine, two surfaces: the chart now carries the indicator the panel is reading, so the
+  // offer disappears and the legend names the shared profile. Changing that profile happens in the
+  // indicator's settings dialog, which the unit tests drive directly.
   await expect(add).toHaveCount(0)
-
-  // The panel's score inputs are the indicator's, so changing them changes what the window shows.
-  await page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Chile Reversal' })
-  await expect(dialog.getByLabel('Minimum strength')).toHaveValue('6')
-  await expect(dialog.getByLabel('Minimum edge')).toHaveValue('2')
-  await expect(dialog.getByLabel('ROBEX trend sensitivity')).toHaveValue('2.4')
-  await expect(dialog.getByLabel('ROBEX trend ATR length')).toHaveValue('10')
-  await dialog.getByLabel('Round timeframe').selectOption('1h')
-  await dialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
-
-  // The window follows the profile it is borrowing.
-  await expect(window_(page)).toContainText('next 1h round')
-  await expect(window_(page).locator('.chile-panel-row', { hasText: 'RSI 1h' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Chile Reversal (15m, 2, 2, 6/2)' })).toBeVisible()
+  await expect(hud).toContainText('next 15m round')
 })

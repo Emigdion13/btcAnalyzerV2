@@ -194,7 +194,7 @@ Add it from **Indicators → Chile Reversal**. Pivot highs and lows from a highe
 
 The overlay also draws what the script draws: the ROBEX Trend supertrend line, EMA 9/21 with the fill between them, session VWAP, and the R1/R2/S1/S2 lines with their prices. Each is switchable, and the level lines span `largoLinea` bars back.
 
-The score's corner panel is the floating **Chile panel** window (**Alt L**, or the toolbar **Floating** selector): the same engine's `table`, read off the newest bar of the same result, so the window and the chart can never disagree about a level or a call. It starts open wherever there is chart width for it, drags, minimizes to the call and the countdown, and remembers its position. See [Chile panel](docs/chile-panel.md).
+The score's corner panel is the floating **Chile panel** window (**Alt L**, or the toolbar **Floating** selector): the same engine's `table`, read off the newest bar of the same result, so the window and the chart can never disagree about a level or a call. It starts open on roomy viewports (1050×940+, the Candle Pulse rule — a laptop chart has no free corner left for it) and is one keystroke away everywhere, drags, minimizes to the call and the countdown, and remembers its position. See [Chile panel](docs/chile-panel.md).
 
 See [the calculation contract, the one documented correction, and provenance](docs/chile-reversal.md).
 

@@ -8,6 +8,14 @@ into one call for the next round. This window is that engine's `table` — the s
 its newest bar, so the panel and the chart can never disagree about a level or a call. **Alt L**
 toggles the window; the toolbar **Floating** selector and the workspace menu also own it.
 
+Like the Candle Pulse and the MTF RSI window it starts open only on a roomy viewport
+(**1050×940+**). A 1440×900 chart has no free corner for it: the indicator legend owns the
+top-left, the oscillator HUD cards tile the width just below it, the peek window the bottom-right
+and the MTF RSI window the bottom-left. Below that size it starts closed and one keystroke away;
+an explicit show or hide wins over the default and is remembered. Where it does open, `max-height`
+keeps it inside the (clipping) chart container, so it can cover neither the legend above it nor
+the top bar.
+
 ```pine
 minScore = input.int(6, "Fuerza minima", minval=3, maxval=20)
 minVentaja = input.int(2, "Ventaja minima", minval=1, maxval=8)

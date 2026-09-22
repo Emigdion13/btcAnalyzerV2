@@ -1097,7 +1097,7 @@ export function MarketsDialog({
                   {source === 'demo' ? (
                     <Sparkline asset={asset} />
                   ) : (
-                    // The venue column distinguishes Coinbase PAXG from Kalshi silver.
+                    // The venue column distinguishes Kalshi metals from Coinbase crypto.
                     <span className="venue-label">
                       {venueLabel(venueForSymbol(asset.symbol, source))}
                     </span>

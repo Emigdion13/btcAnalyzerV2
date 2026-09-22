@@ -104,7 +104,6 @@ import {
   quoteCurrency,
   venueForSymbol,
   venueLabel,
-  METAL_ASSETS,
   METAL_DEFAULTS,
 } from './lib/market'
 import { useCoinbaseMarket } from './lib/useCoinbaseMarket'
@@ -505,17 +504,18 @@ export default function App() {
     ...tabs,
   ].filter(isProductId)
   /**
-   * Kalshi's XAG symbol is shaped like a Coinbase product id but is not traded there, so it
-   * is split out before transport. PAXG-USD is real Coinbase-traded tokenised gold.
+   * Gold and silver are shaped like Coinbase product ids but Coinbase does not trade them,
+   * so they are split out here — before anything is asked of the Coinbase transport.
    */
   const watched = watching.filter((id) => !isMetalSymbol(id))
   const watchedMetals = watching.filter(isMetalSymbol)
   const isMetal = isMetalSymbol(symbol)
-  /** The venue serving this chart: PAXG is Coinbase; XAG is Kalshi. */
+  /** The venue actually serving this chart: metals are Kalshi's, everything else Coinbase's. */
   const venue = venueForSymbol(symbol, source)
   /**
-   * Kalshi silver has one settlement value per quarter hour. Coinbase PAXG supports every
-   * normal chart timeframe, including 1m, 3m and 5m.
+   * A resolution the metals have no data for. Kalshi publishes one settlement value per
+   * quarter hour, so 1m/3m/5m do not exist for gold or silver at any price — the toolbar
+   * hides them and the chart explains itself instead of resampling.
    */
   const unsupportedMetalInterval = isMetal && !isMetalInterval(timeframe)
   const barLimit = Math.max(300, Math.min(900, rangeCommand?.bars ?? 300))
@@ -539,15 +539,10 @@ export default function App() {
     () =>
       source === 'demo'
         ? ASSETS
-        : // Curated metal metadata leads: PAXG remains in Metals even though it is returned
-          // by Coinbase's general product catalog; XAG retains Kalshi precision.
-          [
-            ...METAL_ASSETS,
-            ...live.assets.filter(
-              (item) => !METAL_ASSETS.some((metal) => metal.symbol === item.symbol),
-            ),
-          ],
-    [source, live.assets],
+        : // The metals lead so their Kalshi metadata (and its rounding) always wins, even
+          // if a catalog ever listed the same product id.
+          [...metals.assets, ...live.assets.filter((item) => !isMetalSymbol(item.symbol))],
+    [source, live.assets, metals.assets],
   )
   const asset = assets.find((a) => a.symbol === symbol) ?? getAsset(symbol)
   const syntheticQuotes = useMemo(() => (source === 'demo' ? demoQuotes(tick) : {}), [source, tick])
@@ -1076,7 +1071,7 @@ export default function App() {
     if (next === source) return
     const target =
       next === 'coinbase'
-        ? // Keep a live Kalshi silver chart selected when toggling back from demo.
+        ? // Gold and silver are live market data too, just from Kalshi: keep them charted.
           isMetal
           ? symbol
           : (COINBASE_DEFAULTS.find((id) => id.startsWith(`${asset.ticker}-`)) ?? 'BTC-USD')
@@ -1098,7 +1093,7 @@ export default function App() {
     setModal(null)
     notify(
       next === 'coinbase'
-        ? 'Live markets selected: PAX Gold from Coinbase; silver settlements from Kalshi.'
+        ? 'Live markets selected: Coinbase USD pairs, plus gold and silver settled by Kalshi.'
         : 'Offline demo selected. All demo prices are synthetic.',
       'info',
     )
@@ -2056,8 +2051,8 @@ export default function App() {
             <span className="toolbar-separator" />
             <div className="timeframe-buttons">
               {(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D'] as Timeframe[])
-                // Only Kalshi silver is restricted: Coinbase PAXG keeps every button,
-                // including the 1m, 3m and 5m charts.
+                // Kalshi publishes the metals once a quarter hour: the finer buttons are
+                // not offered rather than offered and refused.
                 .filter((tf) => !isMetal || isMetalInterval(tf))
                 .map((tf) => (
                   <button
@@ -2092,7 +2087,7 @@ export default function App() {
                       disabled={isMetal && !isMetalInterval(tf)}
                       title={
                         isMetal && !isMetalInterval(tf)
-                          ? 'Kalshi settles silver once every 15 minutes; nothing finer is published.'
+                          ? 'Kalshi settles the metals once every 15 minutes; nothing finer is published.'
                           : undefined
                       }
                       onClick={() => {
@@ -2551,7 +2546,7 @@ export default function App() {
                     </div>
                     <small>
                       {venue === 'kalshi'
-                        ? 'Silver is a Kalshi settlement value. Nothing is simulated.'
+                        ? 'Gold and silver are Kalshi settlement values. Nothing is simulated.'
                         : 'No synthetic data is shown in Coinbase mode.'}
                     </small>
                   </div>
@@ -2852,7 +2847,7 @@ export default function App() {
                   {source === 'demo'
                     ? 'Illustrative OHLCV. Quotes are generated locally, not from an exchange.'
                     : venue === 'kalshi'
-                      ? `${feedMessage} Kalshi settles silver on Pyth's 1-minute close, once per quarter hour; finer resolutions do not exist.`
+                      ? `${feedMessage} Kalshi settles gold and silver on Pyth's 1-minute close, once per quarter hour; finer resolutions do not exist.`
                       : `${feedMessage} 3m candles are aggregated from Coinbase 1m candles; current bars are provisional.`}
                 </div>
                 <MenuItem

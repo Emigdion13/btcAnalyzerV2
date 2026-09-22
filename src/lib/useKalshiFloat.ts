@@ -43,13 +43,30 @@ export function useKalshiFloat({
   const supported = kalshiFeedForProduct(product) !== null
 
   useEffect(() => {
+    setResponse(null)
+    setMessage('')
+    setReceivedAt(0)
+  }, [product])
+
+  useEffect(() => {
     if (!enabled || !supported) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let inflight: AbortController | null = null
 
     const tick = async () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(() => void tick(), KALSHI_FLOAT_POLL_MS)
+        return
+      }
       inflight = new AbortController()
+      const timeoutId = setTimeout(() => {
+        try {
+          inflight?.abort()
+        } catch {
+          // ignore
+        }
+      }, 8_000)
       try {
         const result = await fetch(`/api/kalshi/float?${new URLSearchParams({ product })}`, {
           signal: inflight.signal,
@@ -73,16 +90,34 @@ export function useKalshiFloat({
         if (cancelled) return
         setMessage(error instanceof Error ? error.message : 'Kalshi is unreachable.')
       } finally {
+        clearTimeout(timeoutId)
         setPollTick((n) => n + 1)
         if (!cancelled) timer = setTimeout(() => void tick(), KALSHI_FLOAT_POLL_MS)
       }
+    }
+
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden && !cancelled) {
+        clearTimeout(timer)
+        void tick()
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
     }
 
     void tick()
     return () => {
       cancelled = true
       clearTimeout(timer)
-      inflight?.abort()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+      try {
+        inflight?.abort()
+      } catch {
+        // ignore
+      }
     }
   }, [product, enabled, supported])
 

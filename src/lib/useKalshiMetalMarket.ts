@@ -16,7 +16,7 @@ import {
   type MetalPendingWindow,
   type SettlementPoint,
 } from '../../shared/kalshi-metals'
-import { KALSHI_METAL_ASSETS } from './market'
+import { METAL_ASSETS } from './market'
 import type { Asset } from './types'
 
 /** A metal chart's worth of data, in the same shape the Coinbase hook hands the app. */
@@ -57,7 +57,7 @@ const IDLE: KalshiMetalMarket = {
   pending: null,
   points: [],
   coverage: null,
-  assets: KALSHI_METAL_ASSETS,
+  assets: METAL_ASSETS,
   retry: () => {},
 }
 
@@ -234,7 +234,7 @@ export function useKalshiMetalMarket({
     }
   }, [history, supported])
 
-  if (!feed) return { ...IDLE, assets: KALSHI_METAL_ASSETS, retry }
+  if (!feed) return { ...IDLE, assets: METAL_ASSETS, retry }
   const unsupportedMessage = supported
     ? message
     : `Kalshi settles ${feed.name} every 15 minutes, so ${interval} candles do not exist. Choose 15m, 1h, 4h, 1D or 1W.`
@@ -249,7 +249,7 @@ export function useKalshiMetalMarket({
     points: history?.points ?? [],
     coverage: history?.coverage ?? null,
     // Every metal is listable, so the watchlist can hold both while one is charted.
-    assets: KALSHI_METAL_ASSETS,
+    assets: METAL_ASSETS,
     retry,
   }
 }

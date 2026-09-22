@@ -9,37 +9,37 @@ const store = (name: string, value: unknown) =>
   localStorage.setItem(key(name), JSON.stringify(value))
 const read = <T>(name: string): T => JSON.parse(localStorage.getItem(key(name))!) as T
 
-describe('PAX Gold workspace routing', () => {
+describe('Kalshi Gold workspace routing', () => {
   beforeEach(() => {
     localStorage.clear()
     window.history.replaceState({}, '', '/')
   })
 
-  it('opens old XAU shared links as Coinbase PAXG', () => {
-    window.history.replaceState({}, '', '/?source=coinbase&symbol=XAU-USD')
-    expect(initialMarket()).toEqual({ source: 'coinbase', symbol: 'PAXG-USD' })
+  it('opens legacy PAXG shared links as Kalshi XAU', () => {
+    window.history.replaceState({}, '', '/?source=coinbase&symbol=PAXG-USD')
+    expect(initialMarket()).toEqual({ source: 'coinbase', symbol: 'XAU-USD' })
   })
 
-  it('migrates a previously initialized Gold chart, tab and watchlist', () => {
+  it('migrates a previously stored PAXG chart, tab and watchlist back to XAU', () => {
     store('coinbase-initialized', true)
-    store('symbol', 'XAU-USD')
-    store('tabs', ['BTC-USD', 'XAU-USD', 'PAXG-USD'])
-    store('watchlist', ['XAU-USD', 'XAG-USD'])
+    store('symbol', 'PAXG-USD')
+    store('tabs', ['BTC-USD', 'PAXG-USD', 'XAU-USD'])
+    store('watchlist', ['PAXG-USD', 'XAG-USD'])
 
     initializeCoinbaseWorkspace()
 
-    expect(read('symbol')).toBe('PAXG-USD')
-    expect(read<string[]>('tabs')).toEqual(['BTC-USD', 'PAXG-USD'])
-    expect(read<string[]>('watchlist')).toEqual(['PAXG-USD', 'XAG-USD'])
+    expect(read('symbol')).toBe('XAU-USD')
+    expect(read<string[]>('tabs')).toEqual(['BTC-USD', 'XAU-USD'])
+    expect(read<string[]>('watchlist')).toEqual(['XAU-USD', 'XAG-USD'])
   })
 
-  it('keeps PAXG on Coinbase with every normal chart timeframe available', () => {
-    window.history.replaceState({}, '', '/?symbol=PAXG-USD')
-    expect(initialMarket()).toEqual({ source: 'coinbase', symbol: 'PAXG-USD' })
-    expect(isMetalSymbol('PAXG-USD')).toBe(false)
+  it('keeps XAU on Kalshi with 15m+ chart timeframes', () => {
+    window.history.replaceState({}, '', '/?symbol=XAU-USD')
+    expect(initialMarket()).toEqual({ source: 'coinbase', symbol: 'XAU-USD' })
+    expect(isMetalSymbol('XAU-USD')).toBe(true)
     expect(TIMEFRAMES).toEqual(['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W'])
     expect(
-      TIMEFRAMES.filter((timeframe) => !isMetalSymbol('PAXG-USD') || isMetalInterval(timeframe)),
-    ).toEqual(TIMEFRAMES)
+      TIMEFRAMES.filter((timeframe) => !isMetalSymbol('XAU-USD') || isMetalInterval(timeframe)),
+    ).toEqual(['15m', '30m', '1h', '2h', '4h', '1D', '1W'])
   })
 })

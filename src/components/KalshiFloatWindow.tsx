@@ -90,12 +90,10 @@ export function KalshiFloatWindow({ product, onClose }: Props) {
   // The countdown runs on its own second tick: a paused poll must not freeze
   // the clock, and the data poll does not guarantee exactly-one-per-second.
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
-  const hasMarket = !!response?.close
   useEffect(() => {
-    if (!hasMarket) return
     const timer = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), COUNTDOWN_TICK_MS)
     return () => clearInterval(timer)
-  }, [hasMarket])
+  }, [])
 
   // The "Now" price flashes in the direction of the tick, like Kalshi's page.
   const prevNow = useRef<number | null>(null)

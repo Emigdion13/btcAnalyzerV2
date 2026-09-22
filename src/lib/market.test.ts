@@ -45,23 +45,10 @@ describe('synthetic OHLCV feed', () => {
   })
 })
 
-describe('live metal metadata', () => {
-  it('offers Coinbase PAX Gold and Kalshi silver in the Metals category', () => {
-    expect(METAL_ASSETS.map((asset) => asset.symbol)).toEqual(['PAXG-USD', 'XAG-USD'])
+describe('Kalshi metal metadata', () => {
+  it("describes one asset per Kalshi metal feed, with the feed's own rounding", () => {
+    expect(METAL_ASSETS.map((asset) => asset.symbol)).toEqual(['XAU-USD', 'XAG-USD'])
     expect(METAL_ASSETS.map((asset) => asset.symbol)).toEqual(METAL_DEFAULTS)
-    expect(getAsset('PAXG-USD')).toMatchObject({
-      ticker: 'PAXG',
-      name: 'PAX Gold',
-      category: 'Metals',
-      quoteCurrency: 'USD',
-      priceIncrement: 0.01,
-    })
-
-    const silverFeed = KALSHI_METAL_FEEDS.find((feed) => feed.symbol === 'XAG-USD')!
-    expect(METAL_ASSETS[1]).toEqual(metalAsset(silverFeed))
-  })
-
-  it("describes Kalshi feeds with each feed's own rounding", () => {
     for (const feed of KALSHI_METAL_FEEDS) {
       const asset = metalAsset(feed)
       expect(asset.ticker).toBe(feed.ticker)
@@ -77,15 +64,16 @@ describe('live metal metadata', () => {
     }
   })
 
-  it('resolves curated metals before the generic Coinbase fallback', () => {
-    expect(getAsset('PAXG-USD').category).toBe('Metals')
-    expect(getAsset('XAG-USD').category).toBe('Metals')
+  it('resolves metals before the generic Coinbase fallback', () => {
+    const gold = getAsset('XAU-USD')
+    expect(gold.category).toBe('Metals')
+    expect(gold.name).toBe('Gold')
+    expect(gold.ticker).toBe('XAU')
     // Unknown products still fall back to a Coinbase-shaped asset rather than throwing.
     expect(getAsset('PEPE-USD').category).not.toBe('Metals')
   })
 
-  it('reports each metal venue precision, and none for other symbols', () => {
-    expect(pricePrecision('PAXG-USD')).toBe(2)
+  it('reports the decimals Kalshi publishes, and none for other symbols', () => {
     expect(pricePrecision('XAU-USD')).toBe(2)
     expect(pricePrecision('XAG-USD')).toBe(3)
     expect(pricePrecision('BTC-USD')).toBeUndefined()
@@ -93,11 +81,10 @@ describe('live metal metadata', () => {
   })
 
   it('separates the venue from the data source', () => {
-    // The demo never claims a live venue. PAXG trades on Coinbase; XAG is Kalshi-settled.
+    // The demo never claims a live venue, and a metal is never labelled Coinbase.
     expect(venueForSymbol('BTC-USD', 'demo')).toBe('demo')
-    expect(venueForSymbol('PAXG-USD', 'demo')).toBe('demo')
+    expect(venueForSymbol('XAU-USD', 'demo')).toBe('demo')
     expect(venueForSymbol('BTC-USD', 'coinbase')).toBe('coinbase')
-    expect(venueForSymbol('PAXG-USD', 'coinbase')).toBe('coinbase')
     expect(venueForSymbol('XAU-USD', 'coinbase')).toBe('kalshi')
     expect(venueForSymbol('XAG-USD', 'coinbase')).toBe('kalshi')
     expect(venueLabel('kalshi')).toBe('Kalshi')
@@ -110,6 +97,6 @@ describe('live metal metadata', () => {
     expect(formatPrice(63.498, false, digits)).toBe('63.498')
     // The same number at the default two decimals would hide the published digit.
     expect(formatPrice(63.498)).toBe('63.50')
-    expect(formatPrice(4300.16, false, pricePrecision('PAXG-USD'))).toBe('4,300.16')
+    expect(formatPrice(4300.16, false, pricePrecision('XAU-USD'))).toBe('4,300.16')
   })
 })

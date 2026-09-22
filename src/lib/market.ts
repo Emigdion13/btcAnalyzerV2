@@ -164,7 +164,6 @@ export const COINBASE_DEFAULTS = [
   'DOT-USD',
   'UNI-USD',
   'AAVE-USD',
-  'PAXG-USD',
 ]
 export function coinbaseAsset(product: CoinbaseProduct | string): Asset {
   const symbol = typeof product === 'string' ? product : product.id
@@ -186,7 +185,13 @@ export function coinbaseAsset(product: CoinbaseProduct | string): Asset {
     marketCap: '—',
   }
 }
-/** Kalshi-settled metal metadata. This remains the source for silver. */
+/**
+ * Gold and silver, as Kalshi settles them.
+ *
+ * Neither metal trades on Coinbase, so these symbols are served by the metals transport
+ * and never by the Coinbase one. As with `coinbaseAsset`, the metadata here is NOT a quote:
+ * price and change stay NaN until a real Kalshi settlement value arrives.
+ */
 export function metalAsset(feed: KalshiMetalFeed): Asset {
   return {
     symbol: feed.symbol,
@@ -205,24 +210,11 @@ export function metalAsset(feed: KalshiMetalFeed): Asset {
     marketCap: '—',
   }
 }
-export const COINBASE_GOLD_ASSET: Asset = {
-  ...coinbaseAsset('PAXG-USD'),
-  ticker: 'PAXG',
-  name: 'PAX Gold',
-  color: '#f2c14e',
-  icon: 'PAXG',
-  category: 'Metals',
-  priceIncrement: 0.01,
-}
-/** Only silver uses Kalshi in the UI; XAU remains supported by the API for compatibility. */
-export const KALSHI_METAL_ASSETS: Asset[] = KALSHI_METAL_FEEDS.filter(
-  (feed) => feed.symbol === 'XAG-USD',
-).map(metalAsset)
-export const METAL_ASSETS: Asset[] = [COINBASE_GOLD_ASSET, ...KALSHI_METAL_ASSETS]
-export const METAL_DEFAULTS: string[] = METAL_ASSETS.map((asset) => asset.symbol)
-/** Decimals to display for a symbol: venue precision for metals, auto otherwise. */
+export const KALSHI_METAL_ASSETS: Asset[] = KALSHI_METAL_FEEDS.map(metalAsset)
+export const METAL_ASSETS: Asset[] = KALSHI_METAL_ASSETS
+export const METAL_DEFAULTS: string[] = KALSHI_METAL_FEEDS.map((feed) => feed.symbol)
+/** Decimals to display for a symbol: Kalshi's own rounding for metals, auto otherwise. */
 export function pricePrecision(symbol: string): number | undefined {
-  if (symbol === COINBASE_GOLD_ASSET.symbol) return 2
   const feed = metalFeedForSymbol(symbol)
   return feed ? feed.roundDigits : undefined
 }
@@ -230,8 +222,8 @@ export function pricePrecision(symbol: string): number | undefined {
  * Which venue's numbers a symbol is showing.
  *
  * The app's `source` separates real market data from the synthetic demo. This separates
- * *which* real venue. PAX Gold is a Coinbase-traded token, while silver is a Kalshi
- * settlement value; each must be labelled accurately.
+ * *which* real venue, because gold and silver are Kalshi settlement values rather than
+ * Coinbase trades, and saying "Coinbase" over a Pyth-settled gold price would be a lie.
  * Every venue label in the UI should come from here rather than from `source` alone.
  */
 export function venueForSymbol(symbol: string, source: DataSource): DataSource {

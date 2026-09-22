@@ -3,20 +3,18 @@ import type { DataSource } from '../../shared/coinbase'
 import { ASSETS, COINBASE_DEFAULTS, METAL_DEFAULTS, isDemoSymbol } from './market'
 import { readStored, writeStored } from './storage'
 
-/** Preserve demo work, while introducing distinct Coinbase USD symbols. */
+/** Preserve demo work, while introducing distinct Coinbase USD symbols and Kalshi metals. */
 export function initializeCoinbaseWorkspace() {
-  // Replace the former Kalshi-gold chart with Coinbase's tradeable PAX Gold product even in
-  // workspaces that completed the original Coinbase migration. Lists are de-duplicated because
-  // PAXG may already have been added from Coinbase's catalog.
-  const replaceLegacyGold = (id: string) => (id === 'XAU-USD' ? 'PAXG-USD' : id)
+  // Restore Gold to Kalshi's XAU-USD settlement feed, migrating any legacy PAXG-USD entries.
+  const replaceLegacyGold = (id: string) => (id === 'PAXG-USD' ? 'XAU-USD' : id)
   const migrateList = (key: 'watchlist' | 'tabs') => {
     const previous = readStored<string[]>(key, [])
-    if (previous.includes('XAU-USD'))
+    if (previous.includes('PAXG-USD'))
       writeStored(key, [...new Set(previous.map(replaceLegacyGold))])
   }
   migrateList('watchlist')
   migrateList('tabs')
-  if (readStored<string>('symbol', '') === 'XAU-USD') writeStored('symbol', 'PAXG-USD')
+  if (readStored<string>('symbol', '') === 'PAXG-USD') writeStored('symbol', 'XAU-USD')
 
   if (readStored('coinbase-initialized', false)) return
   const old = readStored<string>('symbol', 'BTCUSDT')
@@ -30,7 +28,7 @@ export function initializeCoinbaseWorkspace() {
     ASSETS.slice(0, 10).map((a) => a.symbol),
   )
   const tabs = readStored<string[]>('tabs', ['BTCUSDT', 'ETHUSDT'])
-  // PAX Gold (Coinbase) and silver (Kalshi) travel with the majors into a live workspace.
+  // Gold and silver (Kalshi) travel with the majors into a live workspace.
   writeStored('watchlist', [
     ...new Set([...watchlist, ...COINBASE_DEFAULTS.slice(0, 10), ...METAL_DEFAULTS]),
   ])
@@ -52,9 +50,9 @@ export function initialMarket(): { source: DataSource; symbol: string } {
           : 'coinbase'
   const storedOrLinked =
     symbol ?? readStored('symbol', source === 'coinbase' ? 'BTC-USD' : 'BTCUSDT')
-  // Old shared links bypass local-storage migration, so canonicalize them here as well.
+  // Legacy PAXG links bypass local-storage migration, so canonicalize them back to XAU-USD here.
   const candidate =
-    source === 'coinbase' && storedOrLinked === 'XAU-USD' ? 'PAXG-USD' : storedOrLinked
+    source === 'coinbase' && storedOrLinked === 'PAXG-USD' ? 'XAU-USD' : storedOrLinked
   return {
     source,
     symbol:

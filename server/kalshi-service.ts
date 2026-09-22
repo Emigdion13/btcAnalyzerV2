@@ -49,6 +49,7 @@ import { MarketError } from './rest-client.ts'
 
 /** Recommended production Trade API host. */
 export const KALSHI_REST_ORIGIN = 'https://external-api.kalshi.com'
+export const KALSHI_FALLBACK_ORIGIN = 'https://api.elections.kalshi.com'
 const API_ROOT = '/trade-api/v2'
 
 /**
@@ -190,6 +191,12 @@ export class KalshiService {
   private liveDead = new Map<string, number>()
   /** Last known trade per product, so a dropped /trades poll does not jump the %. */
   private lastKnownTrade = new Map<string, { ticker: string; px: number }>()
+  /** Running contract per product: reused while alive so we don't hammer the market list. */
+  private contracts = new Map<string, { market: FloatMarket; seenAt: number }>()
+  /** Rollover window per product: timestamp ms until which cache-busting is allowed. */
+  private rolloverUntil = new Map<string, number>()
+  /** Global backoff for Kalshi 429 rate limit: unix ms until which upstream requests pause. */
+  private blockedUntil = 0
 
   constructor(options: KalshiServiceOptions = {}) {
     this.fetcher = options.fetcher ?? fetch
@@ -244,12 +251,17 @@ export class KalshiService {
     if (this.closed) throw new MarketError('The Kalshi service is stopped.', 503, 'STOPPED')
 
     const request = (async () => {
+      if (this.now() < this.blockedUntil)
+        throw new MarketError('Kalshi rate limit reached.', 429, 'RATE_LIMITED')
       // Honour minimum upstream spacing without a full queue: coalescing already
       // collapses concurrent demand for the same path.
       const wait = Math.max(0, this.lastStarted + this.spacing - this.now())
       if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
       this.lastStarted = this.now()
-      const headers: Record<string, string> = { Accept: 'application/json' }
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'User-Agent': 'Atlas-Charting/0.2 (kalshi-15m)',
+      }
       if (authed) {
         if (!this.keyId || !this.privateKey)
           throw new MarketError('Kalshi API key is not configured.', 401, 'NO_KEY')
@@ -261,11 +273,45 @@ export class KalshiService {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 10_000)
       try {
-        const response = await this.fetcher(`${origin}${path}`, {
-          signal: controller.signal,
-          headers,
-          redirect: 'error',
-        })
+        let response: Response
+        try {
+          response = await this.fetcher(`${origin}${path}`, {
+            signal: controller.signal,
+            headers,
+            redirect: 'error',
+          })
+          if (
+            !response.ok &&
+            (response.status === 502 || response.status === 503 || response.status === 504) &&
+            origin === KALSHI_REST_ORIGIN &&
+            !authed
+          ) {
+            try {
+              const fallback = await this.fetcher(`${KALSHI_FALLBACK_ORIGIN}${path}`, {
+                signal: controller.signal,
+                headers,
+                redirect: 'error',
+              })
+              if (fallback.ok) response = fallback
+            } catch {
+              // Retain primary response
+            }
+          }
+        } catch (error) {
+          if (origin === KALSHI_REST_ORIGIN && !authed) {
+            try {
+              response = await this.fetcher(`${KALSHI_FALLBACK_ORIGIN}${path}`, {
+                signal: controller.signal,
+                headers,
+                redirect: 'error',
+              })
+            } catch {
+              throw error
+            }
+          } else {
+            throw error
+          }
+        }
         if (!response.ok) {
           if (response.status === 401 || response.status === 403)
             throw new MarketError(
@@ -275,8 +321,10 @@ export class KalshiService {
               response.status,
               'KALSHI_UNAUTHORIZED',
             )
-          if (response.status === 429)
+          if (response.status === 429) {
+            this.blockedUntil = this.now() + 30_000
             throw new MarketError('Kalshi rate limit reached.', 429, 'RATE_LIMITED')
+          }
           throw new MarketError(
             `Kalshi is unavailable (HTTP ${response.status}).`,
             502,
@@ -453,42 +501,64 @@ export class KalshiService {
 
     let market: FloatMarket | null = null
     let marketFailure = ''
-    try {
-      let payload = await this.fetchJson(
-        this.marketsPath(feed, 'open', 10),
-        this.strikeTtl,
-        false,
-      )
-      market = selectFloatMarket(payload, nowSec)
-      // Rollover: Kalshi's list is cached 15s upstream and ours for strikeTtl, so
-      // right after the cut it can still carry only the NEXT (future) window.
-      // The clock governs — when the running window is missing from the list, bust
-      // the cache once, but only inside the first half minute of the window;
-      // outside it, a still-missing market is a real gap, not a stale cache, and
-      // this must not hammer the server.
-      const open = market ? kalshiIsoSeconds(market.open_time) : null
-      const staleList = market === null || open === null || open > expectedStart
-      if (staleList && (market === null || nowSec - expectedStart < 30)) {
-        try {
-          const bust = await this.fetchJson(
-            `${this.marketsPath(feed, 'open', 10)}&_=${asOf}`,
-            0,
-            false,
-          )
-          const fresh = selectFloatMarket(bust, nowSec)
-          const freshOpen = fresh ? kalshiIsoSeconds(fresh.open_time) : null
-          if (fresh && freshOpen !== null && freshOpen <= nowSec) {
-            payload = bust
-            market = fresh
-          } else if (market === null && fresh) {
-            market = fresh
+
+    const cached = this.contracts.get(feed.product)
+    const cachedOpen = cached ? kalshiIsoSeconds(cached.market.open_time) : null
+    const cachedClose = cached ? kalshiIsoSeconds(cached.market.close_time) : null
+    const cachedAlive =
+      cachedClose !== null &&
+      cachedClose > nowSec &&
+      (cachedOpen === null || cachedOpen <= nowSec)
+    const cachedTarget = cached ? kalshiNumeric(cached.market.floor_strike) : null
+    const hasTarget = cachedAlive && cachedTarget !== null
+
+    if (hasTarget && cached && asOf - cached.seenAt < 60_000) {
+      market = cached.market
+    } else {
+      try {
+        let payload = await this.fetchJson(
+          this.marketsPath(feed, 'open', 10),
+          this.strikeTtl,
+          false,
+        )
+        market = selectFloatMarket(payload, nowSec)
+        const open = market ? kalshiIsoSeconds(market.open_time) : null
+        const staleList = market === null || open === null || open > expectedStart
+        if (staleList && (market === null || nowSec - expectedStart < 30)) {
+          try {
+            const bust = await this.fetchJson(
+              `${this.marketsPath(feed, 'open', 10)}&_=${asOf}`,
+              0,
+              false,
+            )
+            const fresh = selectFloatMarket(bust, nowSec)
+            const freshOpen = fresh ? kalshiIsoSeconds(fresh.open_time) : null
+            if (fresh && freshOpen !== null && freshOpen <= nowSec) {
+              payload = bust
+              market = fresh
+            } else if (market === null && fresh) {
+              market = fresh
+            }
+          } catch {
+            // The bust is an optimisation only: keep what the list had.
           }
-        } catch {
-          // The bust is an optimisation only: keep what the list had.
+        }
+        if (market) {
+          const mOpen = kalshiIsoSeconds(market.open_time)
+          const mClose = kalshiIsoSeconds(market.close_time)
+          if (mClose !== null && mClose > nowSec && (mOpen === null || mOpen <= nowSec)) {
+            this.contracts.set(feed.product, { market, seenAt: asOf })
+          }
+        } else if (cachedAlive && cached) {
+          market = cached.market
+        }
+      } catch (error) {
+        if (cachedAlive && cached) {
+          market = cached.market
+        } else {
+          marketFailure = error instanceof MarketError ? error.message : 'Kalshi is unreachable.'
         }
       }
-    } catch (error) {
-      marketFailure = error instanceof MarketError ? error.message : 'Kalshi is unreachable.'
     }
 
     // A window that has not opened yet is not the contract to display: in the
@@ -881,6 +951,8 @@ export class KalshiService {
     this.floatPause.clear()
     this.liveDead.clear()
     this.lastKnownTrade.clear()
+    this.contracts.clear()
+    this.rolloverUntil.clear()
   }
 
   /**
@@ -912,6 +984,12 @@ export class KalshiService {
       if (until < this.now()) this.floatPause.delete(key)
     for (const [symbol, until] of this.liveDead)
       if (until < this.now()) this.liveDead.delete(symbol)
+    for (const [product, item] of this.contracts) {
+      const close = kalshiIsoSeconds(item.market.close_time)
+      if (close !== null && close < staleBefore) this.contracts.delete(product)
+    }
+    for (const [product, until] of this.rolloverUntil)
+      if (until < this.now()) this.rolloverUntil.delete(product)
     return { pages, sampleBuffers }
   }
 }

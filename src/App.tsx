@@ -43,6 +43,7 @@ import {
   RotateCcw,
   Waves,
   Zap,
+  Landmark,
   Layers,
   Ruler,
   Search,
@@ -121,6 +122,7 @@ import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import { CM_WILLIAMS_VIX_FIX_DEFAULTS } from './lib/cm-williams-vix-fix'
 import { WAVE_TREND_DEFAULTS } from './lib/wave-trend'
+import { BAYESIAN_NQQE_DEFAULTS } from './lib/bayesian-nqqe-bankfunds'
 import { TMO_SCALPER_DEFAULTS } from './lib/tmo-scalper'
 import type { IndicatorTimeframeData, IndicatorTimeframes } from './lib/cm-ult-macd'
 import {
@@ -403,11 +405,16 @@ export default function App() {
     OSC_HUD_WIDGETS['tmo-scalper'].visibilityKey,
     null,
   )
+  const [bayesHudPreference, setBayesHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['bayesian-nqqe-bankfunds'].visibilityKey,
+    null,
+  )
   const cmHudOpen = oscHudVisible(cmHudPreference)
   const waveHudOpen = oscHudVisible(waveHudPreference)
   const rsiDivHudOpen = oscHudVisible(rsiDivHudPreference)
   const vixFixHudOpen = oscHudVisible(vixFixHudPreference)
   const tmoHudOpen = oscHudVisible(tmoHudPreference)
+  const bayesHudOpen = oscHudVisible(bayesHudPreference)
   const oscHudOpen = useMemo(
     () => ({
       'cm-ult-macd': cmHudOpen,
@@ -415,8 +422,9 @@ export default function App() {
       'rsi-divergence': rsiDivHudOpen,
       'cm-williams-vix-fix': vixFixHudOpen,
       'tmo-scalper': tmoHudOpen,
+      'bayesian-nqqe-bankfunds': bayesHudOpen,
     }),
-    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen, tmoHudOpen],
+    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen, tmoHudOpen, bayesHudOpen],
   )
   const toggleOscHud = useCallback(
     (kind: OscHudKind) => {
@@ -426,6 +434,7 @@ export default function App() {
         'rsi-divergence': setRsiDivHudPreference,
         'cm-williams-vix-fix': setVixFixHudPreference,
         'tmo-scalper': setTmoHudPreference,
+        'bayesian-nqqe-bankfunds': setBayesHudPreference,
       }
       setters[kind]((current) => !oscHudVisible(current))
     },
@@ -435,6 +444,7 @@ export default function App() {
       setRsiDivHudPreference,
       setVixFixHudPreference,
       setTmoHudPreference,
+      setBayesHudPreference,
     ],
   )
   const [sidePanel, setSidePanel] = useState<'watchlist' | 'alerts' | 'notes' | null>(() =>
@@ -1258,7 +1268,9 @@ export default function App() {
                           ? 'RSI Divergence'
                           : item.kind === 'cm-williams-vix-fix'
                             ? 'CM_Williams_Vix_Fix'
-                            : item.short === 'VOL'
+                            : item.kind === 'bayesian-nqqe-bankfunds'
+                              ? 'Bayesian/nQQE/BankFunds'
+                              : item.short === 'VOL'
                               ? 'Volume'
                               : item.short,
         period: item.period,
@@ -1282,6 +1294,9 @@ export default function App() {
         ...(kind === 'tmo-scalper' ? { tmoScalper: { ...TMO_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'cm-williams-vix-fix'
           ? { williamsVixFix: { ...CM_WILLIAMS_VIX_FIX_DEFAULTS } }
+          : {}),
+        ...(kind === 'bayesian-nqqe-bankfunds'
+          ? { bayesianNqqe: { ...BAYESIAN_NQQE_DEFAULTS } }
           : {}),
       },
     ])
@@ -1722,6 +1737,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleOscHud('tmo-scalper')
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        cmd.toggleOscHud('bayesian-nqqe-bankfunds')
+      }
       if (event.altKey && !mod && event.key.toLowerCase() === 'r') {
         event.preventDefault()
         cmd.toggleMtfRsi()
@@ -1756,7 +1775,8 @@ export default function App() {
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
     (vixFixHudOpen ? 1 : 0) +
-    (tmoHudOpen ? 1 : 0)
+    (tmoHudOpen ? 1 : 0) +
+    (bayesHudOpen ? 1 : 0)
   return (
     <div className={`app ${focusMode ? 'focus-mode' : ''}`}>
       <input
@@ -1933,6 +1953,16 @@ export default function App() {
                   }}
                 >
                   {tmoHudOpen ? 'Hide TMO Scalper window' : 'Show TMO Scalper window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Landmark}
+                  selected={bayesHudOpen}
+                  onClick={() => {
+                    toggleOscHud('bayesian-nqqe-bankfunds')
+                    close()
+                  }}
+                >
+                  {bayesHudOpen ? 'Hide Bayesian window' : 'Show Bayesian window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -2279,6 +2309,15 @@ export default function App() {
                   >
                     TMO Scalper
                   </MenuItem>
+                  <MenuItem
+                    className="floating-bayesian"
+                    icon={Landmark}
+                    selected={bayesHudOpen}
+                    shortcut="Alt N"
+                    onClick={() => toggleOscHud('bayesian-nqqe-bankfunds')}
+                  >
+                    Bayesian
+                  </MenuItem>
                 </>
               )}
             </Dropdown>
@@ -2428,6 +2467,7 @@ export default function App() {
                   rsiDivHud={rsiDivHudOpen}
                   vixFixHud={vixFixHudOpen}
                   tmoScalperHud={tmoHudOpen}
+                  bayesianNqqeHud={bayesHudOpen}
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}

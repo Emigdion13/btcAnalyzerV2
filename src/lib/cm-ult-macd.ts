@@ -6,6 +6,7 @@
 import { bucketStart, INTERVAL_SECONDS, isInterval, type BarTape } from '../../shared/coinbase'
 import { pineEma, ta } from './indicator-runtime'
 import { waveTrendIndicatorLabel } from './wave-trend'
+import { bayesianNqqeIndicatorLabel } from './bayesian-nqqe-bankfunds'
 import { williamsVixFixIndicatorLabel } from './cm-williams-vix-fix'
 import { rsiDivergenceIndicatorLabel } from './rsi-divergence'
 import { smcIndicatorLabel, smcSettings } from './smart-money-concepts'
@@ -116,6 +117,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'tmo-scalper') return tmoScalperIndicatorLabel(indicator)
   if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
   if (indicator.kind === 'wave-trend') return waveTrendIndicatorLabel(indicator)
+  if (indicator.kind === 'bayesian-nqqe-bankfunds') return bayesianNqqeIndicatorLabel(indicator)
   if (indicator.kind === 'cm-williams-vix-fix') return williamsVixFixIndicatorLabel(indicator)
   if (indicator.kind === 'rsi-divergence') return rsiDivergenceIndicatorLabel(indicator)
   return `${indicator.name}${['volume', 'vwap', 'custom'].includes(indicator.kind) ? '' : ` ${indicator.period}`}`

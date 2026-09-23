@@ -7152,6 +7152,9 @@ input[type='color']::-webkit-color-swatch {
 .wt-settings-modal {
   width: min(520px, calc(100vw - 28px));
 }
+.bayes-settings-modal {
+  width: min(640px, calc(100vw - 28px));
+}
 .wt-length-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7935,6 +7938,11 @@ input[type='color']::-webkit-color-swatch {
   top: 356px;
   right: 10px;
 }
+/* Second seat of that row, left of the TMO card, same gap the first row uses. */
+.osc-hud-card.dock-bayes {
+  top: 356px;
+  right: calc(var(--osc-hud-width) + 18px);
+}
 /* Minimized cards shrink to their content, so the row tightens rather than leaving a hole. */
 .osc-hud-card.is-minimized {
   width: auto;
@@ -8257,6 +8265,10 @@ input[type='color']::-webkit-color-swatch {
   }
   .osc-hud-card.dock-tmo {
     top: 788px;
+    right: 6px;
+  }
+  .osc-hud-card.dock-bayes {
+    top: 952px;
     right: 6px;
   }
   .osc-hud-plot {
@@ -11466,6 +11478,11 @@ button.chile-panel-chip {
   font-size: 8px;
   line-height: 1.5;
   color: var(--dim);
+}
+.kalshi-float-foot.is-caution {
+  color: var(--kalshi-amber);
+}
+olor: var(--dim);
 }
 .kalshi-float-foot.is-caution {
   color: var(--kalshi-amber);

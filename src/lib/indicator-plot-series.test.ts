@@ -11,7 +11,7 @@ import type { Candle, Plot } from './types'
 
 const sample = (
   barSpacing: number,
-): PaneRendererCustomData<Time, { time: Time; value: number }> => ({
+): PaneRendererCustomData<Time, { time: Time; value: number; base?: number }> => ({
   bars: [
     // The chart strips color out of originalData; tests must model that boundary.
     {
@@ -228,12 +228,33 @@ describe('CM plot rendering', () => {
       { time: 120, value: -1, color: '#00ff00' },
       { time: 180, value: 2, color: '#00ff00' },
     ])
-    for (const style of ['histogram', 'circles'] as const)
+    for (const style of ['histogram', 'circles', 'columns'] as const)
       expect(indicatorPlotData(candles, { ...plot, style })[0]).toEqual({
         time: 0 as UTCTimestamp,
         value: 1,
         color: '#00ff00',
       })
+    expect(indicatorPlotData(candles, { ...plot, colorMode: 'bar' })[0]).toEqual({
+      time: 0 as UTCTimestamp,
+      value: 1,
+      color: '#00ff00',
+    })
     expect(plot.colors?.[0]).toBe('#00ff00') // Never mutate calculation/legend colors.
+  })
+  it('draws a column from value to base and skips a bar whose base is missing', () => {
+    const renderer = new IndicatorPlotSeries('columns')
+    const data = sample(8)
+    data.bars[0].originalData = { ...data.bars[0].originalData, base: 4 }
+    renderer.update(data, renderer.defaultOptions())
+    const draw = drawing()
+    renderer.renderer().draw(draw.target, draw.priceToY, false)
+    // width = max(1, min(round(8 * 0.62 * 2), round(10 * 2))) = 10
+    // value 20 → y 30, base 4 → y 46; top 60, height 32, x round(20 - 5) = 15
+    expect(draw.context.fillRect.mock.calls).toEqual([[15, 60, 10, 32]])
+    expect(draw.colors).toEqual(['#00ffff'])
+    expect(renderer.priceValueBuilder({ time: 0 as UTCTimestamp, value: 10, base: 4 })).toEqual([
+      4, 10,
+    ])
+    expect(renderer.priceValueBuilder({ time: 0 as UTCTimestamp, value: 10 })).toEqual([10, 10])
   })
 })

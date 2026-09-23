@@ -70,6 +70,7 @@ import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
 import { NextPivotSettingsDialog } from './NextPivotSettingsDialog'
 import { TuxEmaScalperSettingsDialog } from './TuxEmaScalperSettingsDialog'
 import { WaveTrendSettingsDialog } from './WaveTrendSettingsDialog'
+import { BayesianNqqeSettingsDialog } from './BayesianNqqeSettingsDialog'
 import { TmoScalperSettingsDialog } from './TmoScalperSettingsDialog'
 
 export function SymbolSearch({
@@ -557,6 +558,8 @@ export function IndicatorSettingsDialog(props: {
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
   if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
+  if (props.indicator.kind === 'bayesian-nqqe-bankfunds')
+    return <BayesianNqqeSettingsDialog {...props} />
   if (props.indicator.kind === 'tmo-scalper') return <TmoScalperSettingsDialog {...props} />
   if (props.indicator.kind === 'sr-breaks-retests')
     return <SrBreaksRetestsSettingsDialog {...props} />
@@ -1139,6 +1142,7 @@ const SHORTCUTS = [
   ['RSI Divergence window', 'Alt D'],
   ['CM Williams VIX Fix window', 'Alt V'],
   ['TMO Scalper window', 'Alt O'],
+  ['Bayesian/nQQE/BankFunds window', 'Alt N'],
   ['MTF RSI window', 'Alt R'],
   ['Chile panel window', 'Alt L'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],

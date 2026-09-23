@@ -19,7 +19,7 @@ interface Props {
   /** Everything the card shows, computed by the chart from the same values its pane plots. */
   model: OscHudModel
   /** Which corner of the chart the card rests in before you drag it. */
-  dock: 'cm' | 'wave' | 'rsi-div' | 'vix-fix' | 'tmo'
+  dock: 'cm' | 'wave' | 'rsi-div' | 'vix-fix' | 'tmo' | 'bayes'
   /** The indicator the card reads, when the chart has one. */
   indicator: Indicator | null
   onEditIndicator: (indicator: Indicator) => void
@@ -189,7 +189,7 @@ export function OscHudCard({
                     />
                   ))}
                 </g>
-                {model.histogram ? (
+                {model.histogram && !model.columns ? (
                   <g className="osc-hud-histogram">
                     {model.histogram.values.map((value, index) => {
                       if (value === null) return null
@@ -209,14 +209,49 @@ export function OscHudCard({
                     })}
                   </g>
                 ) : null}
-                {traces.map((trace) => (
-                  <OscHudTraceShape
-                    key={trace.title}
-                    trace={trace}
-                    geometry={geometry}
-                    activeIndex={model.activeIndex}
-                  />
-                ))}
+                {traces
+                  .filter((trace) => trace.style === 'area')
+                  .map((trace) => (
+                    <OscHudTraceShape
+                      key={trace.title}
+                      trace={trace}
+                      geometry={geometry}
+                      activeIndex={model.activeIndex}
+                    />
+                  ))}
+                {model.columns ? (
+                  <g className="osc-hud-columns">
+                    {model.columns.high.map((high, index) => {
+                      const low = model.columns!.low[index]
+                      if (high === null || low === null) return null
+                      const yHigh = geometry.y(high)
+                      const yLow = geometry.y(low)
+                      const top = Math.min(yHigh, yLow)
+                      const height = Math.max(1, Math.abs(yHigh - yLow))
+                      return (
+                        <rect
+                          key={`col-${index}`}
+                          x={geometry.x[index]! - geometry.barWidth / 2}
+                          y={top}
+                          width={geometry.barWidth}
+                          height={height}
+                          fill={model.columns!.colors[index]}
+                          fillOpacity={model.activeIndex === index ? 1 : 0.82}
+                        />
+                      )
+                    })}
+                  </g>
+                ) : null}
+                {traces
+                  .filter((trace) => trace.style !== 'area')
+                  .map((trace) => (
+                    <OscHudTraceShape
+                      key={trace.title}
+                      trace={trace}
+                      geometry={geometry}
+                      activeIndex={model.activeIndex}
+                    />
+                  ))}
                 {model.activeIndex !== null ? (
                   <g className="osc-hud-cursor">
                     <line

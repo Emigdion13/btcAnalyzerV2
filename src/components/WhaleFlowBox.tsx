@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Activity, GripVertical, Info, X } from 'lucide-react'
 import type { WhaleFlow } from '../../shared/coinbase'
-import { formatNotional } from '../../shared/whale-flow'
+import {
+  formatNotional,
+  summarizeWhalePrints,
+  type WhaleExecutionSummary,
+} from '../../shared/whale-flow'
+import { formatPrice } from '../lib/market'
 
 const clockTime = (seconds: number) =>
   new Date(seconds * 1000).toLocaleTimeString(undefined, {
@@ -28,6 +33,23 @@ const sizeTier = (net: number): string | null => {
   if (abs >= 100_000) return '$100K+ large sweep'
   if (abs >= 50_000) return '$50K+ sweep'
   return null
+}
+
+/** Prefer the complete server-side map; the print fallback keeps older payloads readable. */
+const executionMap = (flow: WhaleFlow | null): WhaleExecutionSummary | null => {
+  if (!flow) return null
+  if (
+    Number.isFinite(flow.executionVwap) &&
+    Number.isFinite(flow.executionLow) &&
+    Number.isFinite(flow.executionHigh)
+  )
+    return {
+      vwap: flow.executionVwap!,
+      low: flow.executionLow!,
+      high: flow.executionHigh!,
+      grossNotional: flow.bought + flow.sold,
+    }
+  return summarizeWhalePrints(flow.prints)
 }
 
 /**
@@ -102,6 +124,7 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
   const net = flow?.net ?? 0
   const direction = net > 0 ? 'in' : net < 0 ? 'out' : 'flat'
   const phase = flow?.phase ?? 'idle'
+  const execution = executionMap(flow)
   const anchored = position
     ? { left: position.x, top: position.y, right: 'auto' as const, bottom: 'auto' as const }
     : undefined
@@ -165,10 +188,10 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
       {showInfo ? (
         <p className="whale-box-info">
           A burst of large orders <strong>filled on this Coinbase book</strong> within{' '}
-          {flow?.windowSeconds ?? 5}s. It appears while the sweep runs and clears once it stops — it
-          is not a running total. This is executed price impact, so it{' '}
-          <strong>cannot predict a trade before it happens</strong>, and cannot see wallet deposits,
-          custody transfers, OTC blocks, or other venues.
+          {flow?.windowSeconds ?? 5}s. The price map below uses the exact match prices, so it shows{' '}
+          <strong>where the money actually traded</strong>; the separate level2 panel shows where
+          money is still resting. It clears once the sweep stops — it cannot identify a wallet,
+          predict a trade before it happens, or see OTC blocks and other venues.
         </p>
       ) : null}
 
@@ -193,6 +216,27 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
             </span>
           </div>
 
+          {execution ? (
+            <div className="whale-box-execution" data-testid="whale-execution-map">
+              <div className="whale-box-execution-head">
+                <span>EXECUTED PRICE MAP</span>
+                <span title="Gross directional notional across every fill in the live window">
+                  {formatNotional(execution.grossNotional).replace('+', '')}
+                </span>
+              </div>
+              <div className="whale-box-execution-main">
+                <span className="whale-box-execution-label">VWAP</span>
+                <strong>{formatPrice(execution.vwap, true)}</strong>
+              </div>
+              <div className="whale-box-execution-range">
+                <span>range</span>
+                <span>
+                  {formatPrice(execution.low, true)} → {formatPrice(execution.high, true)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
           <div
             className="whale-box-meter"
             role="presentation"
@@ -214,11 +258,13 @@ export function WhaleFlowBox({ flow, onClose }: { flow: WhaleFlow | null; onClos
           {flow.prints.length ? (
             <ul className="whale-box-prints">
               {flow.prints.slice(0, 4).map((print) => (
-                <li key={print.id} className={print.side === 'buy' ? 'is-buy' : 'is-sell'}>
+                <li
+                  key={print.id}
+                  className={print.side === 'buy' ? 'is-buy' : 'is-sell'}
+                  title={`${print.size.toLocaleString(undefined, { maximumFractionDigits: 4 })} units executed`}
+                >
                   <span className="whale-print-time">{clockTime(print.time)}</span>
-                  <span className="whale-print-size">
-                    {print.size.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                  </span>
+                  <span className="whale-print-price">{formatPrice(print.price, true)}</span>
                   <span className="whale-print-value">{formatNotional(print.notional)}</span>
                 </li>
               ))}

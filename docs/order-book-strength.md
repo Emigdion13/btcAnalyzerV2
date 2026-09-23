@@ -12,6 +12,10 @@ payload whenever it is unavailable so no stale depth can linger on screen.
 
 ## What it constructs
 
+The companion [whale execution map](whale-execution-map.md) answers the other question — where an
+unusually large order **already filled**. This document is only the still-resting side of the
+market: a level2 wall is not an execution until the match tape shows fills there.
+
 ### 1. S/R walls — support & resistance built *by the book*
 
 The book is sliced into clusters of adjacent price levels. A **wall** is a cluster whose resting

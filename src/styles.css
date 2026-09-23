@@ -8467,6 +8467,56 @@ input[type='color']::-webkit-color-swatch {
   font-size: 10px;
   color: var(--muted);
 }
+.whale-box-execution {
+  margin: 0 10px 6px;
+  padding: 6px 7px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.whale-box-execution-head,
+.whale-box-execution-range {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+.whale-box-execution-head > span:last-child {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.whale-box-execution-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0 2px;
+}
+.whale-box-execution-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.whale-box-execution-main strong {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.whale-box-execution-range {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+.whale-box-execution-range > span:last-child {
+  color: var(--muted);
+  white-space: nowrap;
+}
 .whale-box-meter {
   height: 3px;
   margin: 0 10px 2px;
@@ -8518,8 +8568,8 @@ input[type='color']::-webkit-color-swatch {
   color: var(--dim);
   font-size: 9px;
 }
-.whale-print-size {
-  color: var(--muted);
+.whale-print-price {
+  color: var(--text);
   text-align: right;
 }
 .whale-print-value {

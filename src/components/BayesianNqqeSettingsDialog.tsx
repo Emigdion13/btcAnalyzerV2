@@ -17,7 +17,7 @@ const LENGTHS = [
   ['aoSlow', 'AO slow', 'SMA, not EMA'],
   ['acFast', 'AC fast', 'SMA of hl2'],
   ['acSlow', 'AC slow', 'SMA of hl2'],
-  ['acAoMa', 'AC/AO MA', 'SMA of the AC raw line'],
+  ['acAoMa', 'AC AO MA', 'Published input; its line is never read'],
   ['lipsLength', 'Lips', 'Unshifted SMMA'],
   ['teethLength', 'Teeth', 'Unshifted SMMA'],
   ['jawLength', 'Jaw', 'Unshifted SMMA'],
@@ -33,10 +33,10 @@ const OFFSETS = [
 ] as const
 const TOGGLES = [
   ['showProbabilities', 'Probabilities', 'Break-up and break-down areas'],
-  ['showNqqe', 'nQQE', 'Fast line and the hidden trail'],
+  ['showNqqe', 'nQQE', 'Regime-colored area from 50'],
   ['showBankFunds', 'Banker fund', 'Columns between fund and the slow line'],
-  ['showSignals', 'Strong signals', 'Circles on prime. Weak signals stay off'],
-  ['useBwConfirmation', 'Bill Williams', 'Off by default. Uses the unshifted alligator'],
+  ['showSignals', 'Strong signals', 'Circles on prime. The script paints the price bars instead'],
+  ['useBwConfirmation', 'Bill Williams', 'Off by default. AC/AO pair plus the jaw'],
 ] as const
 
 type NumberKey =
@@ -91,7 +91,7 @@ export function BayesianNqqeSettingsDialog({
   return (
     <Modal
       title="Bayesian/nQQE/BankFunds"
-      description="Reconstructed combo · pane and window share one calculation"
+      description="Published-script port · pane and window share one calculation"
       eyebrow="INDICATOR SETTINGS"
       className="wt-settings-modal bayes-settings-modal"
       onClose={onClose}

@@ -3,11 +3,11 @@
 Atlas includes **Bayesian/nQQE/BankFunds** as a chart oscillator and as a floating window. Both call
 `calculateBayesianNqqeBankfunds`. The window is a view of that result. It is not a second formula.
 
-This is a **reconstruction**. The published combo (tartigradia, short title `Bayesian/nQQE/BankFunds`,
-TradingView script `43zBXjjp`, 2022-10-08) was not available as source. The numeric legend, tista's
-stated three-factor expression, the nQQE = QQE−50 description, and the blackcat L3 banker-fund
-mirror are what the port follows. Where those sources disagree with a guess, the code keeps the
-published expression and says so.
+The port is **faithful to the published source**. The script is tartigradia's Pine v5 combo
+("Bayesian BBSMA + nQQE Oscillator + Bank funds (whales detector)", short title
+`Bayesian/nQQE/BankFunds`), an earlier reconstruction in Atlas was guessed from the legend, and the
+real script body has since replaced it. Every formula below is the published one, quirks included,
+and each remaining presentational difference is listed at the end.
 
 ## Using it
 
@@ -16,84 +16,94 @@ The toolbar **Floating** item **Bayesian** (or **Alt N**) opens the same calcula
 window. With no matching indicator on the chart, the window runs the published defaults and can add
 the pane.
 
-| Published slot | Default | What Atlas does |
+## Inputs
+
+The settings map one-to-one to the published inputs:
+
+| Published input | Default | How it is used |
 | --- | --- | --- |
-| BB SMA | 20 | `ta.sma(close, 20)` basis |
-| BB stdev | 2.5 | Population deviation, not sample |
-| AO fast / slow | 5 / 34 | `sma(hl2, fast) − sma(hl2, slow)`. SMA, even where a title says EMA |
-| AC fast / slow | 5 / 34 | Same SMA difference on these lengths |
-| AC/AO MA | 13 | AC is that difference minus `sma` of it |
-| Lips / teeth / jaw | 5 / 8 / 13 | SMA-seeded Wilder SMMA, **unshifted** |
-| Offsets | 3 / 5 / 8 | Stored and shown in the legend. **Not applied** |
-| SMA | 20 | Close is compared with this for the third event |
-| Bayes lookback | 20 | Average of the 0/1 events |
-| Lower threshold | 15 | Sideways when prime, up and down are all under it |
-| nQQE source, RSI, smooth | close, 14, 5 | Wilder RSI, then SMA-seeded EMA, then minus 50 |
+| BB SMA Period | 20 | `ta.sma(close, 20)` basis |
+| BB Standard Deviation | 2.5 | Population deviation, × the basis, upper band only |
+| AO Fast / Slow EMA Length | 5 / 34 | `ta.sma(hl2, 5) − ta.sma(hl2, 34)`. SMA, even where the title says EMA |
+| AC Fast / Slow SMA Length | 5 / 34 | The same difference, smoothed by `ta.sma(diff, acFast)` again |
+| AC AO MA Period | 13 | Feeds a vwma line the script computes and never reads |
+| Lips / Teeth / Jaw Length | 5 / 8 / 13 | SMA-seeded Wilder SMMA, unshifted. Only the jaw is read |
+| Lips / Teeth / Jaw Offset | 3 / 5 / 8 | Stored and shown in the legend. Not applied (the script only plots with them) |
+| SMA Period | 20 | Third event line |
+| Bayesian Lookback Period | 20 | Average of the 0/1 events |
+| Lower Threshold | 15 | Signal threshold, and the sideways read |
+| nQQE source / RSI Length / SF | close / 14 / 5 | `ta.ema(ta.rsi(src, 14), 5)` |
+| Bill Williams confirmation | off | AC/AO pair plus the jaw |
+| Show Crossing Signals | off | Not ported; the shapes are `display`-only labels in the script |
 
-Bools are not in the numeric legend. Probabilities, nQQE, banker fund and strong signals start on.
-Bill Williams confirmation starts off.
+## The Bayesian half
 
-## The score
+Three events per direction, strict: `close > line` and `close < line` against the BB upper band,
+the BB basis, and the SMA. A close exactly on a line counts for neither side. Each direction is
+averaged over the lookback and normalised inside its own pair — `P(up) = up/(up+down)`, which is
+Pine `na` when no strict comparison exists in the window.
 
-tista states `Pr(Up|Indicator) = Pr(Indicator|Up) * Pr(Up) / [Pr(Indicator|Up) * Pr(Up) + Pr(Indicator|Down) * Pr(Down)]`.
-The expression actually published next to that note is `nz(a*b*c/a*b*c+(1-a)*(1-b)*(1-c))`. Pine
-evaluates that left to right:
+The published expression is not Bayes' theorem. Left-associative Pine turns
+`nz(a*b*c/a*b*c+(1-a)*(1-b)*(1-c))` into `((((a*b)*c)/a)*b)*c + (1-a)*(1-b)*(1-c)` — effectively
+`(b*c)² + (1-a)(1-b)(1-c)` — and `nz` makes the whole thing 0 when `a` is 0 or anything is `na`.
+Atlas implements exactly that.
 
-`((((a*b)*c)/a)*b)*c + (1-a)*(1-b)*(1-c)`
+The source then swaps its own naming: the red **Break Down** area runs the expression on the *up*
+probabilities, and the green **Break Up** area on the *down* probabilities. Prime is the two-factor
+version of the same expression — `nz(down*up/down*up + (1-down)*(1-up))`, that is
+`up² + (1-down)(1-up)` — plotted blue. All three areas are `style=area` from zero at transp 60,
+multiplied by 100.
 
-When `a` is not zero this is `(b*c)^2 + (1-a)*(1-b)*(1-c)`, not the ratio. When `a` is zero, or any
-input or quotient is not finite, `nz` makes it 0. Atlas implements that expression. Plots are the
-score times 100.
+### Signals
 
-The grouping of events is the reconstruction, because the combo body was not obtained:
+The published conditions, with Pine's exact float comparisons:
 
-- Up: close above the BB basis, close at or under the upper band, close under the SMA.
-- Down: close under the basis, close above the upper band, close above the SMA.
-- Momentum: AO above 0, AC above 0, close above the unshifted lips, teeth and jaw.
-- Prime runs the same expression on the up score, `1 −` the down score, and the momentum score,
-  on the 0–1 scale. If the up score is 0, prime's `a == 0` path returns 0.
-
-An event is null only while the line it compares is null, so the average stays null until the
-window is all finite.
-
-Strong signals, and only those, print as circles on prime:
-
-- Long: not sideways, and prime leaves ~0 through the threshold, or the up score leaves ~100.
-- Short: prime falls from above the threshold to ~0 (this transition is the signal, even though
-  the destination bar is under the threshold), or, when not sideways, the down score leaves ~100.
-- "~0" and "~100" use `1e-4` on the plotted scale. A score of 120 is not "at 100".
-- Bill Williams, only when enabled, also requires open and close beyond all three unshifted
-  alligator lines. Off, it does not filter.
+- Long: prime leaves exact 0 through the threshold, or the up score falls off exact 100.
+- Short: prime falls to exact 0 from above the threshold (no sideways gate — the script computes
+  `sideways` only for a fill it comments out), or the down score falls off exact 100.
+- Exact means exact: the `nz`/count arithmetic produces exact 0 and 1, and `1e-4` off is not a
+  signal.
+- Bill Williams, only when enabled: longs need AC rising **and** AO rising plus open and close
+  above the jaw; shorts need AC not rising — the source's `acIsRed and acIsRed` is a bug, preserved
+  — plus open and close below the jaw.
 
 ## nQQE
 
-nQQE is QQE minus 50. RSI is Wilder. The RSI average is Atlas's SMA-seeded EMA, not legacy Pine
-seeding. True range is the absolute change of that average. WWMA uses alpha `1/length`, emits null
-without moving its previous value, and starts the first finite sample against 0. ATRRSI is WWMA of
-that WWMA. Bands are the fast line ± ATRRSI × **4.236**. 4.236 is hard-coded. It is not a setting.
-The slow trail is the usual QQE ratchet; the cross that flips it is read on the shifted series, and
-the trend defaults to 1. The legend shows the fast line. Green above +10, red below −10, yellow
-between. Colours stay on the bar that produced them (`colorMode: 'bar'`).
+The fast line is `ta.ema(ta.rsi(src, 14), 5)` on the 0–100 RSI scale, plotted as a `style=area`
+with `histbase=50` at transp 30, coloured lime above 60, red below 40, yellow between. The bands
+are `fast ± ATRRSI × 4.236`, where ATRRSI is the published WWMA (alpha `1/length`, `nz`-seeded, so
+a null sample restarts it) of the WWMA of the absolute fast change. The slow line is the classic
+QQE ratchet over those bands; the script hides it with `display.none`, and Atlas computes it
+without plotting it. Dashed gray levels sit at 40 and 60.
 
 ## Banker fund
 
-This is the hardcoded L3 mirror, not verified `43zBXjjp` bytes. A 27-bar close stochastic
-(`span == 0` → 0) is smoothed by `xsa` length 5 weight 1, then length 3 weight 1, then
-`× 1.032 + 50`. Bull/bear is an EMA 13 of the 34-bar stochastic of `(2*close+high+low+open)/5`.
-Columns run from the fund line to the slow line. They are not a histogram from zero. A missing base
-skips the bar.
+`fundtrend = (3·xsa(stoch(close, 27), 5, 1) − 2·xsa(xsa(stoch(close, 27), 5, 1), 3, 1) − 50) × 1.032 + 50`,
+where a zero span is Pine `na`, so a flat tape draws nothing. The slow line is
+`ta.ema(stoch((2·close+high+low+open)/5, 34), 13)`. Bodies span the two prices; body colours are
+the published stack, later over earlier: green above the slow line, white on a 5% drop
+(`fund < xrf(fund·0.95, 1)`), red below the slow line, blue below it when the drop did not happen.
+The yellow entry — fund crossing above the slow line with the slow line alone under 25 — is
+`plotcandle(0, 50, 0, 50)`, a block across the bottom half of the pane.
 
-Body colours, later over earlier: green above the slow line, white on a 5% drop, red below the slow
-line, blue below it when that drop did not happen. The yellow entry is a circle, not a body colour,
-and only when fund crosses above the slow line with both still under 25.
+## Presentation differences that remain
+
+These change how it looks next to TradingView, not what it computes:
+
+- Banker bodies and the entry block draw as columns between the two prices, not plotcandle bodies.
+- The long/short signal is drawn as circles on prime in the pane. The script paints the **price
+  chart bars** lime/maroon with `barcolor`, which a pane cannot do.
+- The hidden nQQE fast/slow lines and the optional crossing labels are not drawn (they are
+  `display.none` or off by default in the script too).
+- The commented-out threshold fill stays unported.
 
 ## Floating window
 
 **Alt N**, or **Floating → Bayesian**. Last twenty minutes, same values as the pane. Areas for the
-two probabilities, a prime line, the nQQE line, and banker columns between the two prices. The
-scale is the window's own min and max plus padding. It is not mirrored about zero. Levels 0, the
-threshold, ±10, 25 and 100 appear only while they sit inside that scale. The readout is Prime,
-nQQE and Bank for the bar under the crosshair. No extra timeframe feed.
+two probabilities and prime, the nQQE line, and banker columns between the two prices. The scale is
+the window's own min and max plus padding, not mirrored about zero. Levels 0, the threshold, 25,
+40, 60 and 100 appear only while they sit inside that scale. The readout is Prime, nQQE and Bank
+for the bar under the crosshair. No extra timeframe feed.
 
 The open bar repaints, because close, high and low are still forming. Treat the last value as
 provisional.

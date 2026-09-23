@@ -658,6 +658,13 @@ export interface Plot {
   style?: 'line' | 'histogram' | 'circles' | 'cross' | 'area' | 'columns'
   /** Pine `transp`, 0–100. Applies to the fill of an `area` plot. */
   transp?: number
+  /**
+   * Pine `histbase` of an `area` plot — the level the fill hangs from.
+   * Defaults to 0; the Bayesian nQQE area uses 50.
+   */
+  histbase?: number
+  /** Dashed `hline` for a `horizontalLine` plot (the Bayesian 40/60 levels). */
+  dashed?: boolean
   colors?: string[]
   /**
    * Second price of a `columns` bar. The column is drawn from `values[i]` to `base[i]`.

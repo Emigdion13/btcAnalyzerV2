@@ -6,7 +6,6 @@ import { ta } from './indicator-runtime'
 import { builtInPlots } from './indicators'
 import { indicatorPlotData } from './indicator-plot-series'
 import {
-  BAYES_AT_HUNDRED,
   BAYES_COLORS,
   BAYESIAN_NQQE_DEFAULTS,
   NQQE_FACTOR,
@@ -18,6 +17,7 @@ import {
   isBankerEntry,
   nqqeColor,
   nqqeLines,
+  publishedBayesPrime,
   publishedBayesProduct,
   strongBayesSignal,
   xsa,
@@ -78,7 +78,7 @@ const indicator = {
   visible: true,
 } as Indicator
 
-describe('published Bayes product', () => {
+describe('published Bayes products', () => {
   it('is the left-associative gap, not the ratio the note describes', () => {
     const a = 0.5
     const b = 0.4
@@ -94,10 +94,20 @@ describe('published Bayes product', () => {
     expect(publishedBayesProduct(Number.NaN, 0.4, 0.25)).toBe(0)
     expect(publishedBayesProduct(0.5, Number.POSITIVE_INFINITY, 0.25)).toBe(0)
   })
+  it('prime is the two-factor expression: su squared plus the complement product', () => {
+    const down = 0.5
+    const up = 0.4
+    expect(publishedBayesPrime(down, up)).toBe(((down * up) / down) * up + (1 - down) * (1 - up))
+    expect(publishedBayesPrime(down, up)).toBeCloseTo(up ** 2 + (1 - down) * (1 - up))
+    // Pine: sigmaProbsDown == 0 divides by zero, nz makes the whole thing 0.
+    expect(publishedBayesPrime(0, up)).toBe(0)
+    expect(publishedBayesPrime(Number.NaN, up)).toBe(0)
+    expect(publishedBayesPrime(down, Number.POSITIVE_INFINITY)).toBe(0)
+  })
 })
 
 describe('nQQE and banker helpers', () => {
-  it('is RSI smoothed by an SMA-seeded EMA, minus 50, and the trail uses 4.236', () => {
+  it('is the raw smoothed RSI on the 0-100 scale, and the trail uses 4.236', () => {
     const candles = waveCandles()
     const src = candles.map((candle) => candle.close)
     const published = nqqeLines(src, 14, 5)
@@ -105,18 +115,22 @@ describe('nQQE and banker helpers', () => {
     expect(NQQE_FACTOR).toBe(4.236)
     expect(published.trail).not.toEqual(other.trail)
     expect(defaults).not.toHaveProperty('qqeFactor')
-    const index = published.fast.findIndex(
-      (value, i) => value !== null && published.trail[i] !== null && published.atr[i] !== null,
-    )
+    const index = published.fast.findIndex((value) => value !== null)
     expect(index).toBeGreaterThan(0)
-    expect(published.fast[index]! - published.trail[index]!).toBeCloseTo(
-      published.atr[index]! * NQQE_FACTOR,
-    )
+    expect(published.fast[index]).toBeCloseTo(ta.ema(ta.rsi(src, 14), 5)[index]!)
+    // No -50 shift: the fast line lives where the RSI smoothed lives.
+    expect(published.fast[published.fast.length - 1]).toBeGreaterThan(0)
     const values = calculateBayesianNqqeBankfunds(candles, defaults)
     expect(values.nqqe).toEqual(published.fast)
-    expect(values.nqqe).toEqual(
-      ta.ema(ta.rsi(src, 14), 5).map((value) => (value === null ? null : value - 50)),
-    )
+    expect(values.nqqe).toEqual(ta.ema(ta.rsi(src, 14), 5))
+  })
+  it('colors the published regimes: lime above 60, red below 40, yellow between', () => {
+    expect(nqqeColor(61)).toBe(BAYES_COLORS.nqqeGreen)
+    expect(nqqeColor(60)).toBe(BAYES_COLORS.nqqeYellow)
+    expect(nqqeColor(50)).toBe(BAYES_COLORS.nqqeYellow)
+    expect(nqqeColor(40)).toBe(BAYES_COLORS.nqqeYellow)
+    expect(nqqeColor(39)).toBe(BAYES_COLORS.nqqeRed)
+    expect(nqqeColor(null)).toBe(BAYES_COLORS.nqqeYellow)
   })
   it('builds the xsa window as src[1]..src[len] at the first valid bar', () => {
     const src = [1, 2, 3, 4, 5, 6]
@@ -125,19 +139,126 @@ describe('nQQE and banker helpers', () => {
     expect(out[4]).toBeCloseTo(11 / 3)
     expect(out.slice(0, 3)).toEqual([null, null, null])
   })
-  it('paints banker bodies in later-wins order and requires both ends of an entry under 25', () => {
-    expect(bankerBodyColor(30, 31, 20)).toBe(BAYES_COLORS.bankerGreen)
-    expect(bankerBodyColor(30, 40, 20)).toBe(BAYES_COLORS.bankerWhite)
-    expect(bankerBodyColor(10, 20, 15)).toBe(BAYES_COLORS.bankerRed)
-    expect(bankerBodyColor(10, 10.2, 15)).toBe(BAYES_COLORS.bankerBlue)
+  it('paints banker bodies in later-wins order against the pre-multiplied drop line', () => {
+    expect(bankerBodyColor(30, 28.5, 20)).toBe(BAYES_COLORS.bankerGreen)
+    expect(bankerBodyColor(30, 38, 20)).toBe(BAYES_COLORS.bankerWhite)
+    expect(bankerBodyColor(10, 19, 15)).toBe(BAYES_COLORS.bankerRed)
+    expect(bankerBodyColor(10, 9.69, 15)).toBe(BAYES_COLORS.bankerBlue)
     expect(bankerBodyColor(10, null, 15)).toBe(BAYES_COLORS.bankerBlue)
+  })
+  it('fires the yellow entry on any cross above a slow line under 25', () => {
     expect(isBankerEntry(20, 10, 15, 18)).toBe(true)
-    expect(isBankerEntry(30, 10, 20, 22)).toBe(false)
+    // The fund side is unconstrained: a cross far above 25 is still an entry.
+    expect(isBankerEntry(90, 10, 20, 22)).toBe(true)
     expect(isBankerEntry(22, 10, 26, 28)).toBe(false)
     expect(isBankerEntry(18, 20, 15, 12)).toBe(false)
     expect(isBankerEntry(20, null, 15, 18)).toBe(false)
   })
-  it('lets Bill Williams confirmation block a signal, and ignores it when the toggle is off', () => {
+  it('uses the published transitions with exact 0/100 comparisons, no sideways filter', () => {
+    // Long: prime leaves exact 0 through the threshold.
+    expect(
+      strongBayesSignal({
+        prime: 40,
+        previousPrime: 0,
+        probUp: 40,
+        previousProbUp: 40,
+        probDown: 40,
+        previousProbDown: 40,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBe('long')
+    // Long: the up score falls off exact 100.
+    expect(
+      strongBayesSignal({
+        prime: 40,
+        previousPrime: 40,
+        probUp: 40,
+        previousProbUp: 100,
+        probDown: 40,
+        previousProbDown: 40,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBe('long')
+    // Short: prime falls to exact 0 from above the threshold — even inside the
+    // gray zone, because the script never gates on sideways.
+    expect(
+      strongBayesSignal({
+        prime: 0,
+        previousPrime: 40,
+        probUp: 5,
+        previousProbUp: 5,
+        probDown: 5,
+        previousProbDown: 5,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBe('short')
+    // Short: the down score falls off exact 100.
+    expect(
+      strongBayesSignal({
+        prime: 40,
+        previousPrime: 40,
+        probUp: 40,
+        previousProbUp: 40,
+        probDown: 40,
+        previousProbDown: 100,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBe('short')
+    // Near-misses do not fire: 1e-4 off is not "at 0" and 99.9999 is "below 100".
+    expect(
+      strongBayesSignal({
+        prime: 40,
+        previousPrime: 0.0001,
+        probUp: 40,
+        previousProbUp: 40,
+        probDown: 40,
+        previousProbDown: 40,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBeNull()
+    expect(
+      strongBayesSignal({
+        prime: 40,
+        previousPrime: 40,
+        probUp: 99.9999,
+        previousProbUp: 100,
+        probDown: 40,
+        previousProbDown: 40,
+        threshold: 15,
+        useBw: false,
+        bull: false,
+        bear: false,
+        awayUp: false,
+        awayDown: false,
+      }),
+    ).toBe('long')
+  })
+  it('lets Bill Williams gate on the AC/AO pair plus the jaw alone', () => {
     const base = {
       prime: 40,
       previousPrime: 0,
@@ -147,9 +268,12 @@ describe('nQQE and banker helpers', () => {
       previousProbDown: 40,
       threshold: 15,
     }
-    expect(strongBayesSignal({ ...base, useBw: false, awayUp: false, awayDown: false })).toBe('long')
-    expect(strongBayesSignal({ ...base, useBw: true, awayUp: false, awayDown: false })).toBeNull()
-    expect(strongBayesSignal({ ...base, useBw: true, awayUp: true, awayDown: false })).toBe('long')
+    expect(strongBayesSignal({ ...base, useBw: false, bull: false, bear: false, awayUp: false, awayDown: false })).toBe(
+      'long',
+    )
+    expect(strongBayesSignal({ ...base, useBw: true, bull: true, bear: false, awayUp: false, awayDown: false })).toBeNull()
+    expect(strongBayesSignal({ ...base, useBw: true, bull: true, bear: false, awayUp: true, awayDown: false })).toBe('long')
+    expect(strongBayesSignal({ ...base, useBw: true, bull: false, bear: true, awayUp: true, awayDown: false })).toBeNull()
     const short = {
       ...base,
       prime: 0,
@@ -157,10 +281,17 @@ describe('nQQE and banker helpers', () => {
       probUp: 40,
       probDown: 40,
     }
-    expect(strongBayesSignal({ ...short, useBw: false, awayUp: false, awayDown: false })).toBe('short')
-    expect(strongBayesSignal({ ...short, useBw: true, awayUp: false, awayDown: false })).toBeNull()
-    expect(strongBayesSignal({ ...short, useBw: true, awayUp: false, awayDown: true })).toBe('short')
-    expect(BAYES_AT_HUNDRED).toBe(1e-4)
+    expect(strongBayesSignal({ ...short, useBw: false, bull: false, bear: false, awayUp: false, awayDown: false })).toBe(
+      'short',
+    )
+    expect(strongBayesSignal({ ...short, useBw: true, bull: false, bear: true, awayUp: false, awayDown: false })).toBeNull()
+    expect(strongBayesSignal({ ...short, useBw: true, bull: false, bear: true, awayUp: false, awayDown: true })).toBe(
+      'short',
+    )
+    // The source's `acIsRed and acIsRed`: shorts need only AC falling.
+    expect(strongBayesSignal({ ...short, useBw: true, bull: false, bear: true, awayUp: true, awayDown: true })).toBe(
+      'short',
+    )
   })
 })
 
@@ -203,16 +334,20 @@ describe('calculateBayesianNqqeBankfunds', () => {
     expect(opened.nqqe).not.toEqual(values.nqqe)
   })
 
-  it('returns 0 prime once a falling tape has warmed up, because the up factor is 0', () => {
+  it('sends a falling tape to prime 0 and break-up 100 through the up/down swap', () => {
     const falling = calculateBayesianNqqeBankfunds(fallingCandles(), defaults)
-    const last = falling.prime.at(-1)
-    expect(last).toBe(0)
-    expect(falling.probUp.at(-1)).toBe(0)
+    // No close above the upper band in the window → the up-side P is 0 → the
+    // red score and prime are nz(0/0) = 0, and the green score (the DOWN
+    // probabilities) sits at exactly 1.
+    expect(falling.prime.at(-1)).toBe(0)
+    expect(falling.probDown.at(-1)).toBe(0)
+    expect(falling.probUp.at(-1)).toBe(100)
   })
 
-  it('settles a flat tape at fund 50 and paints it green', () => {
+  it('leaves a flat tape unfunded, because 0/0 is na in Pine', () => {
     const flat = calculateBayesianNqqeBankfunds(flatCandles(), defaults)
-    expect(flat.fundtrend.at(-1)).toBe(50)
+    expect(flat.fundtrend.at(-1)).toBeNull()
+    expect(flat.bullbear.at(-1)).toBeNull()
     expect(flat.bankerColors.at(-1)).toBe(BAYES_COLORS.bankerGreen)
   })
 
@@ -227,6 +362,8 @@ describe('calculateBayesianNqqeBankfunds', () => {
         previousProbDown: values.probDown[i - 1] ?? null,
         threshold: defaults.lowerThreshold,
         useBw: false,
+        bull: false,
+        bear: false,
         awayUp: false,
         awayDown: false,
       })
@@ -235,7 +372,10 @@ describe('calculateBayesianNqqeBankfunds', () => {
       const fund = values.fundtrend[i]
       const slow = values.bullbear[i]
       if (fund !== null && slow !== null) {
-        expect(values.bankerColors[i]).toBe(bankerBodyColor(fund, values.fundtrend[i - 1] ?? null, slow))
+        // xrf(fund*0.95, 1): the previous drop reference, falling back to the
+        // current one when the bar before is null.
+        const dropReference = values.fundtrend[i - 1] ?? fund
+        expect(values.bankerColors[i]).toBe(bankerBodyColor(fund, dropReference * 0.95, slow))
         expect(values.entry[i] !== null).toBe(
           isBankerEntry(fund, values.fundtrend[i - 1] ?? null, slow, values.bullbear[i - 1] ?? null),
         )
@@ -244,26 +384,21 @@ describe('calculateBayesianNqqeBankfunds', () => {
     }
   })
 
-  it('drops a Bill Williams long that is not beyond the unshifted alligator', () => {
+  it('gates Bill Williams signals on the jaw only, plus the AC/AO pair', () => {
     const gated = calculateBayesianNqqeBankfunds(candles, { ...defaults, useBwConfirmation: true })
     for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i]!
       if (gated.longSignal[i] !== null) {
         expect(values.longSignal[i]).not.toBeNull()
-        expect(candles[i]!.open > gated.jaw[i]!).toBe(true)
-        expect(candles[i]!.close > gated.lips[i]!).toBe(true)
+        // Away up = open and close beyond the jaw. No lips, no teeth.
+        expect(candle.open > gated.jaw[i]! && candle.close > gated.jaw[i]!).toBe(true)
+        // Green side: AC rising and AO rising.
+        expect(gated.ac[i]! > gated.ac[i - 1]!).toBe(true)
+        expect(gated.ao[i]! > gated.ao[i - 1]!).toBe(true)
       }
-      if (values.longSignal[i] !== null && gated.longSignal[i] === null) {
-        const away =
-          gated.jaw[i] !== null &&
-          gated.teeth[i] !== null &&
-          gated.lips[i] !== null &&
-          candles[i]!.open > gated.jaw[i]! &&
-          candles[i]!.close > gated.jaw[i]! &&
-          candles[i]!.open > gated.teeth[i]! &&
-          candles[i]!.close > gated.teeth[i]! &&
-          candles[i]!.open > gated.lips[i]! &&
-          candles[i]!.close > gated.lips[i]!
-        expect(away).toBe(false)
+      if (gated.shortSignal[i] !== null) {
+        expect(candle.open < gated.jaw[i]! && candle.close < gated.jaw[i]!).toBe(true)
+        expect(gated.ac[i]! > gated.ac[i - 1]!).toBe(false)
       }
     }
   })
@@ -280,10 +415,23 @@ describe('calculateBayesianNqqeBankfunds', () => {
       'Prime',
       'nQQE',
     ])
-    const columns = plots.find((plot) => plot.style === 'columns')
+    const columns = plots.find((plot) => plot.style === 'columns' && plot.title === 'Banker Fund')
     expect(columns?.base).toEqual(values.bullbear)
     expect(columns?.colorMode).toBeUndefined()
-    expect(plots.find((plot) => plot.title === 'nQQE')?.colorMode).toBe('bar')
+    const nqqe = plots.find((plot) => plot.title === 'nQQE')
+    expect(nqqe?.colorMode).toBe('bar')
+    expect(nqqe?.style).toBe('area')
+    expect(nqqe?.histbase).toBe(50)
+    expect(nqqe?.transp).toBe(30)
+    expect(plots.find((plot) => plot.title === 'Break Down')?.transp).toBe(60)
+    expect(plots.find((plot) => plot.title === 'Prime')?.style).toBe('area')
+    // The published 0→50 yellow entry block, and the dashed 40/60 levels.
+    const entry = plots.find((plot) => plot.title === 'Banker entry')
+    expect(entry?.style).toBe('columns')
+    expect(entry?.base?.every((base) => base === 0)).toBe(true)
+    expect(entry?.values.every((value) => value === null || value === 50)).toBe(true)
+    expect(plots.find((plot) => plot.horizontalLine === 40)?.dashed).toBe(true)
+    expect(plots.find((plot) => plot.horizontalLine === 60)?.dashed).toBe(true)
     const point = indicatorPlotData(candles, columns!).find((item) => 'base' in item)
     expect(point && 'base' in point && Number.isFinite(point.base)).toBe(true)
     expect(builtInPlots(candles, indicator).map((plot) => plot.title)).toEqual(
@@ -404,10 +552,25 @@ describe('bayesian floating window', () => {
         previousPrime: 30,
         probUp: 40,
         probDown: 40,
-        nqqe: 12,
+        nqqe: 62,
         fund: 60,
         slow: 40,
         previousFund: 55,
+        threshold: 15,
+        longSignal: false,
+        shortSignal: false,
+      }).text,
+    ).toBe('▲ nQQE UPTREND')
+    expect(
+      bayesianNqqeVerdict({
+        prime: 40,
+        previousPrime: 30,
+        probUp: 40,
+        probDown: 40,
+        nqqe: 62,
+        fund: 10,
+        slow: 20,
+        previousFund: 10.2,
         threshold: 15,
         longSignal: false,
         shortSignal: false,
@@ -450,9 +613,8 @@ describe('bayesian floating window', () => {
       probDown: Array(length).fill(20),
       probUp: Array(length).fill(30),
       prime: Array(length).fill(40),
-      momentum: Array(length).fill(10),
-      nqqe: Array(length).fill(4),
-      nqqeTrail: Array(length).fill(1),
+      nqqe: Array(length).fill(70),
+      nqqeTrail: Array(length).fill(60),
       nqqeAtr: Array(length).fill(1),
       fundtrend: Array(length).fill(80),
       bullbear: Array(length).fill(40),
@@ -487,9 +649,6 @@ describe('bayesian floating window', () => {
       }),
     )
     const geometry = oscHudGeometry(count, model.domain)
-    const rects = markup.match(/<rect[^>]*class="|"/g) ? markup.match(/<rect[^>]*>/g) ?? [] : []
-    const columns = (markup.match(/<rect[^>]*>/g) ?? []).filter((rect) => rect.includes('col-') === false)
-    // Keys are not attributes. The column group is the only rect source: no histogram.
     const drawn = markup.match(/<rect[^>]*>/g) ?? []
     expect(drawn.length).toBe(count)
     expect(markup).toContain('osc-hud-columns')
@@ -503,7 +662,5 @@ describe('bayesian floating window', () => {
     expect(Math.abs(top + height - geometry.zeroY) > 0.51 && Math.abs(top - geometry.zeroY) > 0.51).toBe(
       true,
     )
-    expect(columns).toBeDefined()
-    expect(rects).toBeDefined()
   })
 })

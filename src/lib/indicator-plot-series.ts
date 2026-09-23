@@ -16,7 +16,7 @@ interface PointData extends CustomData<Time> {
   /** Far end of a column. Absent means the column is not drawn. */
   base?: number
 }
-type Options = CustomSeriesOptions & { lineWidth: number; transp: number }
+type Options = CustomSeriesOptions & { lineWidth: number; transp: number; baseValue: number }
 export type IndicatorPlotStyle = 'histogram' | 'circles' | 'cross' | 'area' | 'columns'
 
 /**
@@ -38,7 +38,8 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
             this.columns(context, data, priceToCoordinate, rx, ry)
             return
           }
-          const zero = priceToCoordinate(0)
+          // An area hangs from its Pine histbase, not always zero.
+          const zero = priceToCoordinate(this.options.baseValue ?? 0)
           const points: { x: number; y: number; color: string }[] = []
           for (let i = data.visibleRange!.from; i < data.visibleRange!.to; i++) {
             const bar = data.bars[i]
@@ -159,7 +160,8 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
       const base = typeof data.base === 'number' && Number.isFinite(data.base) ? data.base : data.value
       return [base, data.value]
     }
-    return this.style === 'histogram' || this.style === 'area' ? [0, data.value] : [data.value]
+    if (this.style === 'histogram') return [0, data.value]
+    return this.style === 'area' ? [this.options.baseValue ?? 0, data.value] : [data.value]
   }
   isWhitespace(
     data: PointData | CustomSeriesWhitespaceData<Time>,
@@ -167,7 +169,13 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
     return !('value' in data)
   }
   defaultOptions(): Options {
-    return { ...customSeriesDefaultOptions, color: '#ffffff', lineWidth: 4, transp: 0 }
+    return {
+      ...customSeriesDefaultOptions,
+      color: '#ffffff',
+      lineWidth: 4,
+      transp: 0,
+      baseValue: 0,
+    }
   }
   destroy() {
     this.data = null

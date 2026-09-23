@@ -1118,7 +1118,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           style !== 'line'
             ? chart.addCustomSeries(
                 new IndicatorPlotSeries(style),
-                { ...base, transp: plot.transp ?? 0 },
+                { ...base, transp: plot.transp ?? 0, baseValue: plot.histbase ?? 0 },
                 pane,
               )
             : chart.addSeries(
@@ -1135,7 +1135,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             price: plot.horizontalLine,
             color: plot.color,
             lineWidth: plot.lineWidth as 1 | 2 | 3 | 4,
-            lineStyle: LineStyle.Solid,
+            lineStyle: plot.dashed ? LineStyle.Dashed : LineStyle.Solid,
             axisLabelVisible: false,
           })
         if (pane > 0)

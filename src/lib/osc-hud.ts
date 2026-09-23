@@ -1466,14 +1466,18 @@ export function bayesianNqqeVerdict(input: {
       detail: `prime ${trim(prime)} · under ${trim(threshold)}`,
     }
   if (nqqe !== null) {
-    if (nqqe > 10)
-      return { text: '▲ nQQE UPTREND', tone: 'bull', detail: `nQQE ${trim(nqqe)} · above +10` }
-    if (nqqe < -10)
-      return { text: '▼ nQQE DOWNTREND', tone: 'bear', detail: `nQQE ${trim(nqqe)} · below −10` }
-    return { text: '— nQQE RANGE', tone: 'flat', detail: `nQQE ${trim(nqqe)} · between ±10` }
+    if (nqqe > 60)
+      return { text: '▲ nQQE UPTREND', tone: 'bull', detail: `nQQE ${trim(nqqe)} · above 60` }
+    if (nqqe < 40)
+      return { text: '▼ nQQE DOWNTREND', tone: 'bear', detail: `nQQE ${trim(nqqe)} · below 40` }
+    return { text: '— nQQE RANGE', tone: 'flat', detail: `nQQE ${trim(nqqe)} · between 40 and 60` }
   }
   if (fund !== null && slow !== null) {
-    const color = bankerBodyColor(fund, previousFund, slow)
+    // xrf(fundtrend * 0.95, 1): the pre-multiplied drop reference — the
+    // previous fund times 0.95, falling back to the current fund when the bar
+    // before is null.
+    const dropLine = (previousFund ?? fund) * 0.95
+    const color = bankerBodyColor(fund, dropLine, slow)
     const detail = `fund ${trim(fund)} · slow ${trim(slow)}`
     if (color === BAYES_COLORS.bankerWhite)
       return { text: '— BANKER DECREASE', tone: 'flat', detail }
@@ -1541,7 +1545,7 @@ export function bayesianNqqeHudModel(
         values: probDown,
         width: 1,
         style: 'area',
-        transp: 75,
+        transp: 60,
         z: 0,
       },
       {
@@ -1550,7 +1554,7 @@ export function bayesianNqqeHudModel(
         values: probUp,
         width: 1,
         style: 'area',
-        transp: 75,
+        transp: 60,
         z: 0,
       },
     )
@@ -1560,8 +1564,9 @@ export function bayesianNqqeHudModel(
     color: BAYES_COLORS.prime,
     values: prime,
     width: 2,
-    style: 'line',
-    z: 3,
+    style: 'area',
+    transp: 60,
+    z: 2,
   })
   if (settings.showNqqe) {
     traces.push({
@@ -1570,7 +1575,7 @@ export function bayesianNqqeHudModel(
       values: nqqe,
       width: 1.6,
       style: 'line',
-      z: 2,
+      z: 3,
     })
   }
   const domain = oscHudDataDomain([

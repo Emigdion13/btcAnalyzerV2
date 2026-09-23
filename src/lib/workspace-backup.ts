@@ -9,6 +9,7 @@ import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
 import { isTmoScalperSettings } from './tmo-scalper'
 import { isWaveTrendSettings } from './wave-trend'
+import { isBayesianNqqeBankfundsSettings } from './bayesian-nqqe-bankfunds'
 import { isWilliamsVixFixSettings } from './cm-williams-vix-fix'
 import { isIndicatorAlarm } from './indicator-alarms'
 import type { DataSource } from '../../shared/coinbase'
@@ -124,6 +125,7 @@ function indicator(value: unknown): Indicator {
       'tux-ema-scalper',
       'tmo-scalper',
       'wave-trend',
+      'bayesian-nqqe-bankfunds',
       'vwap',
       'volume',
       'custom',
@@ -304,6 +306,37 @@ function indicator(value: unknown): Indicator {
       osLevel2: settings.osLevel2,
     }
     result.period = result.waveTrend.channelLength
+  }
+  if (kind === 'bayesian-nqqe-bankfunds' && i.bayesianNqqe !== undefined) {
+    const settings = i.bayesianNqqe
+    if (!isBayesianNqqeBankfundsSettings(settings)) invalid('Bayesian/nQQE/BankFunds settings')
+    result.bayesianNqqe = {
+      bbSmaPeriod: settings.bbSmaPeriod,
+      bbStdDev: settings.bbStdDev,
+      aoFast: settings.aoFast,
+      aoSlow: settings.aoSlow,
+      acFast: settings.acFast,
+      acSlow: settings.acSlow,
+      acAoMa: settings.acAoMa,
+      lipsLength: settings.lipsLength,
+      teethLength: settings.teethLength,
+      jawLength: settings.jawLength,
+      lipsOffset: settings.lipsOffset,
+      teethOffset: settings.teethOffset,
+      jawOffset: settings.jawOffset,
+      smaPeriod: settings.smaPeriod,
+      bayesPeriod: settings.bayesPeriod,
+      lowerThreshold: settings.lowerThreshold,
+      nqqeSource: settings.nqqeSource,
+      nqqeRsiLength: settings.nqqeRsiLength,
+      nqqeSmooth: settings.nqqeSmooth,
+      showProbabilities: settings.showProbabilities,
+      showNqqe: settings.showNqqe,
+      showBankFunds: settings.showBankFunds,
+      showSignals: settings.showSignals,
+      useBwConfirmation: settings.useBwConfirmation,
+    }
+    result.period = result.bayesianNqqe.bbSmaPeriod
   }
   if (kind === 'cm-williams-vix-fix' && i.williamsVixFix !== undefined) {
     const settings = i.williamsVixFix

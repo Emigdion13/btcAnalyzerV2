@@ -27,6 +27,7 @@ export type IndicatorKind =
   | 'next-pivot'
   | 'chile-reversal'
   | 'wave-trend'
+  | 'bayesian-nqqe-bankfunds'
   | 'vwap'
   | 'volume'
   | 'custom'
@@ -154,6 +155,60 @@ export interface WilliamsVixFixSettings {
   showHighRange: boolean
   /** `sd` — draw the aqua Bollinger upper band line. */
   showStdDevLine: boolean
+}
+
+/** Price series the nQQE half of Bayesian/nQQE/BankFunds may read. Bayesian events stay on close. */
+export type BayesianNqqeSource = 'close' | 'open' | 'high' | 'low' | 'hl2' | 'hlc3' | 'ohlc4'
+
+/**
+ * Published legend of Bayesian/nQQE/BankFunds, plus the display bools that are not in the
+ * numeric tuple. Alligator offsets are stored and shown; they are not applied.
+ */
+export interface BayesianNqqeSettings {
+  /** BB basis length (20). */
+  bbSmaPeriod: number
+  /** BB population-stdev multiplier (2.5). */
+  bbStdDev: number
+  /** Awesome Oscillator fast SMA (5). The title may say EMA; the average is an SMA. */
+  aoFast: number
+  /** Awesome Oscillator slow SMA (34). */
+  aoSlow: number
+  /** Accelerator fast SMA (5). */
+  acFast: number
+  /** Accelerator slow SMA (34). */
+  acSlow: number
+  /** SMA length applied to the accelerator raw difference (13). */
+  acAoMa: number
+  /** Alligator lips SMMA length (5). Unshifted. */
+  lipsLength: number
+  /** Alligator teeth SMMA length (8). Unshifted. */
+  teethLength: number
+  /** Alligator jaw SMMA length (13). Unshifted. */
+  jawLength: number
+  /** Stored lips offset (3). Not applied. */
+  lipsOffset: number
+  /** Stored teeth offset (5). Not applied. */
+  teethOffset: number
+  /** Stored jaw offset (8). Not applied. */
+  jawOffset: number
+  /** SMA the Bayesian events compare close against (20). */
+  smaPeriod: number
+  /** Lookback of the event averages (20). */
+  bayesPeriod: number
+  /** Lower threshold on the 0–100 plotted score (15). */
+  lowerThreshold: number
+  /** nQQE source. The Bayesian half always reads close. */
+  nqqeSource: BayesianNqqeSource
+  /** nQQE RSI length (14). */
+  nqqeRsiLength: number
+  /** nQQE RSI smoothing (5). */
+  nqqeSmooth: number
+  showProbabilities: boolean
+  showNqqe: boolean
+  showBankFunds: boolean
+  showSignals: boolean
+  /** Bill Williams confirmation. Off in the published default. Uses the unshifted alligator. */
+  useBwConfirmation: boolean
 }
 
 export interface CmMacdSettings {
@@ -600,10 +655,20 @@ export interface Plot {
   pane: 'price' | 'oscillator'
   lineWidth: number
   // Native built-ins only. The custom-script sandbox still accepts line plots only.
-  style?: 'line' | 'histogram' | 'circles' | 'cross' | 'area'
+  style?: 'line' | 'histogram' | 'circles' | 'cross' | 'area' | 'columns'
   /** Pine `transp`, 0–100. Applies to the fill of an `area` plot. */
   transp?: number
   colors?: string[]
+  /**
+   * Second price of a `columns` bar. The column is drawn from `values[i]` to `base[i]`.
+   * A missing or non-finite base skips that bar; it is not drawn from zero.
+   */
+  base?: (number | null)[]
+  /**
+   * `segment` (the default for a line) shifts each colour onto the following bar, which is
+   * how Lightweight Charts colours a segment. `bar` keeps the colour on the bar that produced it.
+   */
+  colorMode?: 'segment' | 'bar'
   horizontalLine?: number
   hideLegend?: boolean
 }
@@ -642,6 +707,7 @@ export interface Indicator {
   chileReversal?: ChileReversalSettings
   waveTrend?: WaveTrendSettings
   williamsVixFix?: WilliamsVixFixSettings
+  bayesianNqqe?: BayesianNqqeSettings
 }
 export interface SavedScript {
   id: string

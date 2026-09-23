@@ -10,6 +10,11 @@ import { rsiDivergencePlots } from './rsi-divergence'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
 import { calculateTmoScalper, tmoScalperPlots, tmoScalperSettings } from './tmo-scalper'
+import {
+  bayesianNqqePlots,
+  bayesianNqqeSettings,
+  calculateBayesianNqqeBankfunds,
+} from './bayesian-nqqe-bankfunds'
 import type { IndicatorContext } from './cm-ult-macd'
 import type { Candle, Indicator, IndicatorKind, Plot } from './types'
 
@@ -213,6 +218,16 @@ export const INDICATOR_CATALOG: {
     color: '#00ff00',
   },
   {
+    kind: 'bayesian-nqqe-bankfunds',
+    name: 'Bayesian/nQQE/BankFunds',
+    short: 'Bayesian/nQQE/BankFunds',
+    description:
+      'Reconstructed Bayesian BBSMA + nQQE + Banker Fund combo from the published legend. The floating window plots this same calculation, not a second formula. Defaults (20, 2.5, 5, 34, 5, 34, 13, 5, 8, 13, 3, 5, 8, 20, 20, 15, close, 14, 5).',
+    category: 'Momentum',
+    period: 20,
+    color: '#ffff00',
+  },
+  {
     kind: 'chile-reversal',
     name: 'Chile Reversal',
     short: 'Chile Reversal',
@@ -266,6 +281,10 @@ export function builtInPlots(
   if (indicator.kind === 'cm-williams-vix-fix') {
     const settings = williamsVixFixSettings(indicator)
     return williamsVixFixPlots(calculateWilliamsVixFix(candles, settings), settings)
+  }
+  if (indicator.kind === 'bayesian-nqqe-bankfunds') {
+    const settings = bayesianNqqeSettings(indicator)
+    return bayesianNqqePlots(calculateBayesianNqqeBankfunds(candles, settings), settings)
   }
   if (indicator.kind === 'coinbase-strike') {
     // The active strike is a native dotted price-scale marker in ChartView, not a historical

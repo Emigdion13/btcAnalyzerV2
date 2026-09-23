@@ -4,6 +4,7 @@ import type { WorkspaceBackup } from './workspace-backup'
 import { DEFAULT_INDICATORS, DEFAULT_SETTINGS, DIVERGENCE_DEFAULTS, SMC_DEFAULTS } from './types'
 import { CM_MACD_DEFAULTS } from './cm-ult-macd'
 import { WAVE_TREND_DEFAULTS } from './wave-trend'
+import { BAYESIAN_NQQE_DEFAULTS } from './bayesian-nqqe-bankfunds'
 import { newIndicatorAlarm } from './indicator-alarms'
 import type { IndicatorAlarm } from './types'
 
@@ -257,6 +258,51 @@ describe('workspace backups', () => {
       indicators: [{ ...indicator, waveTrend: { ...WAVE_TREND_DEFAULTS, extra: 'ignored' } }],
     })
     expect(clean.indicators[0].waveTrend).toEqual(WAVE_TREND_DEFAULTS)
+  })
+  it('round-trips Bayesian/nQQE/BankFunds settings', () => {
+    const saved = backup()
+    saved.indicators.push({
+      id: 'bayes',
+      kind: 'bayesian-nqqe-bankfunds',
+      name: 'Bayesian/nQQE/BankFunds',
+      period: 21,
+      color: '#ffff00',
+      visible: false,
+      bayesianNqqe: { ...BAYESIAN_NQQE_DEFAULTS, bbSmaPeriod: 21, useBwConfirmation: true },
+    })
+    expect(parseWorkspaceBackup(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+  })
+  it('rejects malformed Bayesian/nQQE/BankFunds inputs and strips unrecognized properties', () => {
+    const original = backup()
+    const indicator = {
+      id: 'bayes',
+      kind: 'bayesian-nqqe-bankfunds' as const,
+      name: 'Bayesian/nQQE/BankFunds',
+      period: 20,
+      color: '#ffff00',
+      visible: true,
+    }
+    for (const bayesianNqqe of [
+      [],
+      {},
+      { ...BAYESIAN_NQQE_DEFAULTS, bbSmaPeriod: 0 },
+      { ...BAYESIAN_NQQE_DEFAULTS, lipsOffset: -1 },
+      { ...BAYESIAN_NQQE_DEFAULTS, jawOffset: 1.5 },
+      { ...BAYESIAN_NQQE_DEFAULTS, bbStdDev: 0 },
+      { ...BAYESIAN_NQQE_DEFAULTS, lowerThreshold: 101 },
+      { ...BAYESIAN_NQQE_DEFAULTS, nqqeSource: 'hlc' },
+      { ...BAYESIAN_NQQE_DEFAULTS, showNqqe: 'yes' },
+    ])
+      expect(() =>
+        parseWorkspaceBackup({ ...original, indicators: [{ ...indicator, bayesianNqqe }] }),
+      ).toThrow(/Bayesian/)
+    const clean = parseWorkspaceBackup({
+      ...original,
+      indicators: [
+        { ...indicator, bayesianNqqe: { ...BAYESIAN_NQQE_DEFAULTS, extra: 'ignored' } },
+      ],
+    })
+    expect(clean.indicators[0].bayesianNqqe).toEqual(BAYESIAN_NQQE_DEFAULTS)
   })
   it('round-trips MACD divergence settings on both MACD kinds and rejects malformed values', () => {
     const saved = backup()

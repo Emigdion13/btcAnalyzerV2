@@ -62,6 +62,11 @@ import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { rsiMeterPeriod } from '../lib/rsi-hud'
 import { calculateWaveTrend, waveTrendSettings, WAVE_TREND_DEFAULTS } from '../lib/wave-trend'
 import {
+  BAYESIAN_NQQE_DEFAULTS,
+  bayesianNqqeSettings,
+  calculateBayesianNqqeBankfunds,
+} from '../lib/bayesian-nqqe-bankfunds'
+import {
   calculateWilliamsVixFix,
   CM_WILLIAMS_VIX_FIX_DEFAULTS,
   williamsVixFixSettings,
@@ -73,6 +78,7 @@ import {
   tmoScalperSettings,
 } from '../lib/tmo-scalper'
 import {
+  bayesianNqqeHudModel,
   clampOscHudBars,
   cmMacdHudModel,
   oscHudBars,
@@ -198,6 +204,7 @@ interface Props {
   rsiDivHud?: boolean
   vixFixHud?: boolean
   tmoScalperHud?: boolean
+  bayesianNqqeHud?: boolean
   /** Closing a window from its own card is the same choice as its toolbar button. */
   onOscHudClose?: (kind: OscHudKind) => void
   /** Lets a window offer the pane whose settings it is borrowing. */
@@ -1487,6 +1494,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const vixFixHudIndicator =
     indicators.find((indicator) => indicator.kind === 'cm-williams-vix-fix') ?? null
   const tmoHudIndicator = indicators.find((indicator) => indicator.kind === 'tmo-scalper') ?? null
+  const bayesHudIndicator =
+    indicators.find((indicator) => indicator.kind === 'bayesian-nqqe-bankfunds') ?? null
   const cmHudSettings = useMemo(
     () => (cmHudIndicator ? cmMacdSettings(cmHudIndicator) : CM_MACD_DEFAULTS),
     [cmHudIndicator],
@@ -1506,6 +1515,10 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     () => (tmoHudIndicator ? tmoScalperSettings(tmoHudIndicator) : TMO_SCALPER_DEFAULTS),
     [tmoHudIndicator],
   )
+  const bayesHudSettings = useMemo(
+    () => (bayesHudIndicator ? bayesianNqqeSettings(bayesHudIndicator) : BAYESIAN_NQQE_DEFAULTS),
+    [bayesHudIndicator],
+  )
   const candleTimes = useMemo(() => candles.map((candle) => candle.time), [candles])
   // Zoom is a per-window preference: the default is twenty minutes of the chart's own bars, and
   // ±4 bars is enough of a step that you can widen for a wave or tighten for the last few ticks.
@@ -1516,6 +1529,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const waveHudBars = oscHudBars(timeframe, oscHudBarsOverride['wave-trend'])
   const vixFixHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-williams-vix-fix'])
   const tmoHudBars = oscHudBars(timeframe, oscHudBarsOverride['tmo-scalper'])
+  const bayesHudBars = oscHudBars(timeframe, oscHudBarsOverride['bayesian-nqqe-bankfunds'])
   const zoomOscHud = (kind: OscHudKind, delta: number) =>
     setOscHudBarsOverride((previous) => ({
       ...previous,
@@ -1663,6 +1677,30 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       hovered,
       tmoHudNotice,
       tmoHudIndicator,
+    ],
+  )
+  const bayesHudModel = useMemo(
+    () =>
+      props.bayesianNqqeHud
+        ? bayesianNqqeHudModel(calculateBayesianNqqeBankfunds(candles, bayesHudSettings), bayesHudSettings, {
+            times: candleTimes,
+            timeframe,
+            bars: bayesHudBars,
+            index: hoverIndex,
+            hovered: hovered !== null,
+            settingsSource: bayesHudIndicator ? 'chart' : 'defaults',
+          })
+        : null,
+    [
+      props.bayesianNqqeHud,
+      candles,
+      bayesHudSettings,
+      candleTimes,
+      timeframe,
+      bayesHudBars,
+      hoverIndex,
+      hovered,
+      bayesHudIndicator,
     ],
   )
   const rsiDivHudModel = useMemo(
@@ -3693,6 +3731,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                     ind.kind !== 'wave-trend' &&
                     ind.kind !== 'cm-williams-vix-fix' &&
                     ind.kind !== 'tmo-scalper' &&
+                    ind.kind !== 'bayesian-nqqe-bankfunds' &&
                     !(
                       ind.kind === 'custom' &&
                       customResults[ind.id]?.plots.every((p) => p.pane === 'oscillator')
@@ -3977,6 +4016,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('tmo-scalper')}
+        />
+      )}
+      {props.bayesianNqqeHud && bayesHudModel && (
+        <OscHudCard
+          model={bayesHudModel}
+          dock="bayes"
+          indicator={bayesHudIndicator}
+          bars={bayesHudBars}
+          onZoom={(delta) => zoomOscHud('bayesian-nqqe-bankfunds', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('bayesian-nqqe-bankfunds')}
         />
       )}
       {generated.map(({ indicator, plots }) => {

@@ -13,9 +13,11 @@ import type { Candle, Plot } from './types'
 
 interface PointData extends CustomData<Time> {
   value: number
+  /** Far end of a column. Absent means the column is not drawn. */
+  base?: number
 }
 type Options = CustomSeriesOptions & { lineWidth: number; transp: number }
-export type IndicatorPlotStyle = 'histogram' | 'circles' | 'cross' | 'area'
+export type IndicatorPlotStyle = 'histogram' | 'circles' | 'cross' | 'area' | 'columns'
 
 /**
  * Pine-style fixed-width histogram strokes, marker styles, and zero-based areas.
@@ -32,6 +34,10 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
       if (!data?.visibleRange) return
       target.useBitmapCoordinateSpace(
         ({ context, horizontalPixelRatio: rx, verticalPixelRatio: ry }) => {
+          if (this.style === 'columns') {
+            this.columns(context, data, priceToCoordinate, rx, ry)
+            return
+          }
           const zero = priceToCoordinate(0)
           const points: { x: number; y: number; color: string }[] = []
           for (let i = data.visibleRange!.from; i < data.visibleRange!.to; i++) {
@@ -90,6 +96,38 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
     this.data = data
     this.options = options
   }
+  /**
+   * A column between `value` and `base`, not from zero. A missing base skips the bar.
+   * Width tracks bar spacing, capped so a zoomed-in chart does not paint a slab.
+   */
+  private columns(
+    context: CanvasRenderingContext2D,
+    data: PaneRendererCustomData<Time, PointData>,
+    priceToCoordinate: (price: number) => number | null,
+    rx: number,
+    ry: number,
+  ) {
+    const width = Math.max(
+      1,
+      Math.min(Math.round(data.barSpacing * 0.62 * rx), Math.round(10 * rx)),
+    )
+    const range = data.visibleRange
+    if (!range) return
+    for (let i = range.from; i < range.to; i++) {
+      const bar = data.bars[i]
+      const value = bar?.originalData.value
+      const base = bar?.originalData.base
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue
+      if (typeof base !== 'number' || !Number.isFinite(base)) continue
+      const yValue = priceToCoordinate(value)
+      const yBase = priceToCoordinate(base)
+      if (yValue === null || yBase === null) continue
+      context.fillStyle = bar.barColor
+      const top = Math.min(yValue, yBase) * ry
+      const height = Math.max(1, Math.abs(yValue - yBase) * ry)
+      context.fillRect(Math.round(bar.x * rx - width / 2), Math.round(top), width, Math.round(height))
+    }
+  }
   /** Pine `style=area`: the line, plus the region between it and the zero line. */
   private area(
     context: CanvasRenderingContext2D,
@@ -117,6 +155,10 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
     context.restore()
   }
   priceValueBuilder(data: PointData) {
+    if (this.style === 'columns') {
+      const base = typeof data.base === 'number' && Number.isFinite(data.base) ? data.base : data.value
+      return [base, data.value]
+    }
     return this.style === 'histogram' || this.style === 'area' ? [0, data.value] : [data.value]
   }
   isWhitespace(
@@ -132,10 +174,15 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
   }
 }
 
-/** Pine colors the segment ending at a bar; Lightweight Charts colors its start. */
+/**
+ * Pine colors the segment ending at a bar; Lightweight Charts colors its start.
+ * `colorMode: 'bar'` keeps the colour on the bar that produced it.
+ */
 export function indicatorPlotData(candles: Candle[], plot: Plot) {
   const colors = plot.colors ? [...plot.colors] : undefined
-  if (colors && (!plot.style || plot.style === 'line')) {
+  const shiftColors =
+    !!colors && (plot.style === undefined || plot.style === 'line') && plot.colorMode !== 'bar'
+  if (shiftColors && colors) {
     let next = -1
     for (let i = plot.values.length - 1; i >= 0; i--) {
       if (plot.values[i] === null) continue
@@ -143,9 +190,15 @@ export function indicatorPlotData(candles: Candle[], plot: Plot) {
       next = i
     }
   }
-  return plot.values.map((value, i) =>
-    value === null
-      ? { time: candles[i].time as UTCTimestamp }
-      : { time: candles[i].time as UTCTimestamp, value, color: colors?.[i] ?? plot.color },
-  )
+  return plot.values.map((value, i) => {
+    if (value === null) return { time: candles[i].time as UTCTimestamp }
+    const point: { time: UTCTimestamp; value: number; color: string; base?: number } = {
+      time: candles[i].time as UTCTimestamp,
+      value,
+      color: colors?.[i] ?? plot.color,
+    }
+    const base = plot.base?.[i]
+    if (typeof base === 'number' && Number.isFinite(base)) point.base = base
+    return point
+  })
 }

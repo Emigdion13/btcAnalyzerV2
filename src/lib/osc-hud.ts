@@ -1,6 +1,7 @@
 /**
  * Floating windows for the oscillators you watch all day: the last twenty minutes of
- * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence, CM_Williams_Vix_Fix and TMO Scalper,
+ * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence, CM_Williams_Vix_Fix, TMO Scalper
+ * and Bayesian/nQQE/BankFunds,
  * drawn as their own little chart instead of squeezed into a full-height pane at the bottom
  * of the screen.
  *
@@ -35,16 +36,28 @@ import {
   tmoScalperSettings,
 } from './tmo-scalper'
 import type { TmoScalperValues } from './tmo-scalper'
+import {
+  BAYES_COLORS,
+  bankerBodyColor,
+  bayesianSideways,
+  nqqeColor,
+} from './bayesian-nqqe-bankfunds'
+import type { BayesianNqqeValues } from './bayesian-nqqe-bankfunds'
 import { formatPrice } from './market'
 import { ta } from './indicator-runtime'
 import { detectMacdDivergences } from './macd-divergence'
 import type { Divergence } from './macd-divergence'
-import type { Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, TmoScalperSettings, WaveTrendSettings, WilliamsVixFixSettings } from './types'
+import type { BayesianNqqeSettings, Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, TmoScalperSettings, WaveTrendSettings, WilliamsVixFixSettings } from './types'
 
 /** The five windows, keyed by the indicator kind they mirror. */
 export type OscHudKind = Extract<
   Indicator['kind'],
-  'cm-ult-macd' | 'wave-trend' | 'rsi-divergence' | 'cm-williams-vix-fix' | 'tmo-scalper'
+  | 'cm-ult-macd'
+  | 'wave-trend'
+  | 'rsi-divergence'
+  | 'cm-williams-vix-fix'
+  | 'tmo-scalper'
+  | 'bayesian-nqqe-bankfunds'
 >
 
 export const OSC_HUD_KINDS: OscHudKind[] = [
@@ -53,6 +66,7 @@ export const OSC_HUD_KINDS: OscHudKind[] = [
   'rsi-divergence',
   'cm-williams-vix-fix',
   'tmo-scalper',
+  'bayesian-nqqe-bankfunds',
 ]
 
 /**
@@ -139,6 +153,15 @@ export const OSC_HUD_WIDGETS: Record<OscHudKind, OscHudWidget> = {
     positionKey: 'osc-hud-pos:tmo-scalper',
     minimizedKey: 'osc-hud-min:tmo-scalper',
   },
+  'bayesian-nqqe-bankfunds': {
+    kind: 'bayesian-nqqe-bankfunds',
+    title: 'Bayesian/nQQE/BankFunds',
+    button: 'Bayesian',
+    accent: '#f0c14a',
+    visibilityKey: 'osc-hud-visible:bayesian-nqqe-bankfunds',
+    positionKey: 'osc-hud-pos:bayesian-nqqe-bankfunds',
+    minimizedKey: 'osc-hud-min:bayesian-nqqe-bankfunds',
+  },
 }
 
 /** Same contract as the RSI meter: `null` is "never chosen", which defers to the default. */
@@ -197,6 +220,31 @@ export function oscHudSpan(bars: number, timeframe: Timeframe): string {
 export interface OscHudDomain {
   min: number
   max: number
+}
+
+/**
+ * The scale for a series that is not read around zero. Unlike `oscHudDomain`, this does not
+ * mirror the extremes: the window spans the actual min and max, padded, the same idea as the
+ * VIX Fix card's one-sided range. A flat window still needs a span to divide by.
+ */
+export function oscHudDataDomain(series: (number | null)[][]): OscHudDomain {
+  let min = Infinity
+  let max = -Infinity
+  for (const values of series) {
+    for (const value of values) {
+      if (value !== null && Number.isFinite(value)) {
+        if (value < min) min = value
+        if (value > max) max = value
+      }
+    }
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 0, max: 1 }
+  if (min === max) {
+    const pad = Math.max(1, Math.abs(min) * OSC_HUD_EDGE_PADDING)
+    return { min: min - pad, max: max + pad }
+  }
+  const pad = (max - min) * OSC_HUD_EDGE_PADDING
+  return { min: min - pad, max: max + pad }
 }
 
 export function oscHudDomain(series: (number | null)[][]): OscHudDomain {
@@ -284,6 +332,13 @@ export interface OscHudHistogram {
   colors: string[]
 }
 
+/** A column drawn between two prices, not from zero. Absent unless the window asks for it. */
+export interface OscHudColumns {
+  high: (number | null)[]
+  low: (number | null)[]
+  colors: string[]
+}
+
 export interface OscHudLevel {
   value: number
   color: string
@@ -313,6 +368,8 @@ export interface OscHudModel {
   times: number[]
   traces: OscHudTrace[]
   histogram?: OscHudHistogram
+  /** Banker fund columns. When set, the card does not also draw a zero-based histogram. */
+  columns?: OscHudColumns
   levels: OscHudLevel[]
   domain: OscHudDomain
   /** Index into `times` the readouts speak about; null when the crosshair is outside the window. */
@@ -1359,6 +1416,238 @@ export function tmoScalperHudModel(
       main1.some((value) => value !== null) ||
       main2.some((value) => value !== null) ||
       main3.some((value) => value !== null),
+    note: input.note ?? null,
+    settingsSource: input.settingsSource ?? 'defaults',
+  }
+}
+
+/**
+ * The combo's call, in the order the three parts are read: a fresh strong signal, then the
+ * gray zone, then the nQQE regime, then the banker body, then whether prime itself is rising.
+ * Warmup only when prime, nQQE and the fund line are all still null.
+ */
+export function bayesianNqqeVerdict(input: {
+  prime: number | null
+  previousPrime: number | null
+  probUp: number | null
+  probDown: number | null
+  nqqe: number | null
+  fund: number | null
+  slow: number | null
+  previousFund: number | null
+  threshold: number
+  longSignal: boolean
+  shortSignal: boolean
+}): OscHudVerdict {
+  const { prime, previousPrime, probUp, probDown, nqqe, fund, slow, previousFund, threshold } = input
+  if (prime === null && nqqe === null && fund === null)
+    return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
+  if (input.longSignal)
+    return {
+      text: '▲ STRONG LONG',
+      tone: 'bull',
+      detail: `prime ${trim(prime)} left the gray zone`,
+    }
+  if (input.shortSignal)
+    return {
+      text: '▼ STRONG SHORT',
+      tone: 'bear',
+      detail: `prime ${trim(prime)} · down ${trim(probDown)}`,
+    }
+  if (
+    prime !== null &&
+    probUp !== null &&
+    probDown !== null &&
+    bayesianSideways(prime, probUp, probDown, threshold)
+  )
+    return {
+      text: '— SIDEWAYS',
+      tone: 'flat',
+      detail: `prime ${trim(prime)} · under ${trim(threshold)}`,
+    }
+  if (nqqe !== null) {
+    if (nqqe > 10)
+      return { text: '▲ nQQE UPTREND', tone: 'bull', detail: `nQQE ${trim(nqqe)} · above +10` }
+    if (nqqe < -10)
+      return { text: '▼ nQQE DOWNTREND', tone: 'bear', detail: `nQQE ${trim(nqqe)} · below −10` }
+    return { text: '— nQQE RANGE', tone: 'flat', detail: `nQQE ${trim(nqqe)} · between ±10` }
+  }
+  if (fund !== null && slow !== null) {
+    const color = bankerBodyColor(fund, previousFund, slow)
+    const detail = `fund ${trim(fund)} · slow ${trim(slow)}`
+    if (color === BAYES_COLORS.bankerWhite)
+      return { text: '— BANKER DECREASE', tone: 'flat', detail }
+    if (color === BAYES_COLORS.bankerRed) return { text: '▼ BANKER EXIT', tone: 'bear', detail }
+    if (color === BAYES_COLORS.bankerBlue)
+      return { text: '▲ BANKER REBOUND', tone: 'os', detail }
+    return { text: '▲ BANKER INCREASE', tone: 'bull', detail }
+  }
+  if (prime !== null && previousPrime !== null) {
+    const rising = prime >= previousPrime
+    return {
+      text: rising ? '▲ PRIME RISING' : '▼ PRIME FALLING',
+      tone: rising ? 'bull' : 'bear',
+      detail: `prime ${trim(prime)}`,
+    }
+  }
+  if (prime !== null)
+    return { text: '— PRIME', tone: 'flat', detail: `prime ${trim(prime)}` }
+  return { text: '— NEUTRAL', tone: 'flat', detail: 'no prime reading' }
+}
+
+/**
+ * The Bayesian/nQQE/BankFunds window. Values arrive full-length from
+ * `calculateBayesianNqqeBankfunds` — the same call the pane plots — and are sliced here.
+ * The scale spans the window's own highs and lows, including both ends of a banker column.
+ * It is not mirrored about zero.
+ */
+export function bayesianNqqeHudModel(
+  values: BayesianNqqeValues,
+  settings: BayesianNqqeSettings,
+  input: OscHudModelInput,
+): OscHudModel {
+  const start = windowStart(input.times.length, input.bars)
+  const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
+  const times = cut(input.times)
+  const probDown = finite(cut(values.probDown))
+  const probUp = finite(cut(values.probUp))
+  const prime = finite(cut(values.prime))
+  const nqqe = finite(cut(values.nqqe))
+  const fund = finite(cut(values.fundtrend))
+  const slow = finite(cut(values.bullbear))
+  const longSignal = cut(values.longSignal)
+  const shortSignal = cut(values.shortSignal)
+  const columns: OscHudColumns | undefined = settings.showBankFunds
+    ? {
+        high: fund.map((value, index) => {
+          const other = slow[index]
+          if (value === null || other === null) return null
+          return Math.max(value, other)
+        }),
+        low: fund.map((value, index) => {
+          const other = slow[index]
+          if (value === null || other === null) return null
+          return Math.min(value, other)
+        }),
+        colors: cut(values.bankerColors),
+      }
+    : undefined
+  const traces: OscHudTrace[] = []
+  if (settings.showProbabilities) {
+    traces.push(
+      {
+        title: 'Break Down',
+        color: BAYES_COLORS.down,
+        values: probDown,
+        width: 1,
+        style: 'area',
+        transp: 75,
+        z: 0,
+      },
+      {
+        title: 'Break Up',
+        color: BAYES_COLORS.up,
+        values: probUp,
+        width: 1,
+        style: 'area',
+        transp: 75,
+        z: 0,
+      },
+    )
+  }
+  traces.push({
+    title: 'Prime',
+    color: BAYES_COLORS.prime,
+    values: prime,
+    width: 2,
+    style: 'line',
+    z: 3,
+  })
+  if (settings.showNqqe) {
+    traces.push({
+      title: 'nQQE',
+      color: BAYES_COLORS.nqqeYellow,
+      values: nqqe,
+      width: 1.6,
+      style: 'line',
+      z: 2,
+    })
+  }
+  const domain = oscHudDataDomain([
+    ...traces.map((trace) => trace.values),
+    columns?.high ?? [],
+    columns?.low ?? [],
+  ])
+  const activeIndex = input.index - start
+  const active = activeIndex >= 0 && activeIndex < times.length ? activeIndex : null
+  const at = (source: (number | null)[]) =>
+    active !== null && active < source.length ? (source[active] ?? null) : null
+  const before = (source: (number | null)[]) => {
+    const previous = input.index - 1
+    if (previous < 0 || previous >= source.length) return null
+    const value = source[previous]
+    return value === null || value === undefined || !Number.isFinite(value) ? null : value
+  }
+  const activePrime = at(prime)
+  const activeNqqe = at(nqqe)
+  const activeFund = at(fund)
+  const activeSlow = at(slow)
+  const levels = oscHudLevels(
+    [
+      { value: 0, color: BAYES_COLORS.gray, label: '0', dashed: false },
+      {
+        value: settings.lowerThreshold,
+        color: BAYES_COLORS.gray,
+        label: `${settings.lowerThreshold}`,
+        dashed: true,
+      },
+      { value: 10, color: BAYES_COLORS.nqqeGreen, label: '10', dashed: true },
+      { value: -10, color: BAYES_COLORS.nqqeRed, label: '-10', dashed: true },
+      { value: 25, color: BAYES_COLORS.bankerYellow, label: '25', dashed: true },
+      { value: 100, color: BAYES_COLORS.gray, label: '100', dashed: false },
+    ],
+    domain,
+  )
+  const fundColor =
+    activeFund === null || activeSlow === null
+      ? undefined
+      : bankerBodyColor(activeFund, before(values.fundtrend), activeSlow)
+  return {
+    kind: 'bayesian-nqqe-bankfunds',
+    title: OSC_HUD_WIDGETS['bayesian-nqqe-bankfunds'].title,
+    subtitle: `BB ${settings.bbSmaPeriod}/${settings.bbStdDev} · Bayes ${settings.bayesPeriod}/${settings.lowerThreshold} · nQQE ${settings.nqqeSource} ${settings.nqqeRsiLength}/${settings.nqqeSmooth}`,
+    accent: OSC_HUD_WIDGETS['bayesian-nqqe-bankfunds'].accent,
+    times,
+    traces,
+    columns,
+    levels,
+    domain,
+    activeIndex: active,
+    hovered: !!input.hovered,
+    bars: times.length,
+    spanLabel: oscHudSpan(times.length, input.timeframe),
+    readouts: [
+      { label: 'Prime', value: trim(activePrime), color: BAYES_COLORS.prime },
+      { label: 'nQQE', value: trim(activeNqqe), color: nqqeColor(activeNqqe) },
+      { label: 'Bank', value: trim(activeFund), color: fundColor },
+    ],
+    verdict: bayesianNqqeVerdict({
+      prime: activePrime,
+      previousPrime: before(values.prime),
+      probUp: at(probUp),
+      probDown: at(probDown),
+      nqqe: activeNqqe,
+      fund: activeFund,
+      slow: activeSlow,
+      previousFund: before(values.fundtrend),
+      threshold: settings.lowerThreshold,
+      longSignal: active !== null && longSignal[active] != null,
+      shortSignal: active !== null && shortSignal[active] != null,
+    }),
+    ready:
+      prime.some((value) => value !== null) ||
+      nqqe.some((value) => value !== null) ||
+      fund.some((value) => value !== null),
     note: input.note ?? null,
     settingsSource: input.settingsSource ?? 'defaults',
   }

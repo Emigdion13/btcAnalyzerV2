@@ -2431,6 +2431,7 @@ export default function App() {
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}
+                  whale={venue === 'coinbase' && replayIndex === null ? live.whaleFlow : null}
                 />
                 {hasData && replayIndex === null && pulseVisible && (
                   <BarPulseBox

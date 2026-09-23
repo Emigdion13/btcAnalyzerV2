@@ -89,6 +89,10 @@ interface BurstMemory {
   sold: number
   count: number
   prints: WindowTrade[]
+  /** Price-weighted execution map for every directional fill in the burst, not only topPrints. */
+  executionVwap: number
+  executionLow: number
+  executionHigh: number
   /**
    * When the sweep is projected to finish: the last contributing fill's arrival plus the window
    * length, i.e. the moment the window would drain if nothing else arrives.
@@ -97,6 +101,56 @@ interface BurstMemory {
    * behaves identically whether the caller polls at 1 Hz or not at all for an hour.
    */
   endsAt: number
+}
+
+/**
+ * The actual price area occupied by a group of executed fills.
+ *
+ * Fill size is used for the VWAP weight, while gross USD notional is retained for the size readout,
+ * so a small fill cannot move the map as much as a large one. This is intentionally separate from
+ * level2: level2 describes orders that are still resting, while this summary describes prices at
+ * which the tape has already printed.
+ */
+export interface WhaleExecutionSummary {
+  vwap: number
+  low: number
+  high: number
+  grossNotional: number
+}
+
+/** Summarize executed prints; `size` is the VWAP weight and absolute notional sizes the map. */
+export function summarizeWhalePrints(
+  prints: readonly { price: number; size?: number; notional: number }[],
+): WhaleExecutionSummary | null {
+  let grossNotional = 0
+  let totalSize = 0
+  let weightedPrice = 0
+  let low = Infinity
+  let high = -Infinity
+  for (const print of prints) {
+    const notional = Math.abs(print.notional)
+    const size =
+      typeof print.size === 'number' && Number.isFinite(print.size) && print.size > 0
+        ? print.size
+        : notional
+    if (
+      !Number.isFinite(print.price) ||
+      print.price <= 0 ||
+      !Number.isFinite(notional) ||
+      notional <= 0 ||
+      !Number.isFinite(size) ||
+      size <= 0
+    )
+      continue
+    grossNotional += notional
+    totalSize += size
+    weightedPrice += print.price * size
+    low = Math.min(low, print.price)
+    high = Math.max(high, print.price)
+  }
+  return grossNotional > 0 && totalSize > 0 && Number.isFinite(low) && Number.isFinite(high)
+    ? { vwap: weightedPrice / totalSize, low, high, grossNotional }
+    : null
 }
 
 export class WhaleFlowTracker {
@@ -211,6 +265,7 @@ export class WhaleFlowTracker {
     }
     const net = bought - sold
     const magnitude = Math.abs(net)
+    const execution = summarizeWhalePrints(this.window)
     const threshold = this.threshold
     const intensity = threshold > 0 ? magnitude / threshold : 0
 
@@ -232,6 +287,9 @@ export class WhaleFlowTracker {
           sold,
           count: this.window.length,
           prints: this.topPrints(),
+          executionVwap: execution?.vwap ?? 0,
+          executionLow: execution?.low ?? 0,
+          executionHigh: execution?.high ?? 0,
           endsAt,
         }
       else if (this.lastBurst) this.lastBurst.endsAt = endsAt
@@ -255,7 +313,19 @@ export class WhaleFlowTracker {
     const source =
       phase === 'fading' && this.lastBurst
         ? this.lastBurst
-        : { net, bought, sold, count: this.window.length, prints: this.topPrints() }
+        : execution
+          ? {
+              net,
+              bought,
+              sold,
+              count: this.window.length,
+              prints: this.topPrints(),
+              executionVwap: execution.vwap,
+              executionLow: execution.low,
+              executionHigh: execution.high,
+            }
+          : null
+    if (!source) return null
 
     return {
       product: this.product,
@@ -266,6 +336,9 @@ export class WhaleFlowTracker {
       count: source.count,
       threshold,
       windowSeconds: this.windowSeconds,
+      executionVwap: source.executionVwap,
+      executionLow: source.executionLow,
+      executionHigh: source.executionHigh,
       // Clamped so the UI can drive a meter without guarding against overflow.
       intensity: Math.min(4, Math.max(0, phase === 'fading' ? 1 : intensity)),
       prints: source.prints.map((t) => ({

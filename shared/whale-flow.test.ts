@@ -6,6 +6,7 @@ import {
   MINIMUM_THRESHOLD,
   WhaleFlowTracker,
   formatNotional,
+  summarizeWhalePrints,
 } from './whale-flow'
 import { parseTrade } from './coinbase'
 
@@ -280,6 +281,41 @@ describe('WhaleFlowTracker: measurement', () => {
     expect(tracker.apply(trade(9501, now, 100_000, -5, 'buy'), now)).toBe(false)
     expect(tracker.apply(trade(9502.5, now, 100_000, 5, 'buy'), now)).toBe(false)
     expect(tracker.snapshot(now)).toBeNull()
+  })
+})
+
+describe('execution map', () => {
+  it('summarizes every fill even when the display list is capped', () => {
+    const tracker = new WhaleFlowTracker('BTC-USD', { maxPrints: 1, windowSeconds: 30 })
+    const now = 1_000_000
+    calibrate(tracker, now)
+    tracker.apply(trade(8001, now, 100, 300, 'buy'), now)
+    tracker.apply(trade(8002, now + 1, 110, 300, 'buy'), now + 1)
+
+    const snap = tracker.snapshot(now + 1)
+    expect(snap?.phase).toBe('active')
+    expect(snap?.prints).toHaveLength(1)
+    // The execution map uses both fills, not only the largest print sent to the UI.
+    expect(snap?.executionLow).toBe(100)
+    expect(snap?.executionHigh).toBe(110)
+    expect(snap?.executionVwap).toBe(105)
+  })
+
+  it('weights an execution map by absolute notional and ignores malformed rows', () => {
+    expect(
+      summarizeWhalePrints([
+        { price: 100, notional: 10_000 },
+        { price: 110, notional: -20_000 },
+        { price: Number.NaN, notional: 1_000 },
+        { price: 120, notional: 0 },
+      ]),
+    ).toEqual({
+      vwap: (100 * 10_000 + 110 * 20_000) / 30_000,
+      low: 100,
+      high: 110,
+      grossNotional: 30_000,
+    })
+    expect(summarizeWhalePrints([])).toBeNull()
   })
 })
 

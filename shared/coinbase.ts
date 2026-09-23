@@ -104,6 +104,14 @@ export interface WhaleFlow {
   /** Largest prints in the sweep, newest first. */
   prints: WhalePrint[]
   /**
+   * Size-weighted average price (VWAP) of every directional fill in the live window. Unlike
+   * `prints`, this is calculated before the display cap, so it is the complete execution map.
+   */
+  executionVwap?: number
+  /** Lowest and highest executed prices in the live window, quote currency. */
+  executionLow?: number
+  executionHigh?: number
+  /**
    * False when the threshold is still a bootstrap default because too few trades have been
    * observed to compute a percentile. The UI must label this as calibrating.
    */
@@ -250,6 +258,15 @@ export const isOrderBookView = (value: unknown): value is OrderBookView => {
 export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
   if (!value || typeof value !== 'object') return false
   const f = value as WhaleFlow
+  const executionValues = [f.executionVwap, f.executionLow, f.executionHigh]
+  const hasExecutionMap = executionValues.some((v) => v !== undefined)
+  const executionMapValid =
+    !hasExecutionMap ||
+    (executionValues.every((v) => typeof v === 'number' && Number.isFinite(v)) &&
+      f.executionVwap! >= f.executionLow! &&
+      f.executionVwap! <= f.executionHigh! &&
+      f.executionLow! > 0 &&
+      f.executionHigh! >= f.executionLow!)
   return (
     isProductId(f.product) &&
     ['building', 'active', 'fading'].includes(f.phase) &&
@@ -278,7 +295,8 @@ export const isWhaleFlow = (value: unknown): value is WhaleFlow => {
         p.price > 0 &&
         p.size > 0 &&
         (p.side === 'buy' || p.side === 'sell'),
-    )
+    ) &&
+    executionMapValid
   )
 }
 export interface StreamPayload {

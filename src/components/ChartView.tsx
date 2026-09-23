@@ -54,10 +54,10 @@ import type {
   TmoScalperSettings,
   Tool,
 } from '../lib/types'
-import type { OrderBookView } from '../../shared/coinbase'
+import type { OrderBookView, WhaleFlow } from '../../shared/coinbase'
 import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
-import { formatNotional } from '../../shared/whale-flow'
+import { formatNotional, summarizeWhalePrints } from '../../shared/whale-flow'
 import { builtInPlots, macdHistogram } from '../lib/indicators'
 import { rsiMeterPeriod } from '../lib/rsi-hud'
 import { calculateWaveTrend, waveTrendSettings, WAVE_TREND_DEFAULTS } from '../lib/wave-trend'
@@ -204,6 +204,8 @@ interface Props {
   onIndicatorAdd?: (kind: Indicator['kind']) => void
   /** Resting-liquidity depth view of the charted product; zone chips and walls need it. */
   book?: OrderBookView | null
+  /** Exact executed-price map for the current Coinbase whale sweep, absent at rest/replay. */
+  whale?: WhaleFlow | null
 }
 interface IndicatorSeries {
   series: ISeriesApi<SeriesType>[]
@@ -239,6 +241,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     magnet,
     alerts,
     book,
+    whale,
   } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
@@ -255,6 +258,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const indicatorSeries = useRef<Map<string, IndicatorSeries>>(new Map())
   const strikePriceLinesRef = useRef<Map<string, ManagedStrikePriceLine>>(new Map())
+  const whaleExecutionPriceLinesRef = useRef<Map<string, ManagedStrikePriceLine>>(new Map())
   const propsRef = useRef(props)
   propsRef.current = props
   const pendingRef = useRef<Anchor | null>(null)
@@ -759,6 +763,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     chartRef.current = chart
     const currentIndicatorSeries = indicatorSeries.current
     const currentStrikePriceLines = strikePriceLinesRef.current
+    const currentWhaleExecutionPriceLines = whaleExecutionPriceLinesRef.current
     let raf = 0
     const refresh = () => {
       if (raf) return
@@ -917,6 +922,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       volumeRef.current = null
       currentIndicatorSeries.clear()
       currentStrikePriceLines.clear()
+      currentWhaleExecutionPriceLines.clear()
     }
   }, [])
 
@@ -925,6 +931,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     if (!chart) return
     if (mainRef.current) {
       strikePriceLinesRef.current.clear()
+      whaleExecutionPriceLinesRef.current.clear()
       chart.removeSeries(mainRef.current)
     }
     const current = propsRef.current
@@ -1296,6 +1303,90 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       strikePriceLinesRef.current.delete(key)
     }
   }, [asset.priceIncrement, asset.symbol, chartType, strikeOverlays])
+
+  /**
+   * Executed-price map for the live whale sweep. The line is deliberately separate from the
+   * level2 overlay: a match is where money actually traded, while a book wall is only an order
+   * that is still waiting. The map disappears with the ephemeral flow or during replay.
+   */
+  useEffect(() => {
+    const series = mainRef.current
+    if (!series) return
+    const activeKeys = new Set<string>()
+    const removeInactive = () => {
+      for (const [key, managed] of whaleExecutionPriceLinesRef.current) {
+        if (activeKeys.has(key) && managed.series === series) continue
+        if (managed.series === series) series.removePriceLine(managed.line)
+        whaleExecutionPriceLinesRef.current.delete(key)
+      }
+    }
+    if (!whale || replay || props.source !== 'coinbase') {
+      removeInactive()
+      return
+    }
+    const fromPayload =
+      Number.isFinite(whale.executionVwap) &&
+      Number.isFinite(whale.executionLow) &&
+      Number.isFinite(whale.executionHigh)
+        ? {
+            vwap: whale.executionVwap!,
+            low: whale.executionLow!,
+            high: whale.executionHigh!,
+          }
+        : summarizeWhalePrints(whale.prints)
+    if (!fromPayload) {
+      removeInactive()
+      return
+    }
+    const direction = whale.net > 0 ? 'BUY' : whale.net < 0 ? 'SELL' : 'MIXED'
+    const color = whale.net > 0 ? '#2ebd85' : whale.net < 0 ? '#f6465d' : '#9aa4b2'
+    const addLine = (key: string, price: number, options: Partial<CreatePriceLineOptions>) => {
+      if (!Number.isFinite(price) || price <= 0) return
+      activeKeys.add(key)
+      const lineOptions: CreatePriceLineOptions = {
+        id: `whale-execution:${key}`,
+        price,
+        color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        lineVisible: true,
+        axisLabelVisible: false,
+        ...options,
+      }
+      const managed = whaleExecutionPriceLinesRef.current.get(key)
+      if (managed?.series === series) managed.line.applyOptions(lineOptions)
+      else
+        whaleExecutionPriceLinesRef.current.set(key, {
+          series,
+          line: series.createPriceLine(lineOptions),
+        })
+    }
+    addLine('vwap', fromPayload.vwap, {
+      color,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: true,
+      axisLabelColor: color,
+      title: `Whale ${direction} VWAP`,
+    })
+    if (fromPayload.high > fromPayload.low) {
+      addLine('low', fromPayload.low, { title: `Whale ${direction} low` })
+      addLine('high', fromPayload.high, { title: `Whale ${direction} high` })
+    }
+    // Keep a few exact match prices on the scale as faint dotted guides. The box carries the
+    // complete map's VWAP/range, while these guides let a trader see where the largest recent
+    // fills landed without turning a five-second burst into permanent chart clutter.
+    const prices = new Set<number>()
+    for (const print of whale.prints.slice(0, 6)) {
+      if (prices.has(print.price)) continue
+      prices.add(print.price)
+      addLine(`print:${print.price}`, print.price, {
+        lineStyle: LineStyle.Dotted,
+        title: `Whale ${print.side === 'buy' ? 'buy' : 'sell'} fill`,
+      })
+    }
+    removeInactive()
+  }, [whale, replay, props.source, asset.symbol, chartType, asset.priceIncrement])
 
   const hasCandles = candles.length > 0
   useEffect(() => {

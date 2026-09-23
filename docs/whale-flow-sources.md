@@ -1,9 +1,10 @@
 # Whale flow research · where to see big money entering and leaving a coin
 
-**Status: mostly research.** One piece is now built: the **whale flow box** implements tier 0
-below (§8.1) — large _executed_ prints from the Coinbase trade stream Atlas already consumes. Every
-other layer here remains unimplemented. **No on-chain or vendor feed is wired into the app, no
-vendor account exists, and no API key is stored anywhere in this repository.** This document exists to answer one question — _where can we check when whales put money
+**Status: mostly research.** One piece is now built: the **whale flow box + execution map** implement tier 0
+below (§8.1) — large _executed_ prints and their exact fill prices from the Coinbase trade stream
+Atlas already consumes. Every other layer here remains unimplemented. **No on-chain or vendor feed
+is wired into the app, no vendor account exists, and no API key is stored anywhere in this
+repository.** This document exists to answer one question — _where can we check when whales put money
 into or take money out of the coin being analysed, and how early does that show up before price
 moves_ — and to record which options would actually fit the Atlas architecture if we later decide
 to build one.

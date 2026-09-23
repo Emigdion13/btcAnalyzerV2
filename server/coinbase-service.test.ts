@@ -395,6 +395,9 @@ it('streams a whale burst and then drops it from the payload once it is over', a
     sold: number
     count: number
     calibrated: boolean
+    executionVwap: number
+    executionLow: number
+    executionHigh: number
     prints: { side: string; notional: number }[]
   }
   expect(flow.product).toBe('BTC-USD')
@@ -405,6 +408,9 @@ it('streams a whale burst and then drops it from the payload once it is over', a
   expect(flow.bought).toBe(500_000)
   expect(flow.sold).toBe(0)
   expect(flow.count).toBe(1)
+  expect(flow.executionVwap).toBe(100_000)
+  expect(flow.executionLow).toBe(100_000)
+  expect(flow.executionHigh).toBe(100_000)
   expect(flow.prints[0].side).toBe('buy')
 
   // The burst is over. The field must vanish from the payload entirely rather than

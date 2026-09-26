@@ -1,3 +1,9 @@
+import {
+  calculateTrendPressure,
+  trendPressureSettings,
+  TREND_PRESSURE_DEFAULTS,
+  trendPressurePlots,
+} from '../lib/zeiierman-trend-pressure'
 import { candleAutoscale } from '../lib/price-autoscale'
 import { indicatorAutoscale } from '../lib/indicator-autoscale'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
@@ -79,6 +85,7 @@ import {
 } from '../lib/tmo-scalper'
 import {
   bayesianNqqeHudModel,
+  trendPressureHudModel,
   clampOscHudBars,
   cmMacdHudModel,
   oscHudBars,
@@ -205,6 +212,7 @@ interface Props {
   vixFixHud?: boolean
   tmoScalperHud?: boolean
   bayesianNqqeHud?: boolean
+  trendPressureHud?: boolean
   /** Closing a window from its own card is the same choice as its toolbar button. */
   onOscHudClose?: (kind: OscHudKind) => void
   /** Lets a window offer the pane whose settings it is borrowing. */
@@ -333,6 +341,20 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           }
         }),
     [candles, indicators],
+  )
+  const pressureOverlays = useMemo(
+    () =>
+      indicators
+        .filter((indicator) => indicator.visible && indicator.kind === 'zeiierman-trend-pressure')
+        .map((indicator) => {
+          const settings = trendPressureSettings(indicator)
+          return {
+            indicator,
+            settings,
+            values: calculateTrendPressure(candles, settings, asset.priceIncrement ?? 1e-8),
+          }
+        }),
+    [candles, indicators, asset.priceIncrement],
   )
   const pivotOverlays = useMemo(
     () =>
@@ -553,16 +575,32 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         .map((indicator) => ({
           indicator,
           plots:
-            indicator.kind === 'custom'
-              ? (customResults[indicator.id]?.plots ?? [])
-              : builtInPlots(candles, indicator, {
-                  timeframe,
-                  timeframes: indicatorTimeframes,
-                  replay,
-                  realtimeFrom,
-                }),
+            indicator.kind === 'zeiierman-trend-pressure'
+              ? trendPressurePlots(
+                  pressureOverlays.find((overlay) => overlay.indicator.id === indicator.id)!.values,
+                  trendPressureSettings(indicator),
+                )
+              : indicator.kind === 'custom'
+                ? (customResults[indicator.id]?.plots ?? [])
+                : builtInPlots(candles, indicator, {
+                    timeframe,
+                    timeframes: indicatorTimeframes,
+                    replay,
+                    realtimeFrom,
+                    priceIncrement: asset.priceIncrement,
+                  }),
         })),
-    [candles, indicators, customResults, timeframe, indicatorTimeframes, replay, realtimeFrom],
+    [
+      candles,
+      indicators,
+      customResults,
+      timeframe,
+      indicatorTimeframes,
+      replay,
+      realtimeFrom,
+      asset.priceIncrement,
+      pressureOverlays,
+    ],
   )
   const generatedRef = useRef(generated)
   generatedRef.current = generated
@@ -806,6 +844,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           pendingRef.current ||
           propsRef.current.indicators.some(
             (indicator) =>
+              (indicator.visible && indicator.kind === 'zeiierman-trend-pressure') ||
               (indicator.visible && indicator.kind === 'smart-money-concepts') ||
               (indicator.visible && indicator.kind === 'sr-breaks-retests') ||
               (indicator.visible && indicator.kind === 'pivot-points-missed-reversals') ||
@@ -1489,6 +1528,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   // chart's own indicator (a hidden one included, so a pane you switched off still sets the
   // lengths) and falls back to the published defaults when the chart carries none, then draws the
   // last twenty minutes of those values at their own scale.
+  const pressureHudIndicator =
+    indicators.find((indicator) => indicator.kind === 'zeiierman-trend-pressure') ?? null
+  const pressureHudSettings = useMemo(
+    () =>
+      pressureHudIndicator ? trendPressureSettings(pressureHudIndicator) : TREND_PRESSURE_DEFAULTS,
+    [pressureHudIndicator],
+  )
   const cmHudIndicator = indicators.find((indicator) => indicator.kind === 'cm-ult-macd') ?? null
   const waveHudIndicator = indicators.find((indicator) => indicator.kind === 'wave-trend') ?? null
   const vixFixHudIndicator =
@@ -1525,6 +1571,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const [oscHudBarsOverride, setOscHudBarsOverride] = useLocalState<
     Partial<Record<OscHudKind, number>>
   >('osc-hud-bars', {})
+  const pressureHudBars = oscHudBars(timeframe, oscHudBarsOverride['zeiierman-trend-pressure'])
   const cmHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-ult-macd'])
   const waveHudBars = oscHudBars(timeframe, oscHudBarsOverride['wave-trend'])
   const vixFixHudBars = oscHudBars(timeframe, oscHudBarsOverride['cm-williams-vix-fix'])
@@ -1538,6 +1585,38 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   // An alt-timeframe MACD with no source candles has nothing honest to draw; say so with the same
   // words the pane uses rather than showing an empty box.
   const cmHudNotice = props.cmMacdHud && cmHudIndicator ? cmNotice(cmHudIndicator) : ''
+  const pressureHudModel = useMemo(
+    () =>
+      props.trendPressureHud
+        ? trendPressureHudModel(
+            pressureOverlays.find((overlay) => overlay.indicator.id === pressureHudIndicator?.id)
+              ?.values ??
+              calculateTrendPressure(candles, pressureHudSettings, asset.priceIncrement),
+            pressureHudSettings,
+            {
+              times: candleTimes,
+              timeframe,
+              bars: pressureHudBars,
+              index: hoverIndex,
+              hovered: hovered !== null,
+              settingsSource: pressureHudIndicator ? 'chart' : 'defaults',
+            },
+          )
+        : null,
+    [
+      props.trendPressureHud,
+      candles,
+      pressureHudSettings,
+      asset.priceIncrement,
+      candleTimes,
+      timeframe,
+      pressureHudBars,
+      hoverIndex,
+      hovered,
+      pressureHudIndicator,
+      pressureOverlays,
+    ],
+  )
   const cmHudModel = useMemo(
     () =>
       props.cmMacdHud
@@ -1682,14 +1761,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const bayesHudModel = useMemo(
     () =>
       props.bayesianNqqeHud
-        ? bayesianNqqeHudModel(calculateBayesianNqqeBankfunds(candles, bayesHudSettings), bayesHudSettings, {
-            times: candleTimes,
-            timeframe,
-            bars: bayesHudBars,
-            index: hoverIndex,
-            hovered: hovered !== null,
-            settingsSource: bayesHudIndicator ? 'chart' : 'defaults',
-          })
+        ? bayesianNqqeHudModel(
+            calculateBayesianNqqeBankfunds(candles, bayesHudSettings),
+            bayesHudSettings,
+            {
+              times: candleTimes,
+              timeframe,
+              bars: bayesHudBars,
+              index: hoverIndex,
+              hovered: hovered !== null,
+              settingsSource: bayesHudIndicator ? 'chart' : 'defaults',
+            },
+          )
         : null,
     [
       props.bayesianNqqeHud,
@@ -2557,6 +2640,115 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     ).length
     const regular = result.labels.filter((label) => label.kind.startsWith('regular')).length
     return `${regular} pivots · ${missed} missed`
+  }
+  const renderPressureOverlay = (overlay: (typeof pressureOverlays)[number]) => {
+    const { indicator, settings, values } = overlay
+    if (!settings.priceBoxes) return null
+    const point = (index: number, price: number) =>
+      candles[index] ? position({ time: candles[index].time, price }) : null
+    const boxes = values.boxes.map((box, i) => {
+      const left = point(Math.max(0, box.start - 1), box.top),
+        right = point(box.end, box.bottom)
+      const top = point(box.start, box.top)
+      if (!left || !right || !top) return null
+      const color = box.side === 'upper' ? settings.hot : settings.cold
+      return (
+        <rect
+          key={i}
+          data-testid="pressure-price-box"
+          x={Math.min(left.x, right.x)}
+          y={top.y}
+          width={Math.max(1, Math.abs(right.x - left.x))}
+          height={Math.max(1, right.y - top.y)}
+          fill={color}
+          fillOpacity={0.2}
+          stroke={color}
+          strokeOpacity={0.4}
+        />
+      )
+    })
+    const releases = candles.map((_, i) => {
+      if (!values.upperRelease[i] && !values.lowerRelease[i]) return null
+      const side = values.upperRelease[i] ? 'upper' : 'lower'
+      const price = side === 'upper' ? values.upperReleasePrice[i] : values.lowerReleasePrice[i]
+      if (price === null) return null
+      const xy = point(i, price)
+      if (!xy) return null
+      const color = side === 'upper' ? settings.hot : settings.cold
+      return (
+        <path
+          key={`release-${i}`}
+          data-testid="pressure-release-price"
+          d={
+            side === 'upper'
+              ? `M ${xy.x} ${xy.y + 5} l -5 -8 h 10 Z`
+              : `M ${xy.x} ${xy.y - 5} l -5 8 h 10 Z`
+          }
+          fill={color}
+        />
+      )
+    })
+    return (
+      <g key={indicator.id}>
+        {boxes}
+        {releases}
+      </g>
+    )
+  }
+  const renderPressureGradient = (overlay: (typeof pressureOverlays)[number], index: number) => {
+    const { indicator, settings, values } = overlay
+    if (!settings.gradientFill) return null
+    const entry = indicatorSeries.current.get(indicator.id)
+    const series = entry?.series[0]
+    const scale = chartRef.current?.timeScale()
+    if (!entry?.pane || !series || !scale) return null
+    const top = geometry.paneTops[entry.pane] ?? 0
+    const height = geometry.paneHeights[entry.pane] ?? 0
+    const y = (v: number) => top + Number(series.priceToCoordinate(v))
+    const x = (i: number) => scale.timeToCoordinate(candles[i].time as UTCTimestamp)
+    const start = Math.max(0, values.pulse.length - 1500)
+    const shapes = []
+    for (let i = start + 1; i < candles.length; i++) {
+      if (
+        [values.pulse[i - 1], values.trend[i - 1], values.pulse[i], values.trend[i]].some(
+          (v) => v === null,
+        )
+      )
+        continue
+      const x1 = x(i - 1),
+        x2 = x(i)
+      if (x1 === null || x2 === null || x2 < 0 || x1 > geometry.width) continue
+      shapes.push(
+        <polygon
+          key={i}
+          points={`${x1},${y(values.pulse[i - 1]!)} ${x2},${y(values.pulse[i]!)} ${x2},${y(values.trend[i]!)} ${x1},${y(values.trend[i - 1]!)}`}
+          fill={`url(#pressure-gradient-${index})`}
+        />,
+      )
+    }
+    return (
+      <g key={indicator.id} clipPath={`url(#pressure-clip-${index})`}>
+        <defs>
+          <clipPath id={`pressure-clip-${index}`}>
+            <rect x="0" y={top} width={geometry.width} height={height} />
+          </clipPath>
+          <linearGradient
+            id={`pressure-gradient-${index}`}
+            x1="0"
+            y1={y(0)}
+            x2="0"
+            y2={y(-100)}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0" stopColor={settings.hot} stopOpacity=".4" />
+            <stop offset=".3" stopColor={settings.hot} stopOpacity="0" />
+            <stop offset=".7" stopColor={settings.cold} stopOpacity="0" />
+            <stop offset="1" stopColor={settings.cold} stopOpacity=".4" />
+          </linearGradient>
+        </defs>
+        {shapes}
+      </g>
+    )
   }
   const renderPivotOverlay = (overlay: (typeof pivotOverlays)[number]) => {
     const { indicator, settings: pivots, result } = overlay
@@ -3728,6 +3920,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                     ind.kind !== 'rsi-divergence' &&
                     ind.kind !== 'macd' &&
                     ind.kind !== 'cm-ult-macd' &&
+                    ind.kind !== 'zeiierman-trend-pressure' &&
                     ind.kind !== 'wave-trend' &&
                     ind.kind !== 'cm-williams-vix-fix' &&
                     ind.kind !== 'tmo-scalper' &&
@@ -4018,6 +4211,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           onClose={() => props.onOscHudClose?.('tmo-scalper')}
         />
       )}
+      {props.trendPressureHud && pressureHudModel && (
+        <OscHudCard
+          model={pressureHudModel}
+          dock="pressure"
+          indicator={pressureHudIndicator}
+          bars={pressureHudBars}
+          onZoom={(delta) => zoomOscHud('zeiierman-trend-pressure', delta)}
+          onEditIndicator={props.onIndicatorEdit}
+          onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
+          onClose={() => props.onOscHudClose?.('zeiierman-trend-pressure')}
+        />
+      )}
       {props.bayesianNqqeHud && bayesHudModel && (
         <OscHudCard
           model={bayesHudModel}
@@ -4147,6 +4352,30 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {srOverlays.map(renderSrOverlay)}
+      </svg>
+      <svg
+        className="pressure-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.totalHeight}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.totalHeight || 1}`}
+        aria-hidden="true"
+        data-testid="pressure-overlay"
+        data-revision={revision}
+      >
+        {pressureOverlays.map(renderPressureGradient)}
+      </svg>
+      <svg
+        className="pressure-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="pressure-price-overlay"
+        data-revision={revision}
+      >
+        {pressureOverlays.map(renderPressureOverlay)}
       </svg>
       <svg
         ref={pivotSvgRef}

@@ -26,6 +26,7 @@ export type IndicatorKind =
   | 'tmo-scalper'
   | 'next-pivot'
   | 'chile-reversal'
+  | 'zeiierman-trend-pressure'
   | 'wave-trend'
   | 'bayesian-nqqe-bankfunds'
   | 'vwap'
@@ -120,6 +121,36 @@ export interface TmoScalperSettings {
   showTmo2ExtremeSignals: boolean
   /** Draw the three Main/Signal line pairs. */
   showLines: boolean
+}
+
+/** Zeiierman Trend Pressure Pine v6 inputs. */
+export interface TrendPressureSettings {
+  pulseRange: number
+  pulseStochastic: number
+  pulseSmoothing: number
+  trendRange: number
+  macroTrend: number
+  trendSmoothing: number
+  trendPersistence: number
+  exhaustionZone: number
+  sensitivity: number
+  showCrosses: boolean
+  reactiveSmoothing: number
+  regimeWeight: number
+  cold: string
+  hot: string
+  upperLevel: string
+  lowerLevel: string
+  levelTransparency: number
+  pulseColor: string
+  trendColor: string
+  coreBull: string
+  coreBear: string
+  coreNeutral: string
+  coreWidth: number
+  gradientFill: boolean
+  priceBoxes: boolean
+  maxBoxes: number
 }
 
 /** Published inputs of LazyBear's WaveTrend [LazyBear] (short title `WT_LB`). */
@@ -712,6 +743,7 @@ export interface Indicator {
   tmoScalper?: TmoScalperSettings
   nextPivot?: NextPivotSettings
   chileReversal?: ChileReversalSettings
+  trendPressure?: TrendPressureSettings
   waveTrend?: WaveTrendSettings
   williamsVixFix?: WilliamsVixFixSettings
   bayesianNqqe?: BayesianNqqeSettings

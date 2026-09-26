@@ -36,6 +36,10 @@ The native TypeScript `Bayesian/nQQE/BankFunds` implementation is a port of tart
 
 The native TypeScript `Pivot Points High Low & Missed Reversal Levels` implementation is a port of **LuxAlgo's "Pivot Points High Low & Missed Reversal Levels [LuxAlgo]"**, an open-source TradingView indicator. The original Pine Script v5 source is published by LuxAlgo at [tradingview.com/script/OxJJqZiN-Pivot-Points-High-Low-Missed-Reversal-Levels-LuxAlgo](https://www.tradingview.com/script/OxJJqZiN-Pivot-Points-High-Low-Missed-Reversal-Levels-LuxAlgo/) under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** license (© LuxAlgo). Under that license this derivative port is attributed here, is provided for non-commercial use, and is made available under the same license terms as the original; the attribution does not imply endorsement by LuxAlgo or affiliation with TradingView. See [the compatibility notes](docs/pivot-points-missed-reversals.md) for the behavioral contract, the single documented deviation, and verification boundaries.
 
+## Zeiierman Trend Pressure indicator
+
+The native TypeScript implementation of **Zeiierman Trend Pressure (Zeiierman)** is based on the Pine Script v6 source supplied with the feature request, © Zeiierman, licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-nc-sa/4.0/). This derivative is attributed here, for non-commercial use, and made available under the same license terms. Attribution does not imply endorsement or affiliation with Zeiierman or TradingView. See [the compatibility notes](docs/zeiierman-trend-pressure.md).
+
 ## Fonts and icons
 
 - DM Sans: Copyright 2014 The DM Sans Project Authors. SIL Open Font License 1.1. See `node_modules/@fontsource/dm-sans/LICENSE`.

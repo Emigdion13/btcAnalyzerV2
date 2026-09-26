@@ -1,3 +1,4 @@
+import { TrendPressureSettingsDialog } from './TrendPressureSettingsDialog'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
@@ -557,6 +558,8 @@ export function IndicatorSettingsDialog(props: {
     return <CmWilliamsVixFixSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
+  if (props.indicator.kind === 'zeiierman-trend-pressure')
+    return <TrendPressureSettingsDialog {...props} />
   if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
   if (props.indicator.kind === 'bayesian-nqqe-bankfunds')
     return <BayesianNqqeSettingsDialog {...props} />

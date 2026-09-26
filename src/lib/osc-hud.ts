@@ -1,3 +1,5 @@
+import type { TrendPressureValues } from './zeiierman-trend-pressure'
+import type { TrendPressureSettings } from './types'
 /**
  * Floating windows for the oscillators you watch all day: the last twenty minutes of
  * CM_Ult_MacD_MTF, WaveTrend [LazyBear], RSI Divergence, CM_Williams_Vix_Fix, TMO Scalper
@@ -47,12 +49,23 @@ import { formatPrice } from './market'
 import { ta } from './indicator-runtime'
 import { detectMacdDivergences } from './macd-divergence'
 import type { Divergence } from './macd-divergence'
-import type { BayesianNqqeSettings, Candle, CmMacdSettings, DivergenceSettings, Indicator, Timeframe, TmoScalperSettings, WaveTrendSettings, WilliamsVixFixSettings } from './types'
+import type {
+  BayesianNqqeSettings,
+  Candle,
+  CmMacdSettings,
+  DivergenceSettings,
+  Indicator,
+  Timeframe,
+  TmoScalperSettings,
+  WaveTrendSettings,
+  WilliamsVixFixSettings,
+} from './types'
 
 /** The five windows, keyed by the indicator kind they mirror. */
 export type OscHudKind = Extract<
   Indicator['kind'],
   | 'cm-ult-macd'
+  | 'zeiierman-trend-pressure'
   | 'wave-trend'
   | 'rsi-divergence'
   | 'cm-williams-vix-fix'
@@ -62,6 +75,7 @@ export type OscHudKind = Extract<
 
 export const OSC_HUD_KINDS: OscHudKind[] = [
   'cm-ult-macd',
+  'zeiierman-trend-pressure',
   'wave-trend',
   'rsi-divergence',
   'cm-williams-vix-fix',
@@ -116,6 +130,15 @@ export const OSC_HUD_WIDGETS: Record<OscHudKind, OscHudWidget> = {
     visibilityKey: 'osc-hud-visible:cm-ult-macd',
     positionKey: 'osc-hud-pos:cm-ult-macd',
     minimizedKey: 'osc-hud-min:cm-ult-macd',
+  },
+  'zeiierman-trend-pressure': {
+    kind: 'zeiierman-trend-pressure',
+    title: 'Zeiierman Trend Pressure',
+    button: 'Trend Pressure',
+    accent: '#8baeff',
+    visibilityKey: 'osc-hud-visible:zeiierman-trend-pressure',
+    positionKey: 'osc-hud-pos:zeiierman-trend-pressure',
+    minimizedKey: 'osc-hud-min:zeiierman-trend-pressure',
   },
   'wave-trend': {
     kind: 'wave-trend',
@@ -989,23 +1012,22 @@ export function williamsVixFixVerdict(
   green: boolean,
   previousGreen: boolean | null,
 ): OscHudVerdict {
-  if (wvf === null)
-    return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
+  if (wvf === null) return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
   const fixed = (value: number) => value.toFixed(2)
   if (green) {
     const triggers: string[] = []
     if (upperBand !== null && wvf >= upperBand) triggers.push(`upper ${fixed(upperBand)}`)
     if (rangeHigh !== null && wvf >= rangeHigh) triggers.push(`range-high ${fixed(rangeHigh)}`)
-    const detail = triggers.length ? `WVF ${fixed(wvf)} ≥ ${triggers.join(' + ')}` : `WVF ${fixed(wvf)}`
+    const detail = triggers.length
+      ? `WVF ${fixed(wvf)} ≥ ${triggers.join(' + ')}`
+      : `WVF ${fixed(wvf)}`
     if (previousGreen === true) return { text: '▲ BOTTOM SIGNAL HOLDS', tone: 'bull', detail }
     return { text: '▲ POTENTIAL BOTTOM', tone: 'bull', detail }
   }
   const triggers: { name: string; value: number }[] = []
   if (upperBand !== null) triggers.push({ name: 'upper', value: upperBand })
   if (rangeHigh !== null) triggers.push({ name: 'range-high', value: rangeHigh })
-  const nearest = triggers.length
-    ? triggers.reduce((a, b) => (a.value <= b.value ? a : b))
-    : null
+  const nearest = triggers.length ? triggers.reduce((a, b) => (a.value <= b.value ? a : b)) : null
   const direction =
     previousWvf === null
       ? ''
@@ -1167,8 +1189,7 @@ export function tmoScalperVerdict(
     main3 !== null && signal3 !== null
       ? `TMO 3 ${main3 > signal3 ? 'green' : 'red'} (${tmoResolutionLabel(settings.timeframe3)})`
       : `TMO 3 ${tmoResolutionLabel(settings.timeframe3)} warming up`
-  const detail = (wheel: string, value: number | null) =>
-    `${wheel} ${trim(value)} · ${wheel3}`
+  const detail = (wheel: string, value: number | null) => `${wheel} ${trim(value)} · ${wheel3}`
   if (settings.showTmo2ExtremeSignals && at(values.bullExtreme) !== null)
     return { text: '▲ TMO 2 EXTREME BUY', tone: 'bull', detail: detail('at', main2) }
   if (settings.showTmo2ExtremeSignals && at(values.bearExtreme) !== null)
@@ -1241,8 +1262,18 @@ export function tmoScalperHudModel(
   const levels = oscHudLevels(
     [
       { value: TMO_CUTOFF, color: TMO_COLORS.bear, label: `${TMO_CUTOFF}`, dashed: false },
-      { value: settings.extremeOb, color: TMO_COLORS.bear, label: `${settings.extremeOb}`, dashed: true },
-      { value: settings.extremeOs, color: TMO_COLORS.bull, label: `${settings.extremeOs}`, dashed: true },
+      {
+        value: settings.extremeOb,
+        color: TMO_COLORS.bear,
+        label: `${settings.extremeOb}`,
+        dashed: true,
+      },
+      {
+        value: settings.extremeOs,
+        color: TMO_COLORS.bull,
+        label: `${settings.extremeOs}`,
+        dashed: true,
+      },
       { value: -TMO_CUTOFF, color: TMO_COLORS.bull, label: `${-TMO_CUTOFF}`, dashed: false },
       { value: 0, color: TMO_COLORS.zero, label: '0', dashed: false },
     ],
@@ -1439,7 +1470,8 @@ export function bayesianNqqeVerdict(input: {
   longSignal: boolean
   shortSignal: boolean
 }): OscHudVerdict {
-  const { prime, previousPrime, probUp, probDown, nqqe, fund, slow, previousFund, threshold } = input
+  const { prime, previousPrime, probUp, probDown, nqqe, fund, slow, previousFund, threshold } =
+    input
   if (prime === null && nqqe === null && fund === null)
     return { text: 'WARMING UP', tone: 'flat', detail: 'not enough history yet' }
   if (input.longSignal)
@@ -1482,8 +1514,7 @@ export function bayesianNqqeVerdict(input: {
     if (color === BAYES_COLORS.bankerWhite)
       return { text: '— BANKER DECREASE', tone: 'flat', detail }
     if (color === BAYES_COLORS.bankerRed) return { text: '▼ BANKER EXIT', tone: 'bear', detail }
-    if (color === BAYES_COLORS.bankerBlue)
-      return { text: '▲ BANKER REBOUND', tone: 'os', detail }
+    if (color === BAYES_COLORS.bankerBlue) return { text: '▲ BANKER REBOUND', tone: 'os', detail }
     return { text: '▲ BANKER INCREASE', tone: 'bull', detail }
   }
   if (prime !== null && previousPrime !== null) {
@@ -1494,8 +1525,7 @@ export function bayesianNqqeVerdict(input: {
       detail: `prime ${trim(prime)}`,
     }
   }
-  if (prime !== null)
-    return { text: '— PRIME', tone: 'flat', detail: `prime ${trim(prime)}` }
+  if (prime !== null) return { text: '— PRIME', tone: 'flat', detail: `prime ${trim(prime)}` }
   return { text: '— NEUTRAL', tone: 'flat', detail: 'no prime reading' }
 }
 
@@ -1687,4 +1717,83 @@ export function oscHudRequestedTimeframes(
     }
   }
   return [...new Set(feeds)]
+}
+
+/** A second view of the very same pulse, trend and core used by the pane. */
+export function trendPressureHudModel(
+  v: TrendPressureValues,
+  s: TrendPressureSettings,
+  input: OscHudModelInput,
+): OscHudModel {
+  const start = windowStart(input.times.length, input.bars)
+  const cut = <T>(values: T[]) => values.slice(start, start + input.bars)
+  const times = cut(input.times),
+    pulse = finite(cut(v.pulse)),
+    trend = finite(cut(v.trend)),
+    core = finite(cut(v.core))
+  const index = input.index - start
+  const at = (a: (number | null)[]) => (index >= 0 && index < a.length ? a[index] : null)
+  const state =
+    index < 0 || index >= times.length
+      ? 'none'
+      : v.upperActive[input.index]
+        ? 'upper'
+        : v.lowerActive[input.index]
+          ? 'lower'
+          : 'none'
+  const cross =
+    index < 0 || index >= times.length
+      ? ''
+      : v.crossUp[input.index]
+        ? ' · bullish cross'
+        : v.crossDown[input.index]
+          ? ' · bearish cross'
+          : ''
+  const domain = { min: -112, max: 10 }
+  return {
+    kind: 'zeiierman-trend-pressure',
+    title: OSC_HUD_WIDGETS['zeiierman-trend-pressure'].title,
+    subtitle: `Pulse ${s.pulseRange} · macro ${s.macroTrend} · sensitivity ${s.sensitivity}`,
+    accent: s.trendColor,
+    times,
+    domain,
+    traces: [
+      { title: 'Z-Pulse', values: pulse, color: s.pulseColor, width: 1.6, style: 'line', z: 3 },
+      { title: 'Z-Trend', values: trend, color: s.trendColor, width: 2, style: 'line', z: 2 },
+      {
+        title: 'Pressure Core',
+        values: core,
+        color: s.coreNeutral,
+        width: s.coreWidth,
+        style: 'line',
+        z: 1,
+      },
+    ],
+    levels: [
+      { value: v.upper, color: s.upperLevel, label: `${v.upper}`, dashed: true },
+      { value: -50, color: '#777777', label: '-50', dashed: true },
+      { value: v.lower, color: s.lowerLevel, label: `${v.lower}`, dashed: true },
+    ],
+    activeIndex: index >= 0 && index < times.length ? index : null,
+    hovered: !!input.hovered,
+    bars: times.length,
+    spanLabel: oscHudSpan(times.length, input.timeframe),
+    readouts: [
+      { label: 'Pulse', value: trim(at(pulse)), color: s.pulseColor },
+      { label: 'Trend', value: trim(at(trend)), color: s.trendColor },
+      {
+        label: 'Core',
+        value: trim(at(core)),
+        color: at(core) === null ? s.coreNeutral : v.coreColors[input.index],
+      },
+    ],
+    verdict: {
+      text: state === 'upper' ? 'Upper pressure' : state === 'lower' ? 'Lower pressure' : 'Neutral',
+      tone: state === 'upper' ? 'ob' : state === 'lower' ? 'os' : 'flat',
+      detail: `${state === 'none' ? 'No confirmed exhaustion' : 'Confirmed exhaustion'}${cross}`,
+    },
+    ready: pulse.some((x) => x !== null),
+    note: input.note ?? null,
+    settingsSource: input.settingsSource ?? 'defaults',
+  }
 }

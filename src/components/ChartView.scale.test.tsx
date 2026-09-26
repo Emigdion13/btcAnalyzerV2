@@ -20,6 +20,7 @@ import type { ChartHandle } from './ChartView'
 import { DEFAULT_SETTINGS } from '../lib/types'
 import type { Candle, Indicator } from '../lib/types'
 import { generateCandles, getAsset } from '../lib/market'
+import { TREND_PRESSURE_DEFAULTS } from '../lib/zeiierman-trend-pressure'
 
 function stubContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const target: Record<string | symbol, unknown> = { canvas }
@@ -149,13 +150,13 @@ function buildProps(candles: Candle[], indicators: Indicator[] = []) {
   }
 }
 
-async function renderChart(candles: Candle[]) {
+async function renderChart(candles: Candle[], indicators: Indicator[] = []) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const ref = createRef<ChartHandle>()
   const root: Root = createRoot(container)
   await act(async () => {
-    root.render(<ChartView ref={ref} {...buildProps(candles)} />)
+    root.render(<ChartView ref={ref} {...buildProps(candles, indicators)} />)
   })
   await flush(30)
   return {
@@ -187,6 +188,29 @@ describe('candle pane price scale under tape glitches', () => {
     const bodyHigh = Math.max(...bodies.map((c) => Math.max(c.open, c.close)))
     expect(range.from).toBeLessThanOrEqual(bodyLow)
     expect(range.to).toBeGreaterThanOrEqual(bodyHigh)
+    await dispose()
+  })
+
+  it('keeps the price scale independent when the PR 60 oscillator is present', async () => {
+    const asset = getAsset('BTCUSDT')
+    const candles = generateCandles(asset, '1m')
+    const last = candles.length - 1
+    // The indicator adds many series to its own oscillator pane, including levels
+    // outside its normal range. None of those values may leak into candle autoscale.
+    candles[last - 40] = { ...candles[last - 40], high: 200_000 }
+    const pressure: Indicator = {
+      id: 'pressure',
+      kind: 'zeiierman-trend-pressure',
+      name: 'Zeiierman Trend Pressure',
+      period: 21,
+      color: '#8baeff',
+      visible: true,
+      trendPressure: { ...TREND_PRESSURE_DEFAULTS },
+    }
+    const { ref, dispose } = await renderChart(candles, [pressure])
+    const range = ref.current!.priceRange()!
+    expect(range.from).toBeGreaterThan(candles[last].close * 0.9)
+    expect(range.to).toBeLessThan(candles[last].close * 1.1)
     await dispose()
   })
 

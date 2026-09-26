@@ -202,6 +202,10 @@ The score's corner panel is the floating **Chile panel** window (**Alt L**, or t
 
 See [the calculation contract, the one documented correction, and provenance](docs/chile-reversal.md).
 
+## Chart scaling maintenance note
+
+If candles collapse into a thin band, distinguish a stretched **price range** from a short **price pane** before changing layout. The prior autoscale fixes and the regression checks for indicator overlays, glitch wicks, and PR 60's Trend Pressure oscillator are documented in [Chart scaling notes](docs/chart-scaling.md). For a manually pinned range, use **Fit** or **Latest** to restore auto-fit.
+
 ## Zeiierman Trend Pressure
 
 Add **Trend Pressure** from Indicators for the oscillator and price boxes; open **Floating → Trend Pressure** for a draggable, zoomable readout of the same pulse, trend and pressure-core values. Its Pine v6 inputs are editable. See [compatibility and license notes](docs/zeiierman-trend-pressure.md).

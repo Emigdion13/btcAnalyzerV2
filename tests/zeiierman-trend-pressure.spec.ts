@@ -1,0 +1,36 @@
+import { expect, test } from '@playwright/test'
+
+test('adds Trend Pressure, edits its pulse, and opens a floating view of the same settings', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.addInitScript(() => localStorage.setItem('atlas.v1.feed-active', 'false'))
+  await page.goto('/?source=demo')
+  await expect(page.locator('.chart-canvas canvas').first()).toBeVisible()
+  await page.getByRole('button', { name: /^Indicators/ }).click()
+  await page.getByRole('textbox', { name: 'Search indicators', exact: true }).fill('Zeiierman')
+  await expect(page.locator('.indicator-catalog-row')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+  const legend = page.locator('.oscillator-legend[data-indicator="zeiierman-trend-pressure"]')
+  await expect(legend).toBeVisible()
+  await expect(legend.locator('[data-plot="Z-Pulse"]')).not.toHaveText('—')
+  await expect(legend.locator('[data-plot="Z-Trend"]')).not.toHaveText('—')
+  await expect(legend.locator('[data-plot="Pressure Core"]')).not.toHaveText('—')
+  await legend.locator('.legend-name').click()
+  await expect(page.getByRole('spinbutton', { name: 'Pulse Range' })).toHaveValue('21')
+  await page.getByRole('spinbutton', { name: 'Pulse Range' }).fill('14')
+  await page.getByRole('button', { name: 'Apply changes' }).click()
+  await page.getByRole('button', { name: /Floating/ }).click()
+  await page.locator('.floating-trend-pressure').click()
+  const card = page.getByTestId('osc-hud-zeiierman-trend-pressure')
+  await expect(card).toBeVisible()
+  await expect(card).toContainText('Pulse 14 · macro 120 · sensitivity 7')
+  await expect(card).toContainText('your indicator')
+  await expect(page.getByTestId('pressure-overlay')).toBeAttached()
+  await expect(page.getByTestId('pressure-price-overlay')).toBeAttached()
+  await page.reload()
+  await expect(page.getByTestId('osc-hud-zeiierman-trend-pressure')).toContainText('Pulse 14')
+  expect(errors).toEqual([])
+})

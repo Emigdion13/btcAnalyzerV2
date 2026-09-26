@@ -11482,8 +11482,23 @@ button.chile-panel-chip {
 .kalshi-float-foot.is-caution {
   color: var(--kalshi-amber);
 }
-olor: var(--dim);
+
+.osc-hud-card.dock-pressure {
+  top: 356px;
+  right: calc(var(--osc-hud-width) * 2 + 26px);
 }
-.kalshi-float-foot.is-caution {
-  color: var(--kalshi-amber);
+@media (max-width: 720px) {
+  .osc-hud-card.dock-pressure {
+    top: 1116px;
+    right: 6px;
+  }
+}
+
+.pressure-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
 }

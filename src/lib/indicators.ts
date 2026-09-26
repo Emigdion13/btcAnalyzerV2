@@ -1,3 +1,8 @@
+import {
+  calculateTrendPressure,
+  trendPressurePlots,
+  trendPressureSettings,
+} from './zeiierman-trend-pressure'
 import { ta } from './indicator-runtime'
 import { calculateCmMacd, cmMacdPlots, cmMacdSettings } from './cm-ult-macd'
 import { calculateWaveTrend, waveTrendPlots, waveTrendSettings } from './wave-trend'
@@ -198,6 +203,16 @@ export const INDICATOR_CATALOG: {
     color: '#14D990',
   },
   {
+    kind: 'zeiierman-trend-pressure',
+    name: 'Zeiierman Trend Pressure (Zeiierman)',
+    short: 'Trend Pressure',
+    description:
+      'Z-Pulse, macro Z-Trend, Pressure Core, exhaustion zones, crosses and price boxes. © Zeiierman · CC BY-NC-SA 4.0.',
+    category: 'Momentum',
+    period: 21,
+    color: '#8baeff',
+  },
+  {
     kind: 'wave-trend',
     name: 'WaveTrend [LazyBear]',
     short: 'WT_LB',
@@ -268,11 +283,18 @@ export const INDICATOR_CATALOG: {
 export function builtInPlots(
   candles: Candle[],
   indicator: Indicator,
-  context?: IndicatorContext,
+  context?: IndicatorContext & { priceIncrement?: number },
 ): Plot[] {
   if (indicator.kind === 'cm-ult-macd') {
     const settings = cmMacdSettings(indicator)
     return cmMacdPlots(calculateCmMacd(candles, settings, context), settings)
+  }
+  if (indicator.kind === 'zeiierman-trend-pressure') {
+    const settings = trendPressureSettings(indicator)
+    return trendPressurePlots(
+      calculateTrendPressure(candles, settings, context?.priceIncrement),
+      settings,
+    )
   }
   if (indicator.kind === 'wave-trend') {
     const settings = waveTrendSettings(indicator)

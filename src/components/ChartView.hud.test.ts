@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChartView } from './ChartView'
+import { TREND_PRESSURE_DEFAULTS } from '../lib/zeiierman-trend-pressure'
 import { DEFAULT_INDICATORS, DEFAULT_SETTINGS } from '../lib/types'
 import type { Indicator } from '../lib/types'
 import { ASSETS, generateCandles } from '../lib/market'
@@ -19,6 +20,7 @@ const asset = ASSETS[0]
 
 const render = (
   overrides: {
+    trendPressureHud?: boolean
     cmMacdHud?: boolean
     waveTrendHud?: boolean
     rsiDivHud?: boolean
@@ -52,6 +54,7 @@ const render = (
       onIndicatorRemove: noop,
       onIndicatorRetry: noop,
       replay: false,
+      trendPressureHud: overrides.trendPressureHud,
       cmMacdHud: overrides.cmMacdHud ?? true,
       waveTrendHud: overrides.waveTrendHud ?? true,
       rsiDivHud: overrides.rsiDivHud,
@@ -62,6 +65,30 @@ const render = (
   )
 
 describe('the chart hands both oscillator windows their own view', () => {
+  it('shares Trend Pressure pane settings with its floating window, or uses defaults', () => {
+    const defaults = render({ trendPressureHud: true })
+    expect(defaults).toContain('data-testid="osc-hud-zeiierman-trend-pressure"')
+    expect(defaults).toContain('Pulse 21 · macro 120 · sensitivity 7')
+    expect(defaults).toContain('Add the Zeiierman Trend Pressure pane to the chart')
+    const indicator: Indicator = {
+      id: 'pressure',
+      kind: 'zeiierman-trend-pressure',
+      name: 'Zeiierman Trend Pressure (Zeiierman)',
+      period: 21,
+      color: '#8baeff',
+      visible: true,
+      trendPressure: { ...TREND_PRESSURE_DEFAULTS, pulseRange: 15, sensitivity: 2 },
+    }
+    const markup = render({ trendPressureHud: true, indicators: [indicator] })
+    expect(markup).toContain('Pulse 15 · macro 120 · sensitivity 2')
+    expect(markup).toContain('Settings for Zeiierman Trend Pressure')
+    expect(markup).toContain('data-testid="pressure-overlay"')
+    expect(markup).toContain('data-testid="pressure-price-overlay"')
+    expect(render({ trendPressureHud: false, indicators: [indicator] })).not.toContain(
+      'data-testid="osc-hud-zeiierman-trend-pressure"',
+    )
+  })
+
   it('opens a window per flag, over the last twenty minutes of a 1m chart', () => {
     const markup = render()
     expect(markup).toContain('aria-label="CM_Ult_MacD_MTF window"')

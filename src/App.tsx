@@ -121,6 +121,7 @@ import { isMetalInterval, isMetalSymbol } from '../shared/kalshi'
 import { INDICATOR_CATALOG, SCRIPT_TEMPLATES } from './lib/indicators'
 import { CM_MACD_DEFAULTS, requestedIndicatorTimeframes } from './lib/cm-ult-macd'
 import { CM_WILLIAMS_VIX_FIX_DEFAULTS } from './lib/cm-williams-vix-fix'
+import { TREND_PRESSURE_DEFAULTS } from './lib/zeiierman-trend-pressure'
 import { WAVE_TREND_DEFAULTS } from './lib/wave-trend'
 import { BAYESIAN_NQQE_DEFAULTS } from './lib/bayesian-nqqe-bankfunds'
 import { TMO_SCALPER_DEFAULTS } from './lib/tmo-scalper'
@@ -378,8 +379,7 @@ export default function App() {
     null,
   )
   const kalshiFloatOpen =
-    (kalshiFloatPreference ??
-      kalshiFloatDefaultVisible(window.innerWidth, window.innerHeight)) &&
+    (kalshiFloatPreference ?? kalshiFloatDefaultVisible(window.innerWidth, window.innerHeight)) &&
     source !== 'demo'
   // The floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF, WaveTrend,
   // RSI Divergence and CM_Williams_Vix_Fix, zoomed to their own scale instead of a full-height
@@ -409,6 +409,11 @@ export default function App() {
     OSC_HUD_WIDGETS['bayesian-nqqe-bankfunds'].visibilityKey,
     null,
   )
+  const [pressureHudPreference, setPressureHudPreference] = useLocalState<boolean | null>(
+    OSC_HUD_WIDGETS['zeiierman-trend-pressure'].visibilityKey,
+    false,
+  )
+  const pressureHudOpen = oscHudVisible(pressureHudPreference)
   const cmHudOpen = oscHudVisible(cmHudPreference)
   const waveHudOpen = oscHudVisible(waveHudPreference)
   const rsiDivHudOpen = oscHudVisible(rsiDivHudPreference)
@@ -417,6 +422,7 @@ export default function App() {
   const bayesHudOpen = oscHudVisible(bayesHudPreference)
   const oscHudOpen = useMemo(
     () => ({
+      'zeiierman-trend-pressure': pressureHudOpen,
       'cm-ult-macd': cmHudOpen,
       'wave-trend': waveHudOpen,
       'rsi-divergence': rsiDivHudOpen,
@@ -424,11 +430,20 @@ export default function App() {
       'tmo-scalper': tmoHudOpen,
       'bayesian-nqqe-bankfunds': bayesHudOpen,
     }),
-    [cmHudOpen, waveHudOpen, rsiDivHudOpen, vixFixHudOpen, tmoHudOpen, bayesHudOpen],
+    [
+      pressureHudOpen,
+      cmHudOpen,
+      waveHudOpen,
+      rsiDivHudOpen,
+      vixFixHudOpen,
+      tmoHudOpen,
+      bayesHudOpen,
+    ],
   )
   const toggleOscHud = useCallback(
     (kind: OscHudKind) => {
       const setters: Record<OscHudKind, (update: (current: boolean | null) => boolean) => void> = {
+        'zeiierman-trend-pressure': setPressureHudPreference,
         'cm-ult-macd': setCmHudPreference,
         'wave-trend': setWaveHudPreference,
         'rsi-divergence': setRsiDivHudPreference,
@@ -439,6 +454,7 @@ export default function App() {
       setters[kind]((current) => !oscHudVisible(current))
     },
     [
+      setPressureHudPreference,
       setCmHudPreference,
       setWaveHudPreference,
       setRsiDivHudPreference,
@@ -1260,19 +1276,21 @@ export default function App() {
                   ? 'Pivot Points High Low & Missed Reversal Levels'
                   : item.kind === 'tux-ema-scalper'
                     ? 'TUX EMA Scalper+SuperTrend'
-                    : item.kind === 'wave-trend'
-                      ? 'WaveTrend [LazyBear]'
-                      : item.kind === 'tmo-scalper'
-                        ? 'TMO Scalper'
-                        : item.kind === 'rsi-divergence'
-                          ? 'RSI Divergence'
-                          : item.kind === 'cm-williams-vix-fix'
-                            ? 'CM_Williams_Vix_Fix'
-                            : item.kind === 'bayesian-nqqe-bankfunds'
-                              ? 'Bayesian/nQQE/BankFunds'
-                              : item.short === 'VOL'
-                              ? 'Volume'
-                              : item.short,
+                    : item.kind === 'zeiierman-trend-pressure'
+                      ? 'Zeiierman Trend Pressure (Zeiierman)'
+                      : item.kind === 'wave-trend'
+                        ? 'WaveTrend [LazyBear]'
+                        : item.kind === 'tmo-scalper'
+                          ? 'TMO Scalper'
+                          : item.kind === 'rsi-divergence'
+                            ? 'RSI Divergence'
+                            : item.kind === 'cm-williams-vix-fix'
+                              ? 'CM_Williams_Vix_Fix'
+                              : item.kind === 'bayesian-nqqe-bankfunds'
+                                ? 'Bayesian/nQQE/BankFunds'
+                                : item.short === 'VOL'
+                                  ? 'Volume'
+                                  : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -1290,6 +1308,9 @@ export default function App() {
         ...(kind === 'tux-ema-scalper' ? { tuxEmaScalper: { ...TUX_EMA_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
         ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
+        ...(kind === 'zeiierman-trend-pressure'
+          ? { trendPressure: { ...TREND_PRESSURE_DEFAULTS } }
+          : {}),
         ...(kind === 'wave-trend' ? { waveTrend: { ...WAVE_TREND_DEFAULTS } } : {}),
         ...(kind === 'tmo-scalper' ? { tmoScalper: { ...TMO_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'cm-williams-vix-fix'
@@ -1771,6 +1792,7 @@ export default function App() {
     (mtfRsiOpen ? 1 : 0) +
     (chilePanelOpen ? 1 : 0) +
     (kalshiFloatOpen ? 1 : 0) +
+    (pressureHudOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
     (waveHudOpen ? 1 : 0) +
     (rsiDivHudOpen ? 1 : 0) +
@@ -1963,6 +1985,16 @@ export default function App() {
                   }}
                 >
                   {bayesHudOpen ? 'Hide Bayesian window' : 'Show Bayesian window'}
+                </MenuItem>
+                <MenuItem
+                  icon={Activity}
+                  selected={pressureHudOpen}
+                  onClick={() => {
+                    toggleOscHud('zeiierman-trend-pressure')
+                    close()
+                  }}
+                >
+                  {pressureHudOpen ? 'Hide Trend Pressure window' : 'Show Trend Pressure window'}
                 </MenuItem>
                 <MenuItem
                   icon={Layers}
@@ -2318,6 +2350,14 @@ export default function App() {
                   >
                     Bayesian
                   </MenuItem>
+                  <MenuItem
+                    className="floating-trend-pressure"
+                    icon={Activity}
+                    selected={pressureHudOpen}
+                    onClick={() => toggleOscHud('zeiierman-trend-pressure')}
+                  >
+                    Trend Pressure
+                  </MenuItem>
                 </>
               )}
             </Dropdown>
@@ -2468,6 +2508,7 @@ export default function App() {
                   vixFixHud={vixFixHudOpen}
                   tmoScalperHud={tmoHudOpen}
                   bayesianNqqeHud={bayesHudOpen}
+                  trendPressureHud={pressureHudOpen}
                   onOscHudClose={toggleOscHud}
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}

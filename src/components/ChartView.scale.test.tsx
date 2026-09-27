@@ -14,13 +14,20 @@ import { act } from 'react'
 import { createRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import * as charts from 'lightweight-charts'
 import { ChartView } from './ChartView'
 import type { ChartHandle } from './ChartView'
 import { DEFAULT_SETTINGS } from '../lib/types'
 import type { Candle, Indicator } from '../lib/types'
 import { generateCandles, getAsset } from '../lib/market'
 import { TREND_PRESSURE_DEFAULTS } from '../lib/zeiierman-trend-pressure'
+
+// Observe construction without replacing the real chart/scale implementation.
+vi.mock('lightweight-charts', async (importOriginal) => {
+  const actual = await importOriginal<typeof charts>()
+  return { ...actual, createChart: vi.fn(actual.createChart) }
+})
 
 function stubContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const target: Record<string | symbol, unknown> = { canvas }
@@ -75,7 +82,10 @@ beforeAll(() => {
     configurable: true,
   })
   Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true })
-  const size = (proto: 'clientWidth' | 'clientHeight' | 'offsetWidth' | 'offsetHeight', value: number) => {
+  const size = (
+    proto: 'clientWidth' | 'clientHeight' | 'offsetWidth' | 'offsetHeight',
+    value: number,
+  ) => {
     const prev = Object.getOwnPropertyDescriptor(HTMLElement.prototype, proto)
     Object.defineProperty(HTMLElement.prototype, proto, { get: () => value, configurable: true })
     restore.push(() => prev && Object.defineProperty(HTMLElement.prototype, proto, prev))
@@ -155,12 +165,23 @@ async function renderChart(candles: Candle[], indicators: Indicator[] = []) {
   document.body.appendChild(container)
   const ref = createRef<ChartHandle>()
   const root: Root = createRoot(container)
+  const createChart = vi.mocked(charts.createChart)
+  createChart.mockClear()
   await act(async () => {
     root.render(<ChartView ref={ref} {...buildProps(candles, indicators)} />)
   })
+  const chart = createChart.mock.results[0].value as charts.IChartApi
   await flush(30)
   return {
     ref,
+    chart,
+    container,
+    rerender: async () => {
+      await act(async () => {
+        root.render(<ChartView ref={ref} {...buildProps(candles, indicators)} />)
+      })
+      await flush(30)
+    },
     dispose: async () => {
       await act(async () => root.unmount())
       container.remove()
@@ -250,4 +271,47 @@ describe('candle pane price scale under tape glitches', () => {
     expect(reset.to - reset.from).toBeCloseTo(before.to - before.from, 4)
     await dispose()
   })
+})
+
+describe('scale recovery controls', () => {
+  it.each(['reset', 'latest', 'fit'] as const)(
+    '%s restores both BTC and CM MACD after manual scale expansion',
+    async (action) => {
+      const candles = generateCandles(getAsset('BTCUSDT'), '1m')
+      const macd: Indicator = {
+        id: 'cm',
+        kind: 'cm-ult-macd',
+        name: 'CM Ultimate MACD',
+        period: 12,
+        color: '#8baeff',
+        visible: true,
+      }
+      const { ref, chart, container, rerender, dispose } = await renderChart(candles, [macd])
+      try {
+        const oscillator = chart.priceScale('right', 1)
+        const original = oscillator.getVisibleRange()!
+        await act(async () => {
+          ref.current!.zoomPrice(20)
+          oscillator.setVisibleRange({ from: -100_000, to: 100_000 })
+        })
+        await flush(30)
+        expect(oscillator.options().autoScale).toBe(false)
+        await act(async () => {
+          if (action === 'reset')
+            container.querySelector<HTMLButtonElement>('[aria-label="Reset chart view"]')!.click()
+          else ref.current![action]()
+        })
+        await flush(30)
+        // A settings effect after recovery must not reinstate the old price pin.
+        await rerender()
+        expect(chart.priceScale('right').options().autoScale).toBe(true)
+        expect(oscillator.options().autoScale).toBe(true)
+        const recovered = oscillator.getVisibleRange()!
+        expect(recovered.to - recovered.from).toBeLessThan(10_000)
+        if (action !== 'fit') expect(recovered).toEqual(original)
+      } finally {
+        await dispose()
+      }
+    },
+  )
 })

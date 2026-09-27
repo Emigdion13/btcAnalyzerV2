@@ -670,11 +670,25 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       scale.setVisibleRange({ from: center - half, to: center + half })
     }
   }
+  // Recovery is chart-wide: an axis drag can pin an oscillator independently
+  // of the candle pane. Time zoom alone cannot undo either manual price range.
+  const resetPriceScales = () => {
+    pricePinnedRef.current = false
+    chartRef.current?.panes().forEach((pane) => {
+      pane.priceScale('right').applyOptions({ autoScale: true })
+    })
+  }
+  const latest = () => {
+    const length = propsRef.current.candles.length
+    chartRef.current
+      ?.timeScale()
+      .setVisibleLogicalRange({ from: Math.max(0, length - 145), to: length + 8 })
+    resetPriceScales()
+  }
   useImperativeHandle(ref, () => ({
     fit: () => {
       chartRef.current?.timeScale().fitContent()
-      pricePinnedRef.current = false
-      mainRef.current?.priceScale().applyOptions({ autoScale: true })
+      resetPriceScales()
     },
     zoom,
     zoomPrice,
@@ -685,14 +699,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         to: length + Math.min(8, bars * 0.06),
       })
     },
-    latest: () => {
-      const length = propsRef.current.candles.length
-      chartRef.current
-        ?.timeScale()
-        .setVisibleLogicalRange({ from: Math.max(0, length - 145), to: length + 8 })
-      pricePinnedRef.current = false
-      mainRef.current?.priceScale().applyOptions({ autoScale: true })
-    },
+    latest,
     priceRange: () => mainRef.current?.priceScale().getVisibleRange() ?? null,
     snapshot: async () => {
       const chart = chartRef.current
@@ -4485,17 +4492,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         <IconButton icon={ChevronUp} label="Zoom prices in" onClick={() => zoomPrice(0.75)} />
         <IconButton icon={ChevronDown} label="Zoom prices out" onClick={() => zoomPrice(1.33)} />
         <span />
-        <IconButton
-          icon={RotateCcw}
-          label="Reset chart view"
-          onClick={() => {
-            chartRef.current?.timeScale().setVisibleLogicalRange({
-              from: Math.max(0, candles.length - 145),
-              to: candles.length + 8,
-            })
-            mainRef.current?.priceScale().applyOptions({ autoScale: true })
-          }}
-        />
+        <IconButton icon={RotateCcw} label="Reset chart view" onClick={latest} />
       </div>
     </div>
   )

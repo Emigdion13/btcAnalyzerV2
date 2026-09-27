@@ -291,7 +291,7 @@ test('does not trigger live alerts from a disconnected or demo quote', async ({ 
 })
 
 async function fixedCmTimeframe(page: Page, interval: Interval = '1h') {
-  await page.locator('.cm-oscillator-legend .legend-name').click()
+  await page.locator('.cm-oscillator-legend').getByRole('button', { name: /^Settings for / }).click()
   await page.getByRole('checkbox', { name: 'Use Current Chart Resolution?', exact: true }).uncheck()
   await page.getByRole('combobox', { name: /Use Different Timeframe/ }).selectOption(interval)
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
@@ -345,7 +345,7 @@ test('CM MTF loads native hourly history, handles corrections, freezes replay an
     .poll(() => requests.some((r) => r.includes('candles?product=ETH-USD&interval=1h&limit=900')))
     .toBe(true)
   await expect(macd).not.toHaveText('—')
-  await page.locator('.cm-oscillator-legend .legend-name').click()
+  await page.locator('.cm-oscillator-legend').getByRole('button', { name: /^Settings for / }).click()
   await page.getByRole('checkbox', { name: 'Use Current Chart Resolution?', exact: true }).check()
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(page.locator('.cm-resolution-badge')).toHaveText('Chart · 15m')

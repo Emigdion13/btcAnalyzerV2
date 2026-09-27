@@ -10,7 +10,7 @@
  * that wick so the candles stay readable; manual price zoom must stick until the
  * view is reset.
  */
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
@@ -165,10 +165,11 @@ async function renderChart(candles: Candle[], indicators: Indicator[] = []) {
   document.body.appendChild(container)
   const ref = createRef<ChartHandle>()
   const root: Root = createRoot(container)
+  let props: ComponentProps<typeof ChartView> = buildProps(candles, indicators)
   const createChart = vi.mocked(charts.createChart)
   createChart.mockClear()
   await act(async () => {
-    root.render(<ChartView ref={ref} {...buildProps(candles, indicators)} />)
+    root.render(<ChartView {...props} ref={ref} />)
   })
   const chart = createChart.mock.results[0].value as charts.IChartApi
   await flush(30)
@@ -176,9 +177,10 @@ async function renderChart(candles: Candle[], indicators: Indicator[] = []) {
     ref,
     chart,
     container,
-    rerender: async () => {
+    rerender: async (overrides: Partial<ComponentProps<typeof ChartView>> = {}) => {
+      props = { ...props, settings: { ...props.settings }, ...overrides }
       await act(async () => {
-        root.render(<ChartView ref={ref} {...buildProps(candles, indicators)} />)
+        root.render(<ChartView {...props} ref={ref} />)
       })
       await flush(30)
     },
@@ -314,4 +316,114 @@ describe('scale recovery controls', () => {
       }
     },
   )
+})
+
+describe('price series replacement with oscillator panes', () => {
+  it.each(['bars', 'hollow', 'line', 'area', 'asset precision', 'symbol'] as const)(
+    'keeps MACD out of the candle pane after changing %s',
+    async (change) => {
+      const candles = generateCandles(getAsset('BTCUSDT'), '1m')
+      const indicators: Indicator[] = [
+        {
+          id: 'cm',
+          kind: 'cm-ult-macd',
+          name: 'CM MACD',
+          period: 12,
+          color: '#8baeff',
+          visible: true,
+        },
+        {
+          id: 'pressure',
+          kind: 'zeiierman-trend-pressure',
+          name: 'Trend Pressure',
+          period: 21,
+          color: '#8baeff',
+          visible: true,
+        },
+      ]
+      const { ref, chart, rerender, dispose } = await renderChart(candles, indicators)
+      try {
+        const paneCount = chart.panes().length
+        const pricePane = chart.panes()[0]
+        const macdPane = chart.panes()[1]
+        const macdSeries = macdPane.getSeries()
+        await rerender(
+          change !== 'asset precision' && change !== 'symbol'
+            ? { chartType: change }
+            : {
+                asset: {
+                  ...getAsset('BTCUSDT'),
+                  ...(change === 'symbol' ? { symbol: 'BTC-USD' } : { priceIncrement: 0.01 }),
+                },
+              },
+        )
+        expect(chart.panes()).toHaveLength(paneCount)
+        expect(chart.panes()[0]).toBe(pricePane)
+        expect(chart.panes()[1]).toBe(macdPane)
+        for (const series of macdSeries) expect(chart.panes()[0].getSeries()).not.toContain(series)
+        const range = ref.current!.priceRange()!
+        expect(range.from).toBeGreaterThan(candles.at(-1)!.close * 0.9)
+        expect(range.to).toBeLessThan(candles.at(-1)!.close * 1.1)
+        // Replacing it again and clearing indicators must not retain empty
+        // oscillator panes or delete the permanent candle pane.
+        await rerender({ chartType: 'candles', indicators: [] })
+        expect(chart.panes()).toHaveLength(1)
+        expect(chart.panes()[0]).toBe(pricePane)
+        await rerender({ indicators })
+        expect(chart.panes()).toHaveLength(paneCount)
+        expect(ref.current!.priceRange()!.from).toBeGreaterThan(candles.at(-1)!.close * 0.9)
+      } finally {
+        await dispose()
+      }
+    },
+  )
+
+  it('keeps panes separate when precision arrives before the first live candles', async () => {
+    const indicators: Indicator[] = [
+      {
+        id: 'cm',
+        kind: 'cm-ult-macd',
+        name: 'CM MACD',
+        period: 12,
+        color: '#8baeff',
+        visible: true,
+      },
+      {
+        id: 'pressure',
+        kind: 'zeiierman-trend-pressure',
+        name: 'Trend Pressure',
+        period: 21,
+        color: '#8baeff',
+        visible: true,
+      },
+    ]
+    const { ref, chart, rerender, dispose } = await renderChart([], indicators)
+    try {
+      await rerender({ asset: { ...getAsset('BTCUSDT'), priceIncrement: 0.01 } })
+      const candles = generateCandles(getAsset('BTCUSDT'), '1m')
+      await rerender({ candles })
+      expect(chart.panes()).toHaveLength(3)
+      expect(chart.panes()[0].getSeries()).toHaveLength(1)
+      expect(ref.current!.priceRange()!.from).toBeGreaterThan(candles.at(-1)!.close * 0.9)
+      // Adding price overlays later must not hide a previously displaced MACD.
+      await rerender({
+        indicators: [
+          ...indicators,
+          {
+            id: 'tux',
+            kind: 'tux-ema-scalper',
+            name: 'TUX EMA Scalper',
+            period: 20,
+            color: '#39b978',
+            visible: true,
+          },
+        ],
+      })
+      expect(chart.panes()).toHaveLength(3)
+      expect(chart.panes()[0].getSeries()).toHaveLength(4)
+      expect(ref.current!.priceRange()!.from).toBeGreaterThan(candles.at(-1)!.close * 0.9)
+    } finally {
+      await dispose()
+    }
+  })
 })

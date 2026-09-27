@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-const title = 'WaveTrend [LazyBear] (10, 21)'
 const legend = '.oscillator-legend[data-indicator="wave-trend"]'
 async function demo(page: Page) {
   await page.addInitScript(() => localStorage.setItem('atlas.v1.feed-active', 'false'))
@@ -55,7 +54,7 @@ test('adds the original wave, dotted signal, area and levels to its own pane', a
   const before = await palette(page)
   await addFromLibrary(page)
   await expect(page.locator(legend)).toBeVisible()
-  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  await expect(page.locator(legend)).toBeVisible()
   await expect(page.locator(`${legend} [data-plot]`)).toHaveCount(3)
   await expect(page.locator(`${legend} [data-plot="WT1"]`)).not.toHaveText('—')
   await expect(page.locator(`${legend} [data-plot="WT2"]`)).not.toHaveText('—')
@@ -79,7 +78,8 @@ test('adds the original wave, dotted signal, area and levels to its own pane', a
 test('persists all six published inputs and restores the original defaults', async ({ page }) => {
   await demo(page)
   await addFromLibrary(page)
-  await page.getByRole('button', { name: title, exact: true }).click()
+  await page.locator(legend).hover()
+  await page.getByRole('button', { name: /^Settings for WaveTrend \[LazyBear\]/ }).click()
   for (const [name, value] of [
     ['Channel Length', '10'],
     ['Average Length', '21'],
@@ -121,26 +121,27 @@ test('persists all six published inputs and restores the original defaults', asy
   await changed.click()
   await page.getByRole('button', { name: 'Original defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
-  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  await expect(page.locator(legend)).toBeVisible()
 })
 
 test('removes, restores and edits the oscillator on mobile without overflow', async ({ page }) => {
   await demo(page)
   await addFromLibrary(page, 'WaveTrend')
-  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  await expect(page.locator(legend)).toBeVisible()
   await page.locator(legend).hover()
   await page.getByRole('button', { name: 'Remove WaveTrend [LazyBear] 10', exact: true }).click()
   await expect(page.locator(legend)).toHaveCount(0)
   await addFromLibrary(page, 'WaveTrend')
-  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
+  await expect(page.locator(legend)).toBeVisible()
   // The toolbar drops the Indicators button at phone width, so add it first, and
   // put the watchlist away: at 390px it would overlay the oscillator pane legend.
   await page.setViewportSize({ width: 390, height: 844 })
   if (await page.locator('.side-panel').count())
     await page.getByRole('button', { name: 'Toggle watchlist', exact: true }).click()
   await expect(page.locator('.side-panel')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible()
-  await page.getByRole('button', { name: title, exact: true }).click()
+  await expect(page.locator(legend)).toBeVisible()
+  await page.locator(legend).hover()
+  await page.getByRole('button', { name: /^Settings for WaveTrend \[LazyBear\]/ }).click()
   await page.getByRole('spinbutton', { name: 'Channel Length', exact: true }).fill('14')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(

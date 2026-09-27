@@ -108,7 +108,8 @@ test('the pane plots the wheels with the library edit available from the window'
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
   await expect(pane(page, 'tmo-scalper')).toBeVisible()
-  await expect(pane(page, 'tmo-scalper')).toContainText('TMO Scalper (1, 5, 30, 14, 5, 3)')
+  // The pane legend shows values only — no indicator name.
+  await expect(pane(page, 'tmo-scalper')).not.toContainText('TMO Scalper')
   // The window now owns the pane's settings instead of the published defaults.
   await expect(tmoWindow(page)).toContainText('your indicator')
 

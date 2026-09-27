@@ -988,6 +988,9 @@ button {
 }
 .oscillator-legend .legend-actions {
   margin-left: 0;
+  /* With no name in the pane legend, the hidden buttons are most of its width: keep them
+     hoverable so pointing anywhere on the legend reveals them. */
+  pointer-events: auto;
 }
 .chart-currency {
   position: absolute;

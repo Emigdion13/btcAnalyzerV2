@@ -5,7 +5,7 @@ describe('indicator autoscaling', () => {
   const zeroBasedRange = () => ({ priceRange: { minValue: 0, maxValue: 100_000 } })
 
   it('excludes price overlays (including zero-based areas) from the candle range', () => {
-    // Must not return null — LWC would then use the overlay's native 0…max range.
+    // Explicitly exclude the overlay instead of returning its native 0…max range.
     expect(indicatorAutoscale(0, false)?.(zeroBasedRange)).toEqual({ priceRange: null })
   })
 

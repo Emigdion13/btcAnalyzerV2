@@ -812,6 +812,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       handleScroll: { vertTouchDrag: false },
       localization: { locale: 'en-US' },
     })
+    // Replacing the main series can briefly leave pane 0 empty. Without this,
+    // LWC removes it and shifts the first oscillator into the price pane before
+    // the replacement is added, merging (e.g.) MACD's zero with BTC's price range.
+    // Only preserve the price pane; empty oscillator panes should still disappear.
+    chart.panes()[0].setPreserveEmptyPane(true)
     chartRef.current = chart
     const currentIndicatorSeries = indicatorSeries.current
     const currentStrikePriceLines = strikePriceLinesRef.current

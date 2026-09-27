@@ -3,18 +3,14 @@ import type { AutoscaleInfo, AutoscaleInfoProvider } from 'lightweight-charts'
 /**
  * Price overlays share the candle pane, but must not set its scale.
  *
- * Lightweight Charts treats a provider that returns `null` as "use the series'
- * native range". Histogram/area plots then contribute a 0-line, stretching BTC
- * from ~$0 to ~$100k so the axis ticks in $10,000 steps and the real 80–90k
- * tape collapses into a thin band. Returning an AutoscaleInfo whose
- * `priceRange` is null excludes the overlay from the fit instead.
+ * Return an explicit empty price range so price overlays cannot contribute
+ * zero-based histogram/area values to the candle fit. In the pinned LWC version,
+ * returning `null` also excludes the series; native scaling is used only when
+ * no provider is installed (or when the provider calls the base implementation).
  */
 const EXCLUDE_FROM_AUTOSCALE: AutoscaleInfo = { priceRange: null }
 
-export function indicatorAutoscale(
-  pane: number,
-  rsi: boolean,
-): AutoscaleInfoProvider | undefined {
+export function indicatorAutoscale(pane: number, rsi: boolean): AutoscaleInfoProvider | undefined {
   if (pane === 0) return () => EXCLUDE_FROM_AUTOSCALE
   if (rsi) return () => ({ priceRange: { minValue: 0, maxValue: 100 } })
   return undefined

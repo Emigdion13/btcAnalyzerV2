@@ -24,5 +24,6 @@ When adding another indicator, keep every oscillator plot marked `pane: 'oscilla
 
 - Compare `ChartHandle.priceRange()` against the visible candle bodies and check the actual first-pane height (`ChartView` geometry). A huge price range points to autoscaling; a short pane points to layout.
 - Run `npx vitest run src/lib/indicator-autoscale.test.ts src/lib/price-autoscale.test.ts src/components/ChartView.scale.test.tsx`.
-- In the app, use **Fit** or **Latest** / **Reset chart view** to clear a manually pinned price scale. A pinned range is intentional and is not overwritten by ordinary auto-fit updates.
+- In the app, use **Fit** or **Latest** / **Reset chart view** to clear manually pinned price scales in both the candle and oscillator panes (including CM Ultimate MACD). These actions share the same scale reset, so the navigation reset also clears the candle manual-zoom flag. A pinned range is intentional and is not overwritten by ordinary auto-fit updates.
+- The `scale recovery controls` regressions in `ChartView.scale.test.tsx` expand both BTC and CM MACD manually, recover via each of the three controls, then rerender to verify the old pin is not reapplied. This covers recovery from stretched scales; it does not establish what originally stretched a user’s scale.
 - Keep any new chart regression test in `ChartView.scale.test.tsx` at the component/engine seam, not only as a pure formula test: the real Lightweight Charts autoscale provider semantics caused the original regression.

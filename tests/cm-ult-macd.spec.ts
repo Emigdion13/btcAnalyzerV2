@@ -111,7 +111,11 @@ test('preserves all original inputs, supports native validation and restores def
     'color',
     'rgb(0, 255, 0)',
   )
-  await changed.click()
+  await page.locator('.cm-oscillator-legend').hover()
+  await page
+    .locator('.cm-oscillator-legend')
+    .getByRole('button', { name: /^Settings for / })
+    .click()
   await page.getByRole('button', { name: 'Original defaults', exact: true }).click()
   await expect(resolution).toBeDisabled()
   await expect(page.getByRole('spinbutton', { name: 'Slow Length', exact: true })).toHaveValue('26')

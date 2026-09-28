@@ -79,7 +79,10 @@ test('persists all six published inputs and restores the original defaults', asy
   await demo(page)
   await addFromLibrary(page)
   await page.locator(legend).hover()
-  await page.getByRole('button', { name: /^Settings for WaveTrend \[LazyBear\]/ }).click()
+  await page
+    .locator(legend)
+    .getByRole('button', { name: /^Settings for / })
+    .click()
   for (const [name, value] of [
     ['Channel Length', '10'],
     ['Average Length', '21'],
@@ -141,7 +144,10 @@ test('removes, restores and edits the oscillator on mobile without overflow', as
   await expect(page.locator('.side-panel')).toHaveCount(0)
   await expect(page.locator(legend)).toBeVisible()
   await page.locator(legend).hover()
-  await page.getByRole('button', { name: /^Settings for WaveTrend \[LazyBear\]/ }).click()
+  await page
+    .locator(legend)
+    .getByRole('button', { name: /^Settings for / })
+    .click()
   await page.getByRole('spinbutton', { name: 'Channel Length', exact: true }).fill('14')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(

@@ -18,7 +18,7 @@ test('adds Trend Pressure, edits its pulse, and opens a floating view of the sam
   await expect(legend.locator('[data-plot="Z-Pulse"]')).not.toHaveText('—')
   await expect(legend.locator('[data-plot="Z-Trend"]')).not.toHaveText('—')
   await expect(legend.locator('[data-plot="Pressure Core"]')).not.toHaveText('—')
-  await legend.locator('.legend-name').click()
+  await legend.getByRole('button', { name: /^Settings for / }).click()
   await expect(page.getByRole('spinbutton', { name: 'Pulse Range' })).toHaveValue('21')
   await page.getByRole('spinbutton', { name: 'Pulse Range' }).fill('14')
   await page.getByRole('button', { name: 'Apply changes' }).click()

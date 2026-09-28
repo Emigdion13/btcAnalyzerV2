@@ -4257,9 +4257,6 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             key={indicator.id}
             style={{ top: geometry.paneTops[pane] + 9, background: settings.background }}
           >
-            <button className="legend-name" onClick={() => props.onIndicatorEdit(indicator)}>
-              {indicatorLabel(indicator)}
-            </button>
             {indicator.kind === 'cm-ult-macd' && (
               <span
                 className="cm-resolution-badge"

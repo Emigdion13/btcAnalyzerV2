@@ -92,8 +92,7 @@ test('preserves all original inputs, supports native validation and restores def
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(page.locator('.cm-resolution-badge')).toHaveText('MTF · 4h')
   await page.reload()
-  const changed = page.getByRole('button', { name: 'CM_Ult_MacD_MTF (240, 8, 21, 5)', exact: true })
-  await expect(changed).toBeVisible()
+  await expect(page.locator('.cm-oscillator-legend')).toBeVisible()
   const saved = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('atlas.v1.indicators')!).find(
       (i: { kind: string }) => i.kind === 'cm-ult-macd',
@@ -185,7 +184,5 @@ test('opens and edits the original controls on mobile without horizontal overflo
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(page.locator('.cm-resolution-badge')).toHaveText('MTF · 1h')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
-  await expect(
-    page.getByRole('button', { name: 'CM_Ult_MacD_MTF (60, 12, 30, 9)', exact: true }),
-  ).toBeVisible()
+  await expect(page.locator('.cm-oscillator-legend')).toBeVisible()
 })

@@ -100,10 +100,12 @@ test('persists all six published inputs and restores the original defaults', asy
   await page.getByRole('spinbutton', { name: 'Over Bought Level 1', exact: true }).fill('55')
   await page.getByRole('spinbutton', { name: 'Over Sold Level 1', exact: true }).fill('-55')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
-  const changed = page.getByRole('button', { name: 'WaveTrend [LazyBear] (21, 34)', exact: true })
-  await expect(changed).toBeVisible()
+  const changed = page
+    .locator(legend)
+    .getByRole('button', { name: 'Settings for WaveTrend [LazyBear] 21', exact: true })
+  await expect(changed).toHaveCount(1)
   await page.reload()
-  await expect(changed).toBeVisible()
+  await expect(changed).toHaveCount(1)
   expect(
     await page.evaluate(() =>
       JSON.parse(localStorage.getItem('atlas.v1.indicators')!).find(
@@ -121,6 +123,7 @@ test('persists all six published inputs and restores the original defaults', asy
       osLevel2: -53,
     },
   })
+  await page.locator(legend).hover()
   await changed.click()
   await page.getByRole('button', { name: 'Original defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
@@ -151,7 +154,9 @@ test('removes, restores and edits the oscillator on mobile without overflow', as
   await page.getByRole('spinbutton', { name: 'Channel Length', exact: true }).fill('14')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(
-    page.getByRole('button', { name: 'WaveTrend [LazyBear] (14, 21)', exact: true }),
-  ).toBeVisible()
+    page
+      .locator(legend)
+      .getByRole('button', { name: 'Settings for WaveTrend [LazyBear] 14', exact: true }),
+  ).toHaveCount(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })

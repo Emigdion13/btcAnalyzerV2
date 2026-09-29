@@ -23,7 +23,7 @@ import type { TrendPressureSettings } from './types'
  *    the picture exactly when the oscillator gets close enough for them to matter.
  */
 import { INTERVAL_SECONDS } from '../../shared/coinbase'
-import { CM_COLORS, cmHistogramColor, cmMacdSettings } from './cm-ult-macd'
+import { CM_COLORS, cmHistogramColors, cmMacdLineColors, cmMacdSettings } from './cm-ult-macd'
 import type { CmMacdValues } from './cm-ult-macd'
 import { WT_COLORS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
@@ -341,6 +341,12 @@ export interface OscHudTrace {
   color: string
   /** Already sliced to the window, oldest first. */
   values: (number | null)[]
+  /**
+   * Per-bar colours for a series whose original recolours it bar by bar (nQQE's lime/yellow/red,
+   * MACD's lime/red and its dots), aligned with `values`; a line's segment ending at a bar takes
+   * that bar's colour, as in Pine.
+   */
+  colors?: string[]
   width: number
   style: 'line' | 'dots' | 'area' | 'tri-up' | 'tri-down'
   /** Pine `transp`, for the area fills the originals used. */
@@ -382,6 +388,18 @@ export interface OscHudVerdict {
   detail: string
 }
 
+/**
+ * A fill between two series, shaded by a vertical gradient in value space — Trend Pressure's
+ * pulse-to-trend band, red toward the upper bound and blue toward the lower one.
+ */
+export interface OscHudBand {
+  /** The two series the fill spans, sliced to the window like the traces. */
+  from: (number | null)[]
+  to: (number | null)[]
+  /** Gradient stops top to bottom, by indicator value rather than pixel. */
+  stops: { value: number; color: string; opacity: number }[]
+}
+
 export interface OscHudModel {
   kind: OscHudKind
   title: string
@@ -391,6 +409,8 @@ export interface OscHudModel {
   times: number[]
   traces: OscHudTrace[]
   histogram?: OscHudHistogram
+  /** A gradient fill between two series, drawn under every trace. */
+  band?: OscHudBand
   /** Banker fund columns. When set, the card does not also draw a zero-based histogram. */
   columns?: OscHudColumns
   levels: OscHudLevel[]
@@ -578,17 +598,10 @@ export function cmMacdHudModel(
   const macd = finite(cut(values.macd))
   const signal = finite(cut(values.signal))
   const histogram = finite(cut(values.histogram))
-  // Colour is decided against the previous bar of the full series, across the window edge: a bar
-  // is aqua because it rose, and the bar it rose from can sit outside the twenty minutes.
-  const colors = cut(
-    values.histogram.map((value, index) =>
-      cmHistogramColor(
-        Number.isFinite(value) ? value : null,
-        Number.isFinite(values.histogram[index - 1]) ? values.histogram[index - 1] : null,
-        settings.histogramColorChange,
-      ),
-    ),
-  )
+  // Colours come from the pane's own rules over the full series, so a bar at the window's edge is
+  // still judged against the bar it rose from — on the MACD's resolution, not the chart's.
+  const colors = cut(cmHistogramColors(values, settings.histogramColorChange))
+  const lineColors = cut(cmMacdLineColors(values, settings))
   const domain = oscHudDomain([
     macd,
     signal,
@@ -611,6 +624,8 @@ export function cmMacdHudModel(
       title: 'MACD',
       color: settings.macdColorChange ? CM_COLORS.lime : CM_COLORS.red,
       values: macd,
+      // Lime at or above the signal, red below — the pane's macd_color, bar for bar.
+      colors: lineColors,
       width: 2,
       style: 'line',
       z: 2,
@@ -647,6 +662,7 @@ export function cmMacdHudModel(
       title: 'Cross',
       color: settings.macdColorChange ? CM_COLORS.lime : CM_COLORS.red,
       values: dots,
+      colors: lineColors,
       width: 3.4,
       style: 'dots',
       z: 3,
@@ -675,7 +691,11 @@ export function cmMacdHudModel(
     bars: times.length,
     spanLabel: oscHudSpan(times.length, input.timeframe),
     readouts: [
-      { label: 'MACD', value: trim(activeMacd), color: CM_COLORS.lime },
+      {
+        label: 'MACD',
+        value: trim(activeMacd),
+        color: activeMacd === null ? undefined : lineColors[activeIndex],
+      },
       { label: 'Signal', value: trim(activeSignal), color: CM_COLORS.yellow },
       {
         label: 'Hist',
@@ -1627,6 +1647,8 @@ export function bayesianNqqeHudModel(
       title: 'nQQE',
       color: BAYES_COLORS.nqqeYellow,
       values: nqqe,
+      // The pane's regime colours, bar for bar: lime above 60, red below 40, yellow between.
+      colors: cut(values.nqqeColors),
       width: 1.6,
       style: 'line',
       z: 3,
@@ -1664,6 +1686,13 @@ export function bayesianNqqeHudModel(
       { value: -10, color: BAYES_COLORS.nqqeRed, label: '-10', dashed: true },
       { value: 25, color: BAYES_COLORS.bankerYellow, label: '25', dashed: true },
       { value: 100, color: BAYES_COLORS.gray, label: '100', dashed: false },
+      // The pane's hline(40)/hline(60): the lines nQQE turns red and lime across.
+      ...(settings.showNqqe
+        ? [
+            { value: 40, color: BAYES_COLORS.gray, label: '40', dashed: true },
+            { value: 60, color: BAYES_COLORS.gray, label: '60', dashed: true },
+          ]
+        : []),
     ],
     domain,
   )
@@ -1774,6 +1803,14 @@ export function trendPressureHudModel(
           ? ' · bearish cross'
           : ''
   const domain = { min: -112, max: 10 }
+  // The pane's exhaustion marks: hot dots above the upper bound while upper pressure is active or
+  // releasing, cold dots under the lower bound for the lower side.
+  // Every series lives on the 0 to -100 scale, so two decimals say it all; a price formatter
+  // would print a trend of -3e-7 as "-0.00000031" and run it into the next readout.
+  const level = (x: number | null) =>
+    x === null ? '—' : Math.abs(x) < 0.005 ? '0.00' : x.toFixed(2)
+  const marks = (active: boolean[], release: boolean[], value: number) =>
+    cut(active.map((on, i) => (on || release[i] ? value : null)))
   return {
     kind: 'zeiierman-trend-pressure',
     title: OSC_HUD_WIDGETS['zeiierman-trend-pressure'].title,
@@ -1781,33 +1818,66 @@ export function trendPressureHudModel(
     accent: s.trendColor,
     times,
     domain,
+    // Drawn the way the pane draws it: the pulse-to-trend band shaded hot at the top and cold at
+    // the bottom, a thin pulse, the trend, and the core in its bull/bear/neutral colour per bar.
+    band: s.gradientFill
+      ? {
+          from: pulse,
+          to: trend,
+          stops: [
+            { value: 0, color: s.hot, opacity: 0.4 },
+            { value: -30, color: s.hot, opacity: 0 },
+            { value: -70, color: s.cold, opacity: 0 },
+            { value: -100, color: s.cold, opacity: 0.4 },
+          ],
+        }
+      : undefined,
     traces: [
-      { title: 'Z-Pulse', values: pulse, color: s.pulseColor, width: 1.6, style: 'line', z: 3 },
+      { title: 'Z-Pulse', values: pulse, color: s.pulseColor, width: 1, style: 'line', z: 3 },
       { title: 'Z-Trend', values: trend, color: s.trendColor, width: 2, style: 'line', z: 2 },
       {
         title: 'Pressure Core',
         values: core,
         color: s.coreNeutral,
+        colors: cut(v.coreColors),
         width: s.coreWidth,
         style: 'line',
         z: 1,
       },
+      {
+        title: 'Upper Pressure',
+        values: marks(v.upperActive, v.upperRelease, 5),
+        color: s.hot,
+        width: 3,
+        style: 'dots',
+        z: 4,
+      },
+      {
+        title: 'Lower Pressure',
+        values: marks(v.lowerActive, v.lowerRelease, -107),
+        color: s.cold,
+        width: 3,
+        style: 'dots',
+        z: 4,
+      },
     ],
     levels: [
+      { value: 0, color: s.upperLevel, label: '0', dashed: false },
       { value: v.upper, color: s.upperLevel, label: `${v.upper}`, dashed: true },
       { value: -50, color: '#777777', label: '-50', dashed: true },
       { value: v.lower, color: s.lowerLevel, label: `${v.lower}`, dashed: true },
+      { value: -100, color: s.lowerLevel, label: '-100', dashed: false },
     ],
     activeIndex: index >= 0 && index < times.length ? index : null,
     hovered: !!input.hovered,
     bars: times.length,
     spanLabel: oscHudSpan(times.length, input.timeframe),
     readouts: [
-      { label: 'Pulse', value: trim(at(pulse)), color: s.pulseColor },
-      { label: 'Trend', value: trim(at(trend)), color: s.trendColor },
+      { label: 'Pulse', value: level(at(pulse)), color: s.pulseColor },
+      { label: 'Trend', value: level(at(trend)), color: s.trendColor },
       {
         label: 'Core',
-        value: trim(at(core)),
+        value: level(at(core)),
         color: at(core) === null ? s.coreNeutral : v.coreColors[input.index],
       },
     ],

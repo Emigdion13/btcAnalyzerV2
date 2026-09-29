@@ -19,7 +19,8 @@ lengths, resolution switch and colour switches of the indicator on the chart —
 defaults when the chart carries none, in which case **Add the pane** on the window is what makes
 them editable. `security()` semantics are unchanged there, so an alternate-resolution window shows
 the projected value per chart bar, exactly like the pane, and it says so when its source feed has no
-candles yet.
+candles yet. It uses the pane's colours bar for bar: the four-colour histogram, and a MACD line and
+crossing dots that are lime at or above the signal and red below it.
 
 | Original input                                    | Default | Behavior                                                                    |
 | ------------------------------------------------- | ------- | --------------------------------------------------------------------------- |
@@ -49,7 +50,7 @@ On the selected resolution’s **close** series:
 
 No rescaling/normalization, price prediction, extra moving averages, smoothing, threshold filter, or signal delay is added. Fast and slow lengths can be equal or reversed, as in the original.
 
-The histogram uses strict comparisons to the **previous projected chart value**, not the previous native timeframe observation:
+The histogram uses strict comparisons to the **previous bar on the MACD's own resolution**. On the chart's resolution that is simply the previous chart bar. On a higher resolution — a 15m MACD on a 1m chart — it is the previous 15m bar, so every 1m bar inside a 15m bar takes that 15m bar's colour:
 
 | Condition                           | Original Pine v1 color | Hex       |
 | ----------------------------------- | ---------------------- | --------- |
@@ -74,7 +75,7 @@ The original source has no version directive, so it uses legacy Pine v1 `securit
 
 - Higher-resolution historical values appear from the **start** of their source bucket, not only at its closing chart candle.
 - Values are carried through source gaps; no artificial OHLCV candles are inserted.
-- Histogram comparisons happen after projection: unchanged higher-timeframe steps are **yellow**, not repeated aqua/blue/red/maroon bars. Crossings are also evaluated after projection, so dots are not simply copied onto every smaller bar.
+- Histogram colours are judged against the previous higher-timeframe bar, so each projected step keeps its own aqua/blue/red/maroon colour on every smaller bar. **This deliberately departs from the original**: legacy `security()` compares against the previous _chart_ bar, which on a lower chart makes every repeated step "unchanged" and yellow — a histogram that is almost entirely yellow and says nothing about momentum. Crossings are still evaluated after projection, so dots are not simply copied onto every smaller bar.
 - Lower-resolution historical requests select the **first available intrabar**. Realtime requests use the latest available intrabar. A lower-timeframe request cannot display every intrabar event on a coarser chart.
 - For observed realtime higher-timeframe bars, the developing observation is recomputed from the chart close and the preceding native EMA states. Smaller chart bars are **not** appended to the hourly EMA as extra observations. Earlier observed chart closes retain their own developing values within a calculation session.
 - **Open-bar values and dots can change. Recalculation/reload can repaint history.** This is explicitly identified in the settings; these are not confirmed/non-repainting trade alerts.

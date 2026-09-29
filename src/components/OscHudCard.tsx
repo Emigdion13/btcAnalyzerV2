@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -19,8 +19,9 @@ import {
   OSC_HUD_WIDGETS,
   oscHudGeometry,
 } from '../lib/osc-hud'
-import type { OscHudModel, OscHudTrace } from '../lib/osc-hud'
+import type { OscHudBand, OscHudModel, OscHudTrace } from '../lib/osc-hud'
 import { useFloatingWindow, useHistoryDrag } from '../lib/floating-window'
+import { colorRuns } from '../lib/indicator-plot-series'
 import { historyStep } from '../lib/history-pan'
 import type { WindowHistory } from '../lib/history-pan'
 import { formatPrice } from '../lib/market'
@@ -223,6 +224,7 @@ export function OscHudCard({
                     />
                   ))}
                 </g>
+                {model.band ? <OscHudBandShape band={model.band} geometry={geometry} /> : null}
                 {model.histogram && !model.columns ? (
                   <g className="osc-hud-histogram">
                     {model.histogram.values.map((value, index) => {
@@ -309,7 +311,7 @@ export function OscHudCard({
                             cx={geometry.x[model.activeIndex!]}
                             cy={geometry.y(value)}
                             r={2.6}
-                            fill={trace.color}
+                            fill={trace.colors?.[model.activeIndex!] ?? trace.color}
                           />
                         )
                       })}
@@ -407,6 +409,64 @@ export function OscHudCard({
   )
 }
 
+/**
+ * A fill between two series, one quad per bar step, shaded by a gradient pinned to indicator
+ * values — so red sits near the top bound and blue near the bottom at any zoom, as in the pane.
+ */
+function OscHudBandShape({
+  band,
+  geometry,
+}: {
+  band: OscHudBand
+  geometry: ReturnType<typeof oscHudGeometry>
+}) {
+  const id = `osc-hud-band-${useId().replace(/:/g, '')}`
+  const first = band.stops[0]
+  const last = band.stops.at(-1)
+  if (!first || !last || first.value === last.value) return null
+  const quads = []
+  for (let i = 1; i < band.from.length; i++) {
+    const a0 = band.from[i - 1]
+    const a1 = band.from[i]
+    const b0 = band.to[i - 1]
+    const b1 = band.to[i]
+    if (a0 == null || a1 == null || b0 == null || b1 == null) continue
+    const x0 = geometry.x[i - 1]!
+    const x1 = geometry.x[i]!
+    quads.push(
+      <polygon
+        key={i}
+        points={`${x0},${geometry.y(a0)} ${x1},${geometry.y(a1)} ${x1},${geometry.y(b1)} ${x0},${geometry.y(b0)}`}
+        fill={`url(#${id})`}
+      />,
+    )
+  }
+  return (
+    <g className="osc-hud-band">
+      <defs>
+        <linearGradient
+          id={id}
+          x1="0"
+          x2="0"
+          y1={geometry.y(first.value)}
+          y2={geometry.y(last.value)}
+          gradientUnits="userSpaceOnUse"
+        >
+          {band.stops.map((stop) => (
+            <stop
+              key={stop.value}
+              offset={(stop.value - first.value) / (last.value - first.value)}
+              stopColor={stop.color}
+              stopOpacity={stop.opacity}
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      {quads}
+    </g>
+  )
+}
+
 /** One series of the mini chart: a line, the original's dotted marker series, or an area fill. */
 function OscHudTraceShape({
   trace,
@@ -430,7 +490,7 @@ function OscHudTraceShape({
               cx={geometry.x[index]}
               cy={geometry.y(value)}
               r={trace.width / 2}
-              fill={trace.color}
+              fill={trace.colors?.[index] ?? trace.color}
               fillOpacity={activeIndex === index ? 1 : 0.9}
             />
           ),
@@ -487,17 +547,32 @@ function OscHudTraceShape({
       />
     )
   }
-  return (
+  const line = (key: string, coordinates: string[], color: string) => (
     <polyline
+      key={key}
       className="osc-hud-line"
-      points={points.join(' ')}
+      points={coordinates.join(' ')}
       fill="none"
-      stroke={trace.color}
+      stroke={color}
       strokeWidth={trace.width}
       strokeLinejoin="round"
       strokeLinecap="round"
       strokeDasharray={trace.dash}
       vectorEffect="non-scaling-stroke"
     />
+  )
+  if (!trace.colors) return line(trace.title, points, trace.color)
+  // A per-bar coloured line (nQQE across 60/40, MACD across its signal) is one polyline per run
+  // of a colour, so it changes colour on the bar that crossed — the pane's colours, not one flat one.
+  const drawn = trace.values
+    .map((value, index) => (value === null ? null : index))
+    .filter((index): index is number => index !== null)
+  const colors = drawn.map((index) => trace.colors![index] ?? trace.color)
+  return (
+    <g className="osc-hud-colored-line">
+      {colorRuns(colors).map((run) =>
+        line(`${trace.title}-${run.from}`, points.slice(run.from, run.to + 1), run.color),
+      )}
+    </g>
   )
 }

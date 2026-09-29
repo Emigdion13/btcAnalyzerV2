@@ -97,11 +97,17 @@ describe('CM_Ult_MacD_MTF — original calculation, not standard MACD', () => {
     ).toBe(true)
   })
   it('handles empty, short, constant and length-one inputs without NaN', () => {
-    expect(calculateCmMacd([], { ...defaults })).toEqual({ macd: [], signal: [], histogram: [] })
+    expect(calculateCmMacd([], { ...defaults })).toEqual({
+      macd: [],
+      signal: [],
+      histogram: [],
+      histogramPrevious: [],
+    })
     expect(calculateCmMacd(bars([4]), { ...defaults })).toEqual({
       macd: [0],
       signal: [null],
       histogram: [null],
+      histogramPrevious: [null],
     })
     const flat = calculateCmMacd(bars(Array(40).fill(8)), { ...defaults })
     expect(flat.histogram.slice(8)).toEqual(Array(32).fill(0))
@@ -241,10 +247,13 @@ describe('multi-timeframe security() projection', () => {
     const differentChart = chart.map((c) => ({ ...c, close: c.close * 10 }))
     expect(calculateCmMacd(differentChart, settings, context)).toEqual(projected)
   })
-  it('colors and crosses AFTER projection: flat HTF steps turn yellow and dots are not duplicated', () => {
+  it('colours each chart bar by its hourly bar, and crosses AFTER projection without duplicate dots', () => {
     const higher = cmMacdPlots(calculateCmMacd(native, { ...quick }), { ...quick })
     const plots = cmMacdPlots(calculateCmMacd(chart, settings, context), settings)
-    expect(plots[2].colors?.filter((_, i) => i % 4 !== 0).every((c) => c === C.yellow)).toBe(true)
+    // Every 15m bar inside an hour takes that hour's colour — judged against the hour before, not
+    // the 15m bar before, which repeats the same value and would turn every repeat yellow.
+    expect(plots[2].colors).toEqual(chart.map((_, i) => higher[2].colors![Math.floor(i / 4)]))
+    expect(new Set(plots[2].colors).size).toBeGreaterThan(2)
     expect(plots[3].values.filter((v) => v !== null)).toHaveLength(
       higher[3].values.filter((v) => v !== null).length,
     )

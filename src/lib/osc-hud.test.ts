@@ -198,6 +198,49 @@ describe('cmMacdHudModel — the CM window shows the pane’s own numbers', () =
     expect(model.ready).toBe(true)
   })
 
+  it('judges a higher-timeframe histogram against the bar before on its own resolution', () => {
+    // A 15m MACD on a 1m chart: each 15m value repeats on three 1m bars. Judged against the 1m bar
+    // before, every repeat is "unchanged" and yellow; judged against the 15m bar before, it is not.
+    const histogram = [1, 1, 1, 2, 2, 2, 1.5, 1.5, 1.5]
+    const values = cmValues({
+      macd: histogram,
+      signal: histogram.map(() => 0),
+      histogram,
+      histogramPrevious: [null, null, null, 1, 1, 1, 2, 2, 2],
+    })
+    const model = cmMacdHudModel(
+      values,
+      CM_MACD_DEFAULTS,
+      modelInput({ times: times(9), bars: 9, index: 8 }),
+    )
+    expect(model.histogram!.colors).toEqual([
+      ...Array(3).fill(CM_COLORS.yellow),
+      ...Array(3).fill(CM_COLORS.aqua),
+      ...Array(3).fill(CM_COLORS.blue),
+    ])
+  })
+
+  it('reads the MACD in its line colour: lime at or above the signal, red below', () => {
+    const macd = [2, 1, -1, -2]
+    const values = cmValues({ macd, signal: macd.map(() => 0), histogram: macd })
+    const input = modelInput({ times: times(4), bars: 4, index: 3 })
+    const below = cmMacdHudModel(values, CM_MACD_DEFAULTS, input)
+    expect(below.traces.find((trace) => trace.title === 'MACD')!.colors).toEqual([
+      CM_COLORS.lime,
+      CM_COLORS.lime,
+      CM_COLORS.red,
+      CM_COLORS.red,
+    ])
+    expect(below.readouts[0]!.color).toBe(CM_COLORS.red)
+    const above = cmMacdHudModel(values, CM_MACD_DEFAULTS, { ...input, index: 0, hovered: true })
+    expect(above.readouts[0]!.color).toBe(CM_COLORS.lime)
+    // Dynamic colours off: the original's red MACD throughout.
+    const off = cmMacdHudModel(values, { ...CM_MACD_DEFAULTS, macdColorChange: false }, input)
+    expect(new Set(off.traces.find((trace) => trace.title === 'MACD')!.colors)).toEqual(
+      new Set([CM_COLORS.red]),
+    )
+  })
+
   it('paints the histogram with the original four colours, knowing its predecessor', () => {
     // Rising and positive is aqua; rising but negative is maroon; falling above zero is blue.
     const values = cmValues({ histogram: [1, 2, 1, -2, -1, null] })

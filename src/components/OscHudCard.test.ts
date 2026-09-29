@@ -104,6 +104,20 @@ describe('the floating oscillator card', () => {
       expect(fills.has(color)).toBe(true)
   })
 
+  it('turns the MACD line and its dots red below the signal and lime above it', () => {
+    // MACD dips under a flat signal and climbs back: red, then lime from the bar that crossed.
+    const macd = [-2, -1, 1, 2, 1, -1, -2, 1]
+    const values: CmMacdValues = { macd, signal: macd.map(() => 0), histogram: macd }
+    const markup = card(modelOf(values))
+    const line = /<g class="osc-hud-colored-line">(.*?)<\/g>/.exec(markup)?.[1] ?? ''
+    const strokes = [...line.matchAll(/stroke="(#[0-9a-f]+)"/g)].map((match) => match[1])
+    expect(strokes).toEqual([CM_COLORS.red, CM_COLORS.lime, CM_COLORS.red, CM_COLORS.lime])
+    const dots = /<g class="osc-hud-dots">(.*?)<\/g>/.exec(markup)?.[1] ?? ''
+    const fills = [...dots.matchAll(/fill="(#[0-9a-f]+)"/g)].map((match) => match[1])
+    // Up-cross lime, down-cross red, up-cross lime — the pane's dot colours.
+    expect(fills).toEqual([CM_COLORS.lime, CM_COLORS.red, CM_COLORS.lime])
+  })
+
   it('skips a histogram bar with no value instead of drawing it at the baseline', () => {
     const values = cmValues(swing)
     values.histogram = values.histogram.map((value, index) => (index === 3 ? null : value))

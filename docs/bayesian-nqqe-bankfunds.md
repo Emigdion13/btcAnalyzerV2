@@ -100,7 +100,8 @@ These change how it looks next to TradingView, not what it computes:
 ## Floating window
 
 **Alt N**, or **Floating → Bayesian**. Last twenty minutes, same values as the pane. Areas for the
-two probabilities and prime, the nQQE line, and banker columns between the two prices. The scale is
+two probabilities and prime, the nQQE line in the pane's regime colours (lime above 60, red below
+40, yellow between, changing on the bar that crossed), and banker columns between the two prices. The scale is
 the window's own min and max plus padding, not mirrored about zero. Levels 0, the threshold, 25,
 40, 60 and 100 appear only while they sit inside that scale. The readout is Prime, nQQE and Bank
 for the bar under the crosshair. No extra timeframe feed.

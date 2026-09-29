@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -19,7 +19,7 @@ import {
   OSC_HUD_WIDGETS,
   oscHudGeometry,
 } from '../lib/osc-hud'
-import type { OscHudModel, OscHudTrace } from '../lib/osc-hud'
+import type { OscHudBand, OscHudModel, OscHudTrace } from '../lib/osc-hud'
 import { useFloatingWindow, useHistoryDrag } from '../lib/floating-window'
 import { colorRuns } from '../lib/indicator-plot-series'
 import { historyStep } from '../lib/history-pan'
@@ -224,6 +224,7 @@ export function OscHudCard({
                     />
                   ))}
                 </g>
+                {model.band ? <OscHudBandShape band={model.band} geometry={geometry} /> : null}
                 {model.histogram && !model.columns ? (
                   <g className="osc-hud-histogram">
                     {model.histogram.values.map((value, index) => {
@@ -405,6 +406,64 @@ export function OscHudCard({
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * A fill between two series, one quad per bar step, shaded by a gradient pinned to indicator
+ * values — so red sits near the top bound and blue near the bottom at any zoom, as in the pane.
+ */
+function OscHudBandShape({
+  band,
+  geometry,
+}: {
+  band: OscHudBand
+  geometry: ReturnType<typeof oscHudGeometry>
+}) {
+  const id = `osc-hud-band-${useId().replace(/:/g, '')}`
+  const first = band.stops[0]
+  const last = band.stops.at(-1)
+  if (!first || !last || first.value === last.value) return null
+  const quads = []
+  for (let i = 1; i < band.from.length; i++) {
+    const a0 = band.from[i - 1]
+    const a1 = band.from[i]
+    const b0 = band.to[i - 1]
+    const b1 = band.to[i]
+    if (a0 == null || a1 == null || b0 == null || b1 == null) continue
+    const x0 = geometry.x[i - 1]!
+    const x1 = geometry.x[i]!
+    quads.push(
+      <polygon
+        key={i}
+        points={`${x0},${geometry.y(a0)} ${x1},${geometry.y(a1)} ${x1},${geometry.y(b1)} ${x0},${geometry.y(b0)}`}
+        fill={`url(#${id})`}
+      />,
+    )
+  }
+  return (
+    <g className="osc-hud-band">
+      <defs>
+        <linearGradient
+          id={id}
+          x1="0"
+          x2="0"
+          y1={geometry.y(first.value)}
+          y2={geometry.y(last.value)}
+          gradientUnits="userSpaceOnUse"
+        >
+          {band.stops.map((stop) => (
+            <stop
+              key={stop.value}
+              offset={(stop.value - first.value) / (last.value - first.value)}
+              stopColor={stop.color}
+              stopOpacity={stop.opacity}
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      {quads}
+    </g>
   )
 }
 

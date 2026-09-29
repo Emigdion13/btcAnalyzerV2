@@ -388,6 +388,18 @@ export interface OscHudVerdict {
   detail: string
 }
 
+/**
+ * A fill between two series, shaded by a vertical gradient in value space — Trend Pressure's
+ * pulse-to-trend band, red toward the upper bound and blue toward the lower one.
+ */
+export interface OscHudBand {
+  /** The two series the fill spans, sliced to the window like the traces. */
+  from: (number | null)[]
+  to: (number | null)[]
+  /** Gradient stops top to bottom, by indicator value rather than pixel. */
+  stops: { value: number; color: string; opacity: number }[]
+}
+
 export interface OscHudModel {
   kind: OscHudKind
   title: string
@@ -397,6 +409,8 @@ export interface OscHudModel {
   times: number[]
   traces: OscHudTrace[]
   histogram?: OscHudHistogram
+  /** A gradient fill between two series, drawn under every trace. */
+  band?: OscHudBand
   /** Banker fund columns. When set, the card does not also draw a zero-based histogram. */
   columns?: OscHudColumns
   levels: OscHudLevel[]
@@ -1789,6 +1803,14 @@ export function trendPressureHudModel(
           ? ' · bearish cross'
           : ''
   const domain = { min: -112, max: 10 }
+  // The pane's exhaustion marks: hot dots above the upper bound while upper pressure is active or
+  // releasing, cold dots under the lower bound for the lower side.
+  // Every series lives on the 0 to -100 scale, so two decimals say it all; a price formatter
+  // would print a trend of -3e-7 as "-0.00000031" and run it into the next readout.
+  const level = (x: number | null) =>
+    x === null ? '—' : Math.abs(x) < 0.005 ? '0.00' : x.toFixed(2)
+  const marks = (active: boolean[], release: boolean[], value: number) =>
+    cut(active.map((on, i) => (on || release[i] ? value : null)))
   return {
     kind: 'zeiierman-trend-pressure',
     title: OSC_HUD_WIDGETS['zeiierman-trend-pressure'].title,
@@ -1796,33 +1818,66 @@ export function trendPressureHudModel(
     accent: s.trendColor,
     times,
     domain,
+    // Drawn the way the pane draws it: the pulse-to-trend band shaded hot at the top and cold at
+    // the bottom, a thin pulse, the trend, and the core in its bull/bear/neutral colour per bar.
+    band: s.gradientFill
+      ? {
+          from: pulse,
+          to: trend,
+          stops: [
+            { value: 0, color: s.hot, opacity: 0.4 },
+            { value: -30, color: s.hot, opacity: 0 },
+            { value: -70, color: s.cold, opacity: 0 },
+            { value: -100, color: s.cold, opacity: 0.4 },
+          ],
+        }
+      : undefined,
     traces: [
-      { title: 'Z-Pulse', values: pulse, color: s.pulseColor, width: 1.6, style: 'line', z: 3 },
+      { title: 'Z-Pulse', values: pulse, color: s.pulseColor, width: 1, style: 'line', z: 3 },
       { title: 'Z-Trend', values: trend, color: s.trendColor, width: 2, style: 'line', z: 2 },
       {
         title: 'Pressure Core',
         values: core,
         color: s.coreNeutral,
+        colors: cut(v.coreColors),
         width: s.coreWidth,
         style: 'line',
         z: 1,
       },
+      {
+        title: 'Upper Pressure',
+        values: marks(v.upperActive, v.upperRelease, 5),
+        color: s.hot,
+        width: 3,
+        style: 'dots',
+        z: 4,
+      },
+      {
+        title: 'Lower Pressure',
+        values: marks(v.lowerActive, v.lowerRelease, -107),
+        color: s.cold,
+        width: 3,
+        style: 'dots',
+        z: 4,
+      },
     ],
     levels: [
+      { value: 0, color: s.upperLevel, label: '0', dashed: false },
       { value: v.upper, color: s.upperLevel, label: `${v.upper}`, dashed: true },
       { value: -50, color: '#777777', label: '-50', dashed: true },
       { value: v.lower, color: s.lowerLevel, label: `${v.lower}`, dashed: true },
+      { value: -100, color: s.lowerLevel, label: '-100', dashed: false },
     ],
     activeIndex: index >= 0 && index < times.length ? index : null,
     hovered: !!input.hovered,
     bars: times.length,
     spanLabel: oscHudSpan(times.length, input.timeframe),
     readouts: [
-      { label: 'Pulse', value: trim(at(pulse)), color: s.pulseColor },
-      { label: 'Trend', value: trim(at(trend)), color: s.trendColor },
+      { label: 'Pulse', value: level(at(pulse)), color: s.pulseColor },
+      { label: 'Trend', value: level(at(trend)), color: s.trendColor },
       {
         label: 'Core',
-        value: trim(at(core)),
+        value: level(at(core)),
         color: at(core) === null ? s.coreNeutral : v.coreColors[input.index],
       },
     ],

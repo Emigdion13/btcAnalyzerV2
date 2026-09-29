@@ -83,6 +83,46 @@ describe('Zeiierman Trend Pressure', () => {
     expect(hud.traces[0].values).toEqual(values.pulse.slice(-20))
     expect(hud.traces[1].values).toEqual(values.trend.slice(-20))
     expect(hud.traces[2].values).toEqual(values.core.slice(-20))
-    expect(hud.levels.map((level) => level.value)).toEqual([values.upper, -50, values.lower])
+    expect(hud.levels.map((level) => level.value)).toEqual([
+      0,
+      values.upper,
+      -50,
+      values.lower,
+      -100,
+    ])
+  })
+
+  it('draws the window in the pane colours, not three flat lines', () => {
+    const values = calculateTrendPressure(fixture, settings, 0.01)
+    const input = {
+      times: fixture.map((c) => c.time),
+      timeframe: '1m' as const,
+      bars: 40,
+      index: fixture.length - 1,
+    }
+    const hud = trendPressureHudModel(values, settings, input)
+    const trace = (title: string) => hud.traces.find((item) => item.title === title)!
+    // The core takes its bull/bear/neutral colour bar by bar, as the pane plots it.
+    expect(trace('Pressure Core').colors).toEqual(values.coreColors.slice(-40))
+    expect(new Set(trace('Pressure Core').colors).size).toBeGreaterThan(1)
+    // The pulse-to-trend band, hot at the upper bound and cold at the lower one.
+    expect(hud.band?.from).toEqual(trace('Z-Pulse').values)
+    expect(hud.band?.to).toEqual(trace('Z-Trend').values)
+    expect(hud.band?.stops.map((stop) => stop.color)).toEqual([
+      settings.hot,
+      settings.hot,
+      settings.cold,
+      settings.cold,
+    ])
+    expect(trendPressureHudModel(values, { ...settings, gradientFill: false }, input).band).toBe(
+      undefined,
+    )
+    // Exhaustion marks sit where the pane puts them: above 0 for upper, under -100 for lower.
+    const upper = trace('Upper Pressure').values
+    upper.forEach((value, i) => {
+      const bar = fixture.length - 40 + i
+      expect(value).toBe(values.upperActive[bar] || values.upperRelease[bar] ? 5 : null)
+    })
+    expect(trace('Lower Pressure').values.every((v) => v === null || v === -107)).toBe(true)
   })
 })

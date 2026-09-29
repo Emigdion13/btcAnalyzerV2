@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
 
 async function getStored<T>(page: Page, key: string): Promise<T> {
   return page.evaluate((key) => JSON.parse(localStorage.getItem(`atlas.v1.${key}`) || 'null'), key)
@@ -13,6 +14,9 @@ async function draw(page: Page, name: string, twoPoints = true) {
 }
 
 test.beforeEach(async ({ page }) => {
+  // The workspace is under test, not the floating windows: they would take the clicks aimed at the
+  // chart and its legend.
+  await closeFloatingWindows(page)
   await page.goto('/?source=demo')
   await expect(page.locator('canvas').first()).toBeVisible()
 })
@@ -278,6 +282,10 @@ test('imports a validated workspace backup with confirmation', async ({ page }) 
 test('recalculates custom oscillators and inputs across markets and replay', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // Pane legends no longer print the indicator's name; its settings button still carries it.
+  const myLegend = page.locator('.oscillator-legend').filter({
+    has: page.getByRole('button', { name: /^Settings for My oscillator / }),
+  })
   await page
     .getByRole('textbox', { name: 'Indicator script name', exact: true })
     .fill('My oscillator')
@@ -288,28 +296,20 @@ test('recalculates custom oscillators and inputs across markets and replay', asy
     )
   await page.getByRole('button', { name: 'Add to chart', exact: true }).click()
   await expect(page.locator('.editor-status')).toContainText('Compiled successfully')
-  await page.locator('.oscillator-legend').filter({ hasText: 'My oscillator' }).hover()
+  await myLegend.hover()
   await page.getByRole('button', { name: 'Settings for My oscillator 20', exact: true }).click()
   await page.getByRole('spinbutton', { name: 'Length', exact: true }).fill('9')
   await page.getByRole('button', { name: 'Apply changes', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.getByRole('tab', { name: /ETHUSDT/ }).click()
-  await expect(
-    page.locator('.oscillator-legend').filter({ hasText: 'My oscillator' }),
-  ).toBeVisible()
+  await expect(myLegend).toBeVisible()
   await page.getByRole('button', { name: '15m timeframe', exact: true }).click()
-  await expect(
-    page.locator('.oscillator-legend').filter({ hasText: 'My oscillator' }),
-  ).toBeVisible()
+  await expect(myLegend).toBeVisible()
   await page.getByRole('button', { name: 'Replay', exact: true }).click()
   await page.getByRole('button', { name: 'Replay next bar', exact: true }).click()
-  await expect(
-    page.locator('.oscillator-legend').filter({ hasText: 'My oscillator' }),
-  ).toBeVisible()
+  await expect(myLegend).toBeVisible()
   await page.getByRole('button', { name: 'Exit replay', exact: true }).click()
-  await expect(
-    page.locator('.oscillator-legend').filter({ hasText: 'My oscillator' }),
-  ).toBeVisible()
+  await expect(myLegend).toBeVisible()
   expect(errors).toEqual([])
 })
 

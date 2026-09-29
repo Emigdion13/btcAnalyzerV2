@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
+
+// The pane legend sits under the docked floating windows; this suite is about the pane, not them.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 async function demo(page: Page) {
   await page.addInitScript(() => localStorage.setItem('atlas.v1.feed-active', 'false'))

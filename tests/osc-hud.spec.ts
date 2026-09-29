@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
 
 /**
  * The two floating oscillator windows: the last twenty minutes of CM_Ult_MacD_MTF and of
@@ -148,6 +149,8 @@ test('the zoom stepper widens one window without touching the other, and is reme
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // Only the two windows under test: the peek window docks over the CM card's zoom stepper.
+  await closeFloatingWindows(page, ['cm-ult-macd', 'wave-trend'])
   await openDemoChart(page)
   const cm = cmWindow(page)
   await cm.getByRole('button', { name: 'More bars of CM_Ult_MacD_MTF in the window' }).click()
@@ -159,7 +162,8 @@ test('the zoom stepper widens one window without touching the other, and is reme
   await expect(cm).toContainText('16 bars')
   await expect(cm).toContainText('16 min')
   // The floor keeps a readable window: eight bars is as far as it goes, and the button says so.
-  for (let i = 0; i < 4; i++) {
+  // From 16, two 4-bar steps reach it; a disabled button cannot be clicked a third time.
+  for (let i = 0; i < 2; i++) {
     await cm.getByRole('button', { name: 'Fewer bars of CM_Ult_MacD_MTF in the window' }).click()
   }
   await expect(cm.locator('.osc-hud-zoom button').first()).toBeDisabled()
@@ -178,6 +182,8 @@ test('minimizing, dragging and adding the pane all behave like furniture you own
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // Only the window under test: dragged left, WaveTrend would slide under the RSI Divergence card.
+  await closeFloatingWindows(page, ['wave-trend'])
   await openDemoChart(page)
   const wave = waveWindow(page)
 

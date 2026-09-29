@@ -11148,6 +11148,105 @@ button.chile-panel-chip {
   font-size: 8px;
   color: var(--muted);
 }
+.chile-panel-min-odds {
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.chile-panel-min-odds.is-above {
+  color: var(--chile-verde);
+}
+.chile-panel-min-odds.is-below {
+  color: var(--chile-rojo);
+}
+
+/* THIS ROUND: the odds the current round closes above its open. */
+.chile-panel-odds {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 3px 8px;
+  margin: 0 7px 6px;
+  padding: 5px 7px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.chile-panel-odds-label {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.chile-panel-odds-value {
+  justify-self: end;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.chile-panel-odds.is-above .chile-panel-odds-value {
+  color: var(--chile-verde);
+}
+.chile-panel-odds.is-below .chile-panel-odds-value {
+  color: var(--chile-rojo);
+}
+.chile-panel-odds-bar {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(250, 65, 90, 0.35);
+  overflow: hidden;
+}
+.chile-panel-odds-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--chile-verde);
+}
+.chile-panel-odds.is-closed .chile-panel-odds-bar {
+  opacity: 0.45;
+}
+.chile-panel-odds-strike {
+  grid-column: 1 / -1;
+  font-size: 8px;
+  color: var(--muted);
+}
+
+/* The scorecard: how often the call and the odds have been right on this market. */
+.chile-panel-score {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 4px 7px 5px;
+  border-top: 1px solid var(--line-soft);
+}
+.chile-panel-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 3px;
+  border-radius: 4px;
+}
+.chile-panel-score-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.chile-panel-score-row > dt {
+  flex: 1;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.chile-panel-score-row > dd {
+  margin: 0;
+  font-size: 9px;
+  color: var(--text);
+}
+.chile-panel-score-row.is-up > dd {
+  color: var(--chile-verde);
+}
+.chile-panel-score-row.is-down > dd {
+  color: var(--chile-rojo);
+}
 .chile-panel-note {
   margin: 0;
   padding: 0 9px 8px;

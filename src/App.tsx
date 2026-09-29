@@ -2564,6 +2564,7 @@ export default function App() {
                   <ChilePanelWindow
                     ticker={asset.ticker}
                     source={source}
+                    timeframe={timeframe}
                     settings={chilePanelSettings}
                     result={chilePanelModel.result}
                     roundState={chilePanelModel.roundState}

@@ -139,6 +139,8 @@ export interface ChileScoreFactor {
 export interface ChileBarState {
   index: number
   time: number
+  /** The chart bar's close — the live price on the forming bar. */
+  close: number
   /** False while a closed round bar or its ATR is still missing. */
   ready: boolean
   scoreUp: number
@@ -840,15 +842,16 @@ function roundStates(candles: Candle[], resolution: Timeframe): RoundState[] {
 }
 
 function barState(
+  candle: Candle,
   index: number,
-  time: number,
   ready: boolean,
   official: boolean,
   confirmed: boolean,
 ): ChileBarState {
   return {
     index,
-    time,
+    time: candle.time,
+    close: candle.close,
     ready,
     scoreUp: 0,
     scoreDown: 0,
@@ -910,7 +913,7 @@ export function calculateChileReversal(
     ema9: candles.map(() => null),
     ema21: candles.map(() => null),
     vwap: candles.map(() => null),
-    bars: candles.map((candle, i) => barState(i, candle.time, false, false, true)),
+    bars: candles.map((candle, i) => barState(candle, i, false, false, true)),
     last: null,
   })
   if (!candles.length) return empty(false)
@@ -973,7 +976,7 @@ export function calculateChileReversal(
     atrSeries.push(state?.atr ?? null)
 
     if (!state || state.atr === null || !(state.atr > 0)) {
-      bars.push(barState(i, candle.time, false, official, confirmed))
+      bars.push(barState(candle, i, false, official, confirmed))
       continue
     }
     const atr = state.atr
@@ -1143,6 +1146,7 @@ export function calculateChileReversal(
     bars.push({
       index: i,
       time: candle.time,
+      close: candle.close,
       ready: true,
       scoreUp: scored.scoreUp,
       scoreDown: scored.scoreDown,

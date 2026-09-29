@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { bucketStart, INTERVAL_SECONDS } from '../shared/coinbase'
 import type { Interval, HistorySnapshot, MarketQuote, StreamPayload } from '../shared/coinbase'
+import { closeFloatingWindows } from './floating-windows'
+
+// The feed is under test, not the floating windows, which dock over the pane legends it drives.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 const products = ['BTC', 'ETH', 'SOL'].map((base) => ({
   id: `${base}-USD`,

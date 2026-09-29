@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
+
+// The overlay's legend button sits under the docked floating windows; this suite is not about them.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 const NAME = 'Pivot Points High Low & Missed Reversal Levels'
 

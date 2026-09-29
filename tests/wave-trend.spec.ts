@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
+
+// The pane legend sits under the docked floating windows; this suite is about the pane, not them.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 const legend = '.oscillator-legend[data-indicator="wave-trend"]'
 async function demo(page: Page) {

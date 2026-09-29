@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
+
+// The RSI meter is not one of these windows and stays; the others dock over the RSI pane it reads.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 /**
  * The floating RSI meter: the reading as a window instead of a whole oscillator pane.

@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
+
+// The overlay's legend button sits under the docked floating windows; this suite is not about them.
+test.beforeEach(({ page }) => closeFloatingWindows(page))
 
 test('adds, renders, and persists the SR Breaks and Retests overlay', async ({ page }) => {
   const errors: string[] = []

@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bucketStart } from '../../shared/coinbase'
 import { calculateChileReversal } from './chile-reversal'
+import { chileRsiRounds, chileRsiStats, gradeChileRsiExtremes } from './chile-rsi-extreme'
 import {
   chileCallStats,
   chileOddsStats,
@@ -113,6 +114,14 @@ describe('Chile backtest harness', () => {
       )
       const callStats = chileCallStats(calls)
       const oddsStats = chileOddsStats(samples)
+      // The RSI extremes: on a 5m chart the chart is the 5m series they read.
+      const rsiEntries = gradeChileRsiExtremes(
+        result,
+        '5m',
+        '15m',
+        chileRsiRounds(candles, '15m'),
+      ).filter((entry) => entry.roundStart >= gradedFrom)
+      const rsiStats = chileRsiStats(rsiEntries)
 
       // --- the machinery: every grade is the independently aggregated 15m candle -----------------
       const completeRounds = rounds.filter(
@@ -127,6 +136,12 @@ describe('Chile backtest harness', () => {
       for (const sample of samples) {
         const round = byRound.get(sample.roundStart)!
         expect(sample.finishedAbove).toBe(round.close > round.open)
+      }
+      for (const entry of rsiEntries) {
+        const round = byRound.get(entry.roundStart)!
+        expect(entry.open).toBe(round.open)
+        expect(entry.close).toBe(round.close)
+        expect(entry.settledBy).toBe('coinbase')
       }
 
       // --- baselines on the same rounds ------------------------------------------------------------
@@ -165,6 +180,7 @@ describe('Chile backtest harness', () => {
         `  V17 call (next round)   ${pct(callStats.hitRate)} ±${pct(callStats.margin)} · ${callStats.correct}/${callStats.scored} scored, ${callStats.waits} WAIT`,
         `    UP ${callStats.up.correct}/${callStats.up.scored} (${pct(callStats.up.correct / callStats.up.scored)})  DOWN ${callStats.down.correct}/${callStats.down.scored} (${pct(callStats.down.correct / callStats.down.scored)})`,
         `  baseline: repeat the last round ${pct(repeat / decided)} · fade it ${pct(1 - repeat / decided)}`,
+        `  RSI extremes (5m RSI < 30 → UP, > 70 → DOWN at the open)  ${pct(rsiStats.hitRate)} ±${pct(rsiStats.margin)} · ${rsiStats.correct}/${rsiStats.scored} · UP ${rsiStats.up.correct}/${rsiStats.up.scored}  DOWN ${rsiStats.down.correct}/${rsiStats.down.scored}`,
         `  this-round odds         ${pct(oddsStats.hitRate)} favourite won · Brier ${oddsStats.brier!.toFixed(3)} (coin flip 0.250) · n=${oddsStats.graded}`,
         ...[...byLeft.entries()]
           .sort((a, b) => b[0] - a[0])

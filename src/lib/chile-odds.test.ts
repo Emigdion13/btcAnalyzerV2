@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { calculateChileReversal, type ChileBarState } from './chile-reversal'
 import {
+  CHILE_KALSHI_AVERAGE_SECONDS,
   CHILE_ODDS_CAP,
   CHILE_ROUND_SIGMA_ATR,
   chileAboveProbability,
+  chileEffectiveSecondsLeft,
+  chileKalshiStrike,
   chileRoundOdds,
 } from './chile-odds'
 import { normalCdf } from './price-forecast'
@@ -164,5 +167,101 @@ describe('chileRoundOdds', () => {
     expect(odds.strike).toBe(129)
     expect(odds.secondsLeft).toBe(600)
     expect(odds.favoured).toBe('above')
+  })
+
+  it('plays the open when no Kalshi strike is in hand', () => {
+    const odds = chileRoundOdds({
+      bar: bar(ROUND + 60, 0.4),
+      atr: 10,
+      nowSeconds: ROUND + 90,
+      resolution: '15m',
+      chartTimeframe: '1m',
+    })
+    expect(odds.strikeSource).toBe('open')
+    expect(odds.strike).toBe(100)
+  })
+})
+
+describe('chileEffectiveSecondsLeft', () => {
+  it('is the clock itself when the settlement is the last print', () => {
+    expect(chileEffectiveSecondsLeft(600)).toBe(600)
+    expect(chileEffectiveSecondsLeft(600, 0)).toBe(600)
+    expect(chileEffectiveSecondsLeft(0, 60)).toBe(0)
+  })
+
+  it('takes two thirds of the averaging window off while it is still ahead', () => {
+    expect(chileEffectiveSecondsLeft(900, 60)).toBe(860)
+    expect(chileEffectiveSecondsLeft(60, 60)).toBe(20)
+  })
+
+  it('shrinks with the cube of the time left inside the window, and meets the line at its edge', () => {
+    expect(chileEffectiveSecondsLeft(30, 60)).toBeCloseTo(2.5)
+    expect(chileEffectiveSecondsLeft(59.999, 60)).toBeCloseTo(chileEffectiveSecondsLeft(60, 60), 2)
+    expect(chileEffectiveSecondsLeft(10, 60)).toBeLessThan(chileEffectiveSecondsLeft(20, 60))
+  })
+
+  it('makes the same distance a firmer call, most of all in the last minutes', () => {
+    const plain = chileAboveProbability(0.1, 120, 900)
+    const averaged = chileAboveProbability(0.1, 120, 900, CHILE_KALSHI_AVERAGE_SECONDS)
+    expect(averaged).toBeGreaterThan(plain)
+    expect(averaged).toBeCloseTo(chileAboveProbability(0.1, 80, 900))
+    expect(chileAboveProbability(0, 120, 900, 60)).toBe(0.5)
+  })
+})
+
+describe('chileRoundOdds on a Kalshi window', () => {
+  const kalshi = new Map([
+    [ROUND - 900, 101],
+    [ROUND, 102.5],
+  ])
+
+  it("plays Kalshi's strike and its 60-second settlement", () => {
+    // Coinbase says +0.4 ATR from the open at 100; Kalshi's strike is 102.5, so it is +0.15.
+    const odds = chileRoundOdds({
+      bar: bar(ROUND + 5 * 60, 0.4),
+      atr: 10,
+      nowSeconds: ROUND + 5 * 60 + 30,
+      resolution: '15m',
+      chartTimeframe: '1m',
+      kalshi,
+    })
+    expect(odds.strikeSource).toBe('kalshi')
+    expect(odds.strike).toBe(102.5)
+    expect(odds.deltaAtr).toBeCloseTo(0.15)
+    expect(odds.probabilityAbove).toBeCloseTo(
+      chileAboveProbability(0.15, 570, 900, CHILE_KALSHI_AVERAGE_SECONDS),
+    )
+  })
+
+  it('can favour the other side from the one the Coinbase open would', () => {
+    const odds = chileRoundOdds({
+      bar: bar(ROUND + 60, 0.1),
+      atr: 10,
+      nowSeconds: ROUND + 90,
+      resolution: '15m',
+      chartTimeframe: '1m',
+      kalshi,
+    })
+    expect(odds.deltaAtr).toBeCloseTo(-0.15)
+    expect(odds.favoured).toBe('below')
+  })
+
+  it('falls back to the open without a published strike, an ATR or a 15-minute round', () => {
+    const base = {
+      bar: bar(ROUND + 60, 0.4),
+      atr: 10,
+      nowSeconds: ROUND + 90,
+      resolution: '15m' as const,
+      chartTimeframe: '1m' as const,
+    }
+    expect(chileRoundOdds({ ...base, kalshi: new Map([[ROUND - 900, 101]]) }).strikeSource).toBe(
+      'open',
+    )
+    expect(chileRoundOdds({ ...base, atr: null, kalshi }).strikeSource).toBe('open')
+    expect(chileRoundOdds({ ...base, atr: 0, kalshi }).strikeSource).toBe('open')
+    expect(chileKalshiStrike(kalshi, ROUND, 3600)).toBeNull()
+    expect(chileKalshiStrike(new Map([[ROUND, Number.NaN]]), ROUND, 900)).toBeNull()
+    const open = chileRoundOdds({ ...base, kalshi: null })
+    expect(open.probabilityAbove).toBeCloseTo(chileAboveProbability(0.4, 810, 900))
   })
 })

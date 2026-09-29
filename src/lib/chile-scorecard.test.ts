@@ -5,7 +5,7 @@ import {
   type ChileCall,
   type ChileReversalResult,
 } from './chile-reversal'
-import { chileAboveProbability } from './chile-odds'
+import { CHILE_KALSHI_AVERAGE_SECONDS, chileAboveProbability } from './chile-odds'
 import {
   CHILE_JOURNAL_MAX_CALLS,
   CHILE_JOURNAL_MAX_PROFILES,
@@ -181,6 +181,62 @@ describe('gradeChileOdds', () => {
       bar(R2, 104, 105, { confirmed: false }),
     ]
     expect(gradeChileOdds(resultOf(bars), '5m', '15m')).toEqual([])
+  })
+
+  it("plays a Kalshi window against Kalshi's strike and grades it on Kalshi's settlement", () => {
+    // Coinbase says R0 finished flat and R1 up; Kalshi's own record says otherwise.
+    const bars = [...round(R0, 100, [101, 99, 100]), ...round(R1, 103, [102, 104, 104])].map(
+      (b, index) => ({ ...b, index }),
+    )
+    const result = { ...resultOf(bars), atr: bars.map(() => 10) }
+    const kalshi = new Map([
+      [R0, 100.5], // R0's strike
+      [R1, 100.5], // R0 settles exactly on it — a tie resolves up — and R1 strikes there
+      [R2, 100], // R1 settles below its strike
+    ])
+    expect(gradeChileOdds(result, '5m', '15m', kalshi)).toEqual([
+      {
+        roundStart: R0,
+        secondsLeft: 600,
+        probabilityAbove: chileAboveProbability(0.05, 600, 900, CHILE_KALSHI_AVERAGE_SECONDS),
+        finishedAbove: true,
+      },
+      {
+        roundStart: R0,
+        secondsLeft: 300,
+        probabilityAbove: chileAboveProbability(-0.15, 300, 900, CHILE_KALSHI_AVERAGE_SECONDS),
+        finishedAbove: true,
+      },
+      {
+        roundStart: R1,
+        secondsLeft: 600,
+        probabilityAbove: chileAboveProbability(0.15, 600, 900, CHILE_KALSHI_AVERAGE_SECONDS),
+        finishedAbove: false,
+      },
+      {
+        roundStart: R1,
+        secondsLeft: 300,
+        probabilityAbove: chileAboveProbability(0.35, 300, 900, CHILE_KALSHI_AVERAGE_SECONDS),
+        finishedAbove: false,
+      },
+    ])
+  })
+
+  it('leaves out a Kalshi window whose strike or settlement Kalshi has not published', () => {
+    const bars = [...round(R0, 100, [101, 99, 102]), ...round(R1, 103, [102, 104, 101])].map(
+      (b, index) => ({ ...b, index }),
+    )
+    const result = { ...resultOf(bars), atr: bars.map(() => 10) }
+    // R0 has a strike but no settlement yet; R1 has a settlement but no strike.
+    expect(gradeChileOdds(result, '5m', '15m', new Map([[R0, 100]]))).toEqual([])
+    expect(gradeChileOdds(result, '5m', '15m', new Map([[R2, 100]]))).toEqual([])
+    // Without an ATR there is no distance to play either.
+    const kalshi = new Map([
+      [R0, 100],
+      [R1, 101],
+    ])
+    expect(gradeChileOdds({ ...result, atr: [] }, '5m', '15m', kalshi)).toEqual([])
+    expect(gradeChileOdds(result, '5m', '15m', kalshi)).toHaveLength(2)
   })
 })
 

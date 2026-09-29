@@ -7,8 +7,22 @@ import {
   type ChileLevelState,
   type ChileReversalResult,
 } from '../lib/chile-reversal'
+import type { ChileKalshiView } from '../lib/chile-kalshi'
 import { chileRoundOdds, type ChileRoundOdds } from '../lib/chile-odds'
 import { chilePanelSnapshot } from '../lib/chile-panel'
+import {
+  CHILE_RSI_EXTREME_HIGH,
+  CHILE_RSI_EXTREME_LOW,
+  chileRsiCostToRecord,
+  chileRsiJournalKey,
+  chileRsiStats,
+  gradeChileRsiExtremes,
+  mergeChileRsiEntries,
+  recordChileRsiCost,
+  recordChileRsiEntries,
+  sanitizeChileRsiJournal,
+  type ChileRsiRound,
+} from '../lib/chile-rsi-extreme'
 import {
   chileCallStats,
   chileOddsStats,
@@ -25,6 +39,8 @@ import { useLocalState } from '../lib/storage'
 
 const POSITION_KEY = 'chile-panel-pos'
 const SCORECARD_KEY = 'chile-scorecard'
+const RSI_JOURNAL_KEY = 'chile-rsi-journal'
+const NO_RSI_ROUNDS: ReadonlyMap<number, ChileRsiRound> = new Map()
 
 const percent = (value: number) => `${Math.round(value * 100)}%`
 
@@ -63,6 +79,8 @@ const VOLUME_TEXT = { normal: 'NORMAL', high: 'HIGH', 'very-high': 'VERY HIGH' }
 
 export interface ChilePanelWindowProps {
   ticker: string
+  /** The product id (e.g. BTC-USD) the RSI-extremes journal is kept under. */
+  product?: string
   source: DataSource
   /** The chart timeframe the engine ran on: it times the odds and grades the scorecard. */
   timeframe: Timeframe
@@ -70,6 +88,10 @@ export interface ChilePanelWindowProps {
   settings: ChileReversalSettings
   /** The engine's own result for these candles — the same one the overlay draws. */
   result: ChileReversalResult
+  /** The 5m RSI at each round open (`chileRsiRounds`); empty off 15-minute rounds. */
+  rsiRounds?: ReadonlyMap<number, ChileRsiRound>
+  /** Kalshi's market on this round, when it is one of its crypto 15-minute windows. */
+  kalshi?: ChileKalshiView | null
   /** The round resolution's feed state; a feed that has not answered is reported, not guessed. */
   roundState: ConnectionState
   momentumState: ConnectionState
@@ -91,15 +113,20 @@ export interface ChilePanelWindowProps {
  * overlay engine itself, so the panel can never cheer a marker that is not on the chart. The call
  * is a summary of evidence that has already printed, not a forecast, and the window says so.
  *
- * Beside the call it shows the odds that THIS round finishes above its open (`lib/chile-odds.ts`)
- * and a scorecard of how both have done on this market (`lib/chile-scorecard.ts`).
+ * Beside the call it shows the odds that THIS round finishes above its strike (`lib/chile-odds.ts`)
+ * — with Kalshi's own price beside them on a Kalshi window — the RSI extreme at the round's open
+ * when there is one (`lib/chile-rsi-extreme.ts`), and a scorecard of how all three have done on
+ * this market (`lib/chile-scorecard.ts`).
  */
 export function ChilePanelWindow({
   ticker,
+  product = ticker,
   source,
   timeframe,
   settings,
   result,
+  rsiRounds = NO_RSI_ROUNDS,
+  kalshi = null,
   roundState,
   momentumState,
   hasIndicator,
@@ -127,16 +154,24 @@ export function ChilePanelWindow({
   // The odds run on the chart markers' clock: wall time on a live feed, the data's own edge on
   // demo history, which is pinned away from the wall clock.
   const chartSeconds = INTERVAL_SECONDS[timeframe] ?? 60
+  const boundaries = kalshi?.boundaries ?? null
   const odds = useMemo(
     () =>
       chileRoundOdds({
         bar: result.last,
+        atr: result.last ? result.atr[result.last.index] : null,
         nowSeconds: result.last ? chileMarkerNowSeconds(now, result.last.time, chartSeconds) : now,
         resolution: settings.resolution,
         chartTimeframe: timeframe,
+        kalshi: boundaries,
       }),
-    [result.last, now, chartSeconds, settings.resolution, timeframe],
+    [result.last, result.atr, now, chartSeconds, settings.resolution, timeframe, boundaries],
   )
+  // Kalshi's price for this very round — never the previous window's lingering one.
+  const market =
+    kalshi?.market && odds.roundStart !== null && kalshi.market.open === odds.roundStart
+      ? kalshi.market
+      : null
 
   const demo = source === 'demo'
 
@@ -147,8 +182,8 @@ export function ChilePanelWindow({
     [result, timeframe, settings.resolution],
   )
   const oddsStats = useMemo(
-    () => chileOddsStats(gradeChileOdds(result, timeframe, settings.resolution)),
-    [result, timeframe, settings.resolution],
+    () => chileOddsStats(gradeChileOdds(result, timeframe, settings.resolution, boundaries)),
+    [result, timeframe, settings.resolution, boundaries],
   )
   const [storedJournal, setStoredJournal] = useLocalState<unknown>(SCORECARD_KEY, null)
   const journal = useMemo(() => sanitizeChileScorecardJournal(storedJournal), [storedJournal])
@@ -167,6 +202,34 @@ export function ChilePanelWindow({
       ),
     [demo, gradedCalls, journal, profileKey],
   )
+
+  // The RSI extremes: the reading at this round's open, every graded signal, and the price Kalshi
+  // charged for its side a minute in. Real markets only, like the V17 journal.
+  const rsiNow = odds.roundStart === null ? undefined : rsiRounds.get(odds.roundStart)
+  const gradedRsi = useMemo(
+    () => gradeChileRsiExtremes(result, timeframe, settings.resolution, rsiRounds, boundaries),
+    [result, timeframe, settings.resolution, rsiRounds, boundaries],
+  )
+  const [storedRsiJournal, setStoredRsiJournal] = useLocalState<unknown>(RSI_JOURNAL_KEY, null)
+  const rsiJournal = useMemo(() => sanitizeChileRsiJournal(storedRsiJournal), [storedRsiJournal])
+  const rsiKey = chileRsiJournalKey(source, product)
+  const rsiCost = chileRsiCostToRecord(rsiNow, market, now)
+  const rsiCostRound = rsiCost === null ? null : (rsiNow?.roundStart ?? null)
+  useEffect(() => {
+    if (demo) return
+    let next = recordChileRsiEntries(rsiJournal, rsiKey, gradedRsi, Date.now())
+    if (rsiCost !== null && rsiCostRound !== null)
+      next = recordChileRsiCost(next, rsiKey, rsiCostRound, rsiCost, Date.now())
+    if (next !== rsiJournal) setStoredRsiJournal(next)
+  }, [demo, rsiJournal, rsiKey, gradedRsi, rsiCost, rsiCostRound, setStoredRsiJournal])
+  const rsiStats = useMemo(() => {
+    const saved = demo ? undefined : rsiJournal.markets[rsiKey]
+    return chileRsiStats(
+      saved ? mergeChileRsiEntries(saved.entries, gradedRsi) : gradedRsi,
+      saved?.costs,
+    )
+  }, [demo, rsiJournal, rsiKey, gradedRsi])
+
   const roundUnfed = result.missingFeed
   const degraded = !demo && (roundState !== 'live' || momentumState !== 'live')
   const dotColor =
@@ -250,8 +313,22 @@ export function ChilePanelWindow({
   const topFactors = snapshot.factors.slice(0, 6)
 
   const oddsShown = odds.state !== 'unavailable' && odds.probabilityAbove !== null
-  const oddsTitle = oddsShown
-    ? `Odds this ${settings.resolution} round closes above its open (${formatPrice(odds.strike)}): the move from the open against the time left, as a random walk fitted on 120 days of Coinbase BTC-USD. The V17 score is not in it — once distance and time were known it added nothing.`
+  const kalshiStrike = odds.strikeSource === 'kalshi'
+  const oddsTitle = !oddsShown
+    ? ''
+    : kalshiStrike
+      ? `Odds this ${settings.resolution} round settles above Kalshi's strike (${formatPrice(odds.strike)}, the 60-second index average ending at the open): the distance from the strike against the time left, with Kalshi's 60-second settlement average taken into account, as a random walk fitted on Coinbase BTC-USD. Kalshi's own price has been the better forecaster: over 60 days its Brier score was 0.158, these odds' 0.162. No indicator reading tested added anything to them.`
+      : `Odds this ${settings.resolution} round closes above its open (${formatPrice(odds.strike)}): the move from the open against the time left, as a random walk fitted on 120 days of Coinbase BTC-USD. No indicator reading tested — the V17 score included — added anything once distance and time were known.`
+  const marketTitle = market
+    ? `Kalshi's price for this round, as its app shows it: the last trade, clamped to the bid and ask. Buying UP costs ${market.upCost === null ? '—' : `${Math.round(market.upCost * 100)}¢`} and DOWN ${market.downCost === null ? '—' : `${Math.round(market.downCost * 100)}¢`} per $1 of payout, taker fee included.${market.stale ? ' Not refreshed for a few seconds.' : ''}`
+    : ''
+  const rsiSide = rsiNow?.side ?? null
+  const rsiTitle = rsiNow
+    ? `The 5m RSI(14) closed at ${rsiNow.rsi.toFixed(1)} as this round opened${
+        rsiSide
+          ? ` — ${rsiSide === 'up' ? `below ${CHILE_RSI_EXTREME_LOW}` : `above ${CHILE_RSI_EXTREME_HIGH}`}, so it calls ${rsiSide.toUpperCase()}. Over 1,292 Kalshi rounds (April–September 2026) this round finished the RSI's way 56.6% of the time (±2.7), against a 52.3% first-minute price: promising, not proven. The RSI EXTREMES row keeps the live record.`
+          : '.'
+      }`
     : ''
 
   /** Coloured only when the 95% interval clears a coin flip; a short record reads neutral. */
@@ -267,6 +344,16 @@ export function ChilePanelWindow({
     oddsStats.hitRate === null
       ? null
       : 1.96 * Math.sqrt((oddsStats.hitRate * (1 - oddsStats.hitRate)) / oddsStats.graded)
+  // Priced, the RSI record is judged against what its side cost; unpriced, against a coin flip.
+  const rsiTone =
+    rsiStats.edge !== null && rsiStats.edgeMargin !== null
+      ? rsiStats.edge - rsiStats.edgeMargin > 0
+        ? 'is-up'
+        : rsiStats.edge + rsiStats.edgeMargin < 0
+          ? 'is-down'
+          : ''
+      : verdictTone(rsiStats.hitRate, rsiStats.margin)
+  const cents = (value: number) => `${Math.round(value * 100)}¢`
 
   return (
     <section
@@ -429,8 +516,31 @@ export function ChilePanelWindow({
                     <i style={{ width: percent(odds.probabilityAbove!) }} />
                   </span>
                   <span className="chile-panel-odds-strike mono">
-                    open {formatPrice(odds.strike)} · {odds.deltaAtr! >= 0 ? '+' : ''}
+                    {kalshiStrike ? 'Kalshi strike' : 'open'} {formatPrice(odds.strike)} ·{' '}
+                    {odds.deltaAtr! >= 0 ? '+' : ''}
                     {odds.deltaAtr!.toFixed(2)} ATR
+                  </span>
+                  {market && market.upPct !== null && odds.state === 'live' ? (
+                    <span
+                      className={`chile-panel-odds-market mono${market.stale ? ' is-stale' : ''}`}
+                      data-testid="chile-panel-market"
+                      title={marketTitle}
+                    >
+                      KALSHI UP {market.upPct}% · DOWN {100 - market.upPct}%
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {rsiSide ? (
+                <div
+                  className={`chile-panel-rsi is-${rsiSide}`}
+                  data-testid="chile-panel-rsi"
+                  title={rsiTitle}
+                >
+                  <span className="chile-panel-rsi-label">RSI EXTREME</span>
+                  <span className="chile-panel-rsi-value mono">
+                    5m RSI {Math.round(rsiNow!.rsi)} at open → {rsiSide.toUpperCase()}
                   </span>
                 </div>
               ) : null}
@@ -492,8 +602,10 @@ export function ChilePanelWindow({
                   data-testid="chile-panel-score-odds"
                   title={
                     oddsStats.hitRate === null
-                      ? 'No finished round in the loaded history to grade the odds against yet.'
-                      : `Every closed ${timeframe} bar's this-round odds in the loaded history, graded against how its round finished: the favoured side won ${oddsStats.correct} of ${oddsStats.graded}. Brier ${oddsStats.brier!.toFixed(3)} — a coin flip scores 0.250, lower is better.`
+                      ? boundaries
+                        ? 'No round in the loaded history with a strike and a settlement Kalshi has published yet.'
+                        : 'No finished round in the loaded history to grade the odds against yet.'
+                      : `Every closed ${timeframe} bar's this-round odds in the loaded history, graded against how its round ${boundaries ? 'settled on Kalshi (its published strike and settlement)' : 'finished'}: the favoured side won ${oddsStats.correct} of ${oddsStats.graded}. Brier ${oddsStats.brier!.toFixed(3)} — a coin flip scores 0.250, lower is better.`
                   }
                 >
                   <dt>THIS-ROUND ODDS</dt>
@@ -503,6 +615,32 @@ export function ChilePanelWindow({
                       : `${percent(oddsStats.hitRate)} right · ${oddsStats.graded}`}
                   </dd>
                 </div>
+                {settings.resolution === '15m' ? (
+                  <div
+                    className={`chile-panel-score-row ${rsiTone}`}
+                    data-testid="chile-panel-score-rsi"
+                    title={
+                      rsiStats.hitRate === null
+                        ? `No graded RSI extreme yet: a round whose open finds the 5m RSI(14) below ${CHILE_RSI_EXTREME_LOW} is called UP, above ${CHILE_RSI_EXTREME_HIGH} DOWN — about seven a day. Each is graded when its round settles.`
+                        : `Rounds that opened on a 5m RSI extreme, graded against how they settled: ${rsiStats.correct} of ${rsiStats.scored} right, ±${percent(rsiStats.margin!)} at 95%. UP ${rsiStats.up.correct}/${rsiStats.up.scored}, DOWN ${rsiStats.down.correct}/${rsiStats.down.scored}.${
+                            rsiStats.priced
+                              ? ` ${rsiStats.priced} were priced a minute into the round: they won ${rsiStats.pricedCorrect} and cost ${cents(rsiStats.averageCost!)} per $1 on average, fee included — ${rsiStats.edge! >= 0 ? '+' : '−'}${cents(Math.abs(rsiStats.edge!))} a signal, ±${cents(rsiStats.edgeMargin!)}. Green only once that clears zero at 95%.`
+                              : ' None priced yet: a price is recorded when the window is open a minute into a signal round on a Kalshi pair.'
+                          }${demo ? ' Synthetic data — not saved.' : ' Saved on this device per market.'}`
+                    }
+                  >
+                    <dt>RSI EXTREMES</dt>
+                    <dd className="mono">
+                      {rsiStats.hitRate === null
+                        ? '—'
+                        : `${percent(rsiStats.hitRate)} right · ${rsiStats.correct}/${rsiStats.scored}${
+                            rsiStats.averageCost === null
+                              ? ''
+                              : ` · paid ${cents(rsiStats.averageCost)}`
+                          }`}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             </>
           )}
@@ -535,8 +673,12 @@ export function ChilePanelWindow({
               scores nothing at all. It is a summary of what has already printed, not a forecast,
               and it places no orders. On 120 days of Coinbase BTC-USD it called the next round
               right 47% of the time — check the scorecard before leaning on it. THIS ROUND is
-              separate: the odds the current round closes above its open, from how far price has
-              moved and how much time is left.
+              separate: the odds the current round settles above its strike, from how far price has
+              moved and how much time is left — on a Kalshi window against Kalshi&apos;s strike and
+              settlement rule, with Kalshi&apos;s own price beside them, which has been the better
+              forecaster. RSI EXTREME marks a round that opened with the 5m RSI below{' '}
+              {CHILE_RSI_EXTREME_LOW} or above {CHILE_RSI_EXTREME_HIGH}, the one indicator reading
+              that has leaned the right way; its record, and what its side cost, is kept below.
             </p>
           ) : null}
         </>

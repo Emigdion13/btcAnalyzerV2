@@ -7,12 +7,14 @@
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { ChilePanelWindow } from './ChilePanelWindow'
 import type { ChilePanelWindowProps } from './ChilePanelWindow'
+import type { ChileKalshiMarket } from '../lib/chile-kalshi'
 import { calculateChileReversal } from '../lib/chile-reversal'
 import type { ChileReversalResult } from '../lib/chile-reversal'
+import type { ChileRsiRound } from '../lib/chile-rsi-extreme'
 import { CHILE_REVERSAL_DEFAULTS, type Candle } from '../lib/types'
 
 const candle = (
@@ -212,6 +214,118 @@ describe('ChilePanelWindow · this round and the scorecard', () => {
     localStorage.clear()
     const unmountDemo = mounted({ source: 'demo' })
     expect(localStorage.getItem('atlas.v1.chile-scorecard')).toBeNull()
+    unmountDemo()
+  })
+})
+
+describe('ChilePanelWindow · Kalshi and the RSI extremes', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.useRealTimers()
+  })
+
+  // The loaded history holds two finished rounds (29700 and 30600) and the one now opening at 31500.
+  const market = (overrides: Partial<ChileKalshiMarket> = {}): ChileKalshiMarket => ({
+    open: LAST_TIME,
+    upPct: 61,
+    upCost: 0.63,
+    downCost: 0.41,
+    stale: false,
+    ...overrides,
+  })
+  const kalshi = (boundaries: [number, number][], m: ChileKalshiMarket | null = market()) => ({
+    boundaries: new Map(boundaries),
+    market: m,
+  })
+  const reading = (roundStart: number, rsi: number): [number, ChileRsiRound] => [
+    roundStart,
+    { roundStart, rsi, side: rsi < 30 ? 'up' : rsi > 70 ? 'down' : null },
+  ]
+
+  it("plays Kalshi's strike and shows Kalshi's own price beside the odds", () => {
+    const html = render({ kalshi: kalshi([[LAST_TIME, 138.5]]) })
+    expect(html).toContain('Kalshi strike 138.5')
+    expect(html).toContain('KALSHI UP 61% · DOWN 39%')
+    expect(html).toContain('the better forecaster')
+  })
+
+  it("never shows another round's price", () => {
+    const html = render({ kalshi: kalshi([[LAST_TIME, 138.5]], market({ open: LAST_TIME - 900 })) })
+    expect(html).not.toContain('data-testid="chile-panel-market"')
+  })
+
+  it('plays the open when Kalshi has not published this round yet', () => {
+    const html = render({ kalshi: kalshi([], null) })
+    expect(html).toContain('open 139')
+    expect(html).not.toContain('Kalshi strike')
+  })
+
+  it("grades the odds on Kalshi's published rounds only", () => {
+    // Kalshi's record covers the round at 29700 (strike at its open, settlement at its close).
+    const html = render({
+      kalshi: kalshi([
+        [29700, 125.2],
+        [30600, 139.9],
+      ]),
+    })
+    expect(html).toMatch(/>\d+% right · 14</)
+    expect(html).toContain('settled on Kalshi')
+    const none = render({ kalshi: kalshi([[LAST_TIME, 138.5]]) })
+    expect(none).toContain('with a strike and a settlement Kalshi has published yet')
+  })
+
+  it('marks a round that opened on an RSI extreme, and keeps its record', () => {
+    const html = render({ rsiRounds: new Map([reading(LAST_TIME, 24.6), reading(29700, 78)]) })
+    expect(html).toContain('data-testid="chile-panel-rsi"')
+    expect(html).toContain('5m RSI 25 at open → UP')
+    expect(html).toContain('>RSI EXTREMES</dt>')
+    // The round at 29700 rose on Coinbase: a DOWN call graded wrong.
+    expect(html).toContain('>0% right · 0/1<')
+  })
+
+  it('shows no marker when the open was not extreme, and no RSI record off 15-minute rounds', () => {
+    const calm = render({ rsiRounds: new Map([reading(LAST_TIME, 50)]) })
+    expect(calm).not.toContain('data-testid="chile-panel-rsi"')
+    expect(calm).toContain('>RSI EXTREMES</dt>')
+    const hourly = render({
+      settings: { ...CHILE_REVERSAL_DEFAULTS, resolution: '1h' },
+      timeframe: '5m',
+    })
+    expect(hourly).not.toContain('RSI EXTREMES')
+  })
+
+  const mounted = (overrides: Partial<ChilePanelWindowProps>) => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(createElement(ChilePanelWindow, props(overrides))))
+    return () => {
+      act(() => root.unmount())
+      container.remove()
+    }
+  }
+
+  it("saves each signal's grade and the price its side cost a minute into the round", () => {
+    // Ninety seconds into the round that opened on the extreme.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date((LAST_TIME + 90) * 1000))
+    const rsiRounds = new Map([reading(LAST_TIME, 24.6), reading(29700, 78)])
+    const unmount = mounted({ product: 'BTC-USD', rsiRounds, kalshi: kalshi([[LAST_TIME, 138.5]]) })
+    const saved = JSON.parse(localStorage.getItem('atlas.v1.chile-rsi-journal') ?? 'null')
+    unmount()
+    expect(saved.version).toBe(1)
+    const journal = saved.markets['coinbase|BTC-USD']
+    expect(journal.costs).toEqual({ [LAST_TIME]: 0.63 })
+    expect(journal.entries).toHaveLength(1)
+    expect(journal.entries[0]).toMatchObject({ roundStart: 29700, side: 'down', outcome: 'up' })
+
+    localStorage.clear()
+    const unmountDemo = mounted({
+      source: 'demo',
+      rsiRounds,
+      kalshi: kalshi([[LAST_TIME, 138.5]]),
+    })
+    expect(localStorage.getItem('atlas.v1.chile-rsi-journal')).toBeNull()
     unmountDemo()
   })
 })

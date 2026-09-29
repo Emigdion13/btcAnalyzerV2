@@ -127,29 +127,60 @@ The engine is kept exactly as ported — it is a published script, and the chart
 labels — but the window no longer lets it stand alone. It adds the odds below, and a scorecard so
 the call's record is always on screen.
 
+### Every other indicator, too
+
+A second one-off analysis asked the same of everything else Atlas ships: 38 readings from RSI,
+MACD, the EMAs, Bollinger, VWAP, volume, WaveTrend, CM_Ult_MacD, Williams VixFix, Trend Pressure,
+TMO, TUX EMA + SuperTrend, Bayesian/nQQE/BankFunds, the PAC channel and the V17 score itself, each
+computed with the production code on 180 days of Coinbase BTC-USD 5m (April–September 2026). Each
+was checked first for repainting — recomputed on the tape cut off at ten points, its value at the
+cut had to match the full run — and none repaints.
+
+- **Next round.** Read the way it reads, every trend and momentum reading was right 47–49% of the
+  time: the same mean reversion that sinks V17. A model of all 38 fitted on April to mid-July scored
+  51.3% on mid-July to September — nothing a fee would leave standing.
+- **This round.** None added anything to the distance-and-clock odds below: every out-of-sample
+  log-loss gain sat inside its noise, and all 38 together scored slightly worse than the odds alone.
+
+The one exception is the reversion at its sharpest, which the window now marks: see
+[RSI extremes](#rsi-extremes).
+
 ## This round: the odds
 
 The V17 call is about the **next** round. Once a round is under way, the question a 15-minute
-up/down contract asks is about **this** one: does it close above the price it opened at? The
-**THIS ROUND** line answers it from the two things that decide it — how far price has moved from
-the open, and how much time is left for it to come back:
+up/down contract asks is about **this** one: does it settle above the price it is played against?
+The **THIS ROUND** line answers it from the two things that decide it — how far price has moved
+from the strike, and how much time is left for it to come back:
 
 ```
-P(close > open) = Φ(Δ / (σ · √(τ / S)))
+P(settle > strike) = Φ(Δ / (σ · √(τ / S)))
 ```
 
-`Δ` is the engine's `round.move` (close minus the round open, in round ATR), `τ` the seconds left,
-`S` the round length, and `σ = 0.63` one round's close-to-close spread in round ATR — a
-maximum-likelihood fit on the same tape (0.61 on a 5m chart, 0.65 on a 1m chart). While the round is
-open the odds are capped at 97/3: the walk is slightly overconfident in its tails, and the last
-Coinbase trade is not the print a contract settles on. Once the round has closed, the line reads
-`CLOSED ABOVE` or `CLOSED BELOW` until the next round's first bar arrives.
+`Δ` is the distance from the strike in round ATR, `τ` the seconds of movement still to come, `S` the
+round length, and `σ = 0.63` one round's close-to-close spread in round ATR — a maximum-likelihood
+fit on the June–September tape (0.61 on a 5m chart, 0.65 on a 1m chart). While the round is open
+the odds are capped at 97/3: the walk is slightly overconfident in its tails. Once the round has
+closed, the line reads `CLOSED ABOVE` or `CLOSED BELOW` until the next round's first bar arrives.
 
-The V17 score is deliberately **not** in the formula. In the same one-off analysis, a logistic fit on
-23,037 mid-round bar closes
-gave it a small negative weight once `Δ` and `τ` were known, and it improved the out-of-sample log
-loss by 0.0007 — nothing. When the V17 call disagreed with the side of the open, the round finished
-the V17 way only 30% of the time with 10 minutes left and 20% with 5.
+What the strike and the settlement are depends on the round:
+
+- **A Kalshi window** — a 15-minute round on a real feed of a coin Kalshi lists (BTC, ETH, SOL,
+  XRP, DOGE, HYPE, BNB), charted at 15m or finer — is played the way Kalshi settles it. The strike
+  is Kalshi's published `floor_strike`, the 60-second BRTI average ending at the open, labelled
+  `Kalshi strike` in the window; the Coinbase open missed it by $12.60 on average for BTC. The
+  settlement is the 60-second average ending at the close, so the last minute moves the result
+  like a third of a minute would: `τ` is the clock less 40 seconds, and inside the final minute
+  `τ³ / (3 · 60²)` (the part of the average already printed is taken at the current price, since a
+  chart bar cannot resolve seconds). Until Kalshi has published the strike — about a second into the
+  window — the round is played against its open.
+- **Anything else** — another round length, a pair Kalshi does not list, the metal ladders (which
+  settle on a Pyth one-minute close, not an average), demo data — is played against the round's own
+  open, to its last print: `Δ` is the engine's `round.move`.
+
+The V17 score is deliberately **not** in the formula. In the first one-off analysis, a logistic fit
+on 23,037 mid-round bar closes gave it a small negative weight once `Δ` and `τ` were known, and it
+improved the out-of-sample log loss by 0.0007 — nothing. When the V17 call disagreed with the side
+of the open, the round finished the V17 way only 30% of the time with 10 minutes left and 20% with 5. None of the other indicators did better (see above).
 
 | 120 days, 5m chart | Odds favourite won | Brier (coin flip 0.250) |
 | ------------------ | ------------------ | ----------------------- |
@@ -162,31 +193,106 @@ their open 78.9% of the time, rounds put at 30–40% finished above 29.7% of the
 on this same tape; fitted on its first 70% alone, the last 30% calibrated just as well (70–80%
 predictions finished above 75.8% of the time).
 
+### Against Kalshi's own price
+
+A 76% favourite is only worth something if the market has not already priced it — and every trader
+on the contract can see the distance and the clock. A third one-off analysis pulled Kalshi's
+minute-by-minute bid and ask for 5,719 KXBTC15M windows (30 July – 29 September 2026), set the odds
+beside the market's mid at the end of each minute, and graded both on Kalshi's own result. Fitted
+where anything was fitted on the first 30 days, scored on the last 30 (39,142 market-minutes):
+
+| Last 30 days                             | Favourite won | Brier      |
+| ---------------------------------------- | ------------- | ---------- |
+| **Kalshi's market price**                | **75.7%**     | **0.1583** |
+| The odds against the Coinbase open       | 75.0%         | 0.1644     |
+| + Kalshi's strike                        | 75.5%         | 0.1619     |
+| + the 60-second settlement average       | 75.5%         | 0.1615     |
+| Realised volatility instead of round ATR | 75.5%         | 0.1625     |
+| Hour-of-day volatility                   | 75.5%         | 0.1627     |
+
+The panel ships the fourth row. The strike and the settlement rule are most of the gap; with one
+minute left they took the Brier score from 0.081 to 0.066 (the market: 0.057). Volatility models
+fitted on the first half did not help on the second, and refitting `σ` against Kalshi's strike gave
+0.61 and no better score, so `σ` stays at 0.63.
+
+The market is still ahead at every minute of the round. A logistic blend of the two gave the odds a
+weight of about 0.1 against the market's 0.95 and no out-of-sample gain; where the odds and the mid
+disagreed by 5 points or more, the side the odds preferred won about as often as its ask implied —
+47.9% of the time against a 47.8% price. So the window shows the market beside its own number:
+**KALSHI UP x% · DOWN y%**, Kalshi's displayed price for this very round (the last trade, clamped
+to the bid and ask), with the fee-inclusive cost of each side in the tooltip. A price for any other
+window is never shown, and a feed that has stopped refreshing dims.
+
 The clock is the chart markers' clock (`chileMarkerNowSeconds`): wall time on a live feed, the
 data's own edge on demo history. A chart whose bar is longer than the round (a 1h chart on 15m
 rounds) holds several rounds in one bar and shows no odds.
 
+## RSI extremes
+
+The mean reversion that makes every trend reading slightly wrong is strongest after a stretched
+move. When the **5m RSI(14) closes below 30 as a round opens**, the round has tended to finish up;
+**above 70**, down. The window marks such a round with an **RSI EXTREME** line — `5m RSI 27 at
+open → UP` — for as long as it runs:
+
+| Tape                                               | Rounds | Right      |
+| -------------------------------------------------- | ------ | ---------- |
+| Coinbase BTC-USD, April – mid July 2026            | 785    | 58.5%      |
+| Coinbase BTC-USD, mid July – September 2026        | 541    | 58.4%      |
+| Kalshi's settlement, April – September 2026        | 1,292  | 56.6% ±2.7 |
+| The production code on 180 days (`chile-backtest`) | 1,337  | 58.6% ±2.6 |
+
+It came out between 54.6% and 61.4% in every one of the six months, and it fires about seven times
+a day. Against the market it is thinner: in the first minute of those 1,292 Kalshi windows the ask
+for the signal's side averaged 52.3%, so the market prices a little of it. After Kalshi's taker fee
+(`0.07 · P · (1 − P)` a contract) that left about **+2.7¢ per contract**, with a 95% range of
+roughly 0 to +5¢.
+
+That is promising, not proven. The reading was picked out of 38 on those same months, and the
+bottom of its range is break-even. Only a live record can settle it, so the window keeps one — the
+**RSI EXTREMES** scorecard row below, with the price each signal's side actually cost.
+
+The reading is the RSI of the 5m bar that closes as the round opens — the same 5m series the V17
+momentum read uses, whatever the chart timeframe — and a bar still forming is never read. It is
+measured on 15-minute rounds only; with any other round length the window neither marks it nor
+keeps its record.
+
 ## The scorecard
 
-Two rows under the readouts grade the window against what the rounds actually did:
+Three rows under the readouts grade the window against what the rounds actually did:
 
 - **V17 CALLS** — every round-close call (`official && confirmed`) graded against the next round's
   open → close. WAIT is recorded and never scored; a flat round is not scored either.
 - **THIS-ROUND ODDS** — every closed bar's odds in the loaded history, graded against how its own
-  round finished, with the Brier score in the tooltip.
+  round finished, with the Brier score in the tooltip. On a Kalshi window each bar is played against
+  Kalshi's strike and graded on Kalshi's published settlement (a tie resolves up, as Kalshi's does);
+  rounds Kalshi's feed no longer carries — it holds about the last 15 hours — are left out rather
+  than graded some other way.
+- **RSI EXTREMES** — every round that opened on an extreme, graded against how it settled: on
+  Kalshi's published result where there is one, otherwise the Coinbase open → close. While the
+  window is open between one and two minutes into a signal round on a Kalshi pair, it records the
+  fee-inclusive price of the signal's side (`1 / Kalshi's x`), and the row reads `paid 53¢` beside
+  the hit rate. Priced, the row is judged against what it cost: green only once the win rate less
+  the price clears zero at 95%.
 
-A row turns green or red only when its 95% interval clears 50%; a short record reads neutral.
-Neither number repaints: a round-close call reads only closed higher-timeframe bars plus a 5m bar
-that closes with it, and a closed bar's odds are fixed, so grading the loaded history grades what
-the window said live. The V17 grades are also saved on the device, one journal per market, chart
-timeframe and score profile (the last 500 calls, twelve profiles), so the record outgrows the few
-hundred bars a chart loads. Offline demo data is graded but never saved.
+The V17 and odds rows turn green or red only when their 95% interval clears 50%; a short record
+reads neutral. None of the numbers repaints: a round-close call reads only closed higher-timeframe
+bars plus a 5m bar that closes with it, a closed bar's odds are fixed, and an RSI reading is taken
+off a closed 5m bar, so grading the loaded history grades what the window said live. The V17 grades
+are also saved on the device, one journal per market, chart timeframe and score profile (the last
+500 calls, twelve profiles), so the record outgrows the few hundred bars a chart loads. The RSI
+record is saved per market alone (the last 500 signals, twelve markets): it reads neither the chart
+timeframe nor the V17 profile, and a Kalshi-settled grade is never replaced by a Coinbase one.
+Offline demo data is graded but never saved.
 
 To measure a longer stretch than the bundled 15 days:
 
 ```bash
 CHILE_BACKTEST_DAYS=120 npx vitest run src/lib/chile-backtest.test.ts
 ```
+
+The harness grades the V17 call, the odds and the RSI extremes on Coinbase's own rounds; the
+comparisons with Kalshi's price were one-off analyses, since Kalshi's minute history is fetched one
+window at a time.
 
 ## Profile
 
@@ -211,14 +317,20 @@ The score is a tally of evidence that has already printed, mostly on a higher ti
 chart you are watching. It places no orders, has no entry, stop or target, and the +3 reversal
 events are pattern matches against lagging pivot levels. Measured, it calls the next round slightly
 worse than a coin flip. The this-round odds are a random walk with a fitted spread: they know the
-distance and the clock, not news, fat tails or the settlement print. Atlas has no alerting hook for
-either: unlike the Pine script's `alertcondition`s, the panel only ever describes the current bar.
+distance and the clock, not news, fat tails or the order book, and Kalshi's own price has called
+the round better than they do. The RSI extreme is one reading whose edge over the market's price
+has not been shown to survive the fee. Atlas has no alerting hook for any of them: unlike the Pine
+script's `alertcondition`s, the panel only ever describes the current bar.
 
 ## Files
 
 - `src/lib/chile-reversal.ts` — the engine: levels, patterns, score, plots (`chile-reversal.test.ts`)
 - `src/lib/chile-panel.ts` — the readout layer over `ChileReversalResult.last` (`chile-panel.test.ts`)
 - `src/lib/chile-odds.ts` — the this-round odds (`chile-odds.test.ts`)
+- `src/lib/chile-kalshi.ts` — Kalshi's strike, settlements and price, as the window reads them
+  (`chile-kalshi.test.ts`)
+- `src/lib/chile-rsi-extreme.ts` — the RSI extreme: reading, grading, priced journal
+  (`chile-rsi-extreme.test.ts`)
 - `src/lib/chile-scorecard.ts` — grading and the saved journal (`chile-scorecard.test.ts`)
 - `src/lib/chile-backtest.test.ts` — the harness behind the tables on this page, on the bundled
   tape `src/lib/macd-training-data/btc-usd-5m-15d.json` or a fetched one

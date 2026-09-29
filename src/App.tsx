@@ -84,6 +84,10 @@ import {
   chileRequestedTimeframes,
   chileReversalSettings,
 } from './lib/chile-reversal'
+import { chileKalshiEligible, chileKalshiView } from './lib/chile-kalshi'
+import { CHILE_RSI_EXTREME_TIMEFRAME, chileRsiRounds } from './lib/chile-rsi-extreme'
+import { useKalshiStrike } from './lib/useKalshiStrike'
+import { useKalshiFloat } from './lib/useKalshiFloat'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
@@ -810,16 +814,49 @@ export default function App() {
       timeframes[resolution] = { candles: roundFeed?.candles ?? EMPTY_CANDLES }
     if (CHILE_MOMENTUM_TIMEFRAME !== timeframe)
       timeframes[CHILE_MOMENTUM_TIMEFRAME] = { candles: momentumFeed?.candles ?? EMPTY_CANDLES }
+    const nowSeconds = Date.now() / 1000
+    // The RSI extremes read the same 5m series as the V17 momentum read.
+    const rsiCandles =
+      CHILE_RSI_EXTREME_TIMEFRAME === timeframe
+        ? candles
+        : (nativeTimeframes[CHILE_RSI_EXTREME_TIMEFRAME]?.candles ?? EMPTY_CANDLES)
     return {
       result: calculateChileReversal(candles, chilePanelSettings, {
         timeframe,
         timeframes,
-        nowSeconds: Date.now() / 1000,
+        nowSeconds,
       }),
+      rsiRounds: chileRsiRounds(rsiCandles, resolution, nowSeconds),
       roundState: roundFeed?.state ?? feedState,
       momentumState: momentumFeed?.state ?? feedState,
     }
   }, [chilePanelActive, chilePanelSettings, candles, timeframe, nativeTimeframes, feedState])
+  // A Kalshi crypto window: the panel plays Kalshi's strike and settlement, shows its price and
+  // grades on its results. Both feeds are the ones the strike overlay and the Kalshi window poll;
+  // the server caches them, so a second reader adds no upstream load.
+  const chileKalshiOn =
+    chilePanelActive &&
+    chileKalshiEligible(symbol, source, chilePanelSettings.resolution, timeframe)
+  const chileKalshiStrike = useKalshiStrike({ product: symbol, enabled: chileKalshiOn })
+  const chileKalshiFloat = useKalshiFloat({ product: symbol, enabled: chileKalshiOn })
+  const chileKalshi = useMemo(
+    () =>
+      chileKalshiOn
+        ? chileKalshiView(
+            symbol,
+            chileKalshiStrike.response,
+            chileKalshiFloat.response,
+            chileKalshiFloat.stale,
+          )
+        : null,
+    [
+      chileKalshiOn,
+      symbol,
+      chileKalshiStrike.response,
+      chileKalshiFloat.response,
+      chileKalshiFloat.stale,
+    ],
+  )
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
   const history = drawingHistory[drawKey]
@@ -2563,10 +2600,13 @@ export default function App() {
                 {chilePanelActive && hasData && chilePanelModel && (
                   <ChilePanelWindow
                     ticker={asset.ticker}
+                    product={symbol}
                     source={source}
                     timeframe={timeframe}
                     settings={chilePanelSettings}
                     result={chilePanelModel.result}
+                    rsiRounds={chilePanelModel.rsiRounds}
+                    kalshi={chileKalshi}
                     roundState={chilePanelModel.roundState}
                     momentumState={chilePanelModel.momentumState}
                     hasIndicator={!!chilePanelIndicator}

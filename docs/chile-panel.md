@@ -101,6 +101,93 @@ not answered contributes nothing rather than a made-up 2 points, and the round f
 stops the score entirely — the window says `15m feed loading…` instead of showing zeros, and
 `Warming the 15m ATR…` while `ta.atr(14)` has not filled.
 
+## How the V17 call has done
+
+Before anything was added to the window, the V17 call was measured. `src/lib/chile-backtest.test.ts`
+replays real Coinbase BTC-USD 5m history through the production engine (5m chart, 15m rounds,
+default profile) and grades every round-close call against the round it was about:
+
+| 120 days, June–September 2026 | Result                                             |
+| ----------------------------- | -------------------------------------------------- |
+| Rounds graded                 | 11,424 (49.5% finished up)                         |
+| V17 call, next round          | **47.2% right** ±1.0 (4,738 of 10,034; 1,388 WAIT) |
+| Repeat the last round         | 48.4%                                              |
+| Fade the last round           | 51.6%                                              |
+
+A one-off analysis of the same tape, with a line-for-line replica of the engine that reproduces the
+47.2% to within 0.1 point, broke the record down further. It is below a coin flip in every month of
+the sample — 46.2%, 47.3%, 48.4%, 47.2% — through a 20% fall and a 25% rally alike. Twelve of the
+thirteen score families are trend readings that mostly
+agree with each other (five of them side with the supertrend 71–89% of the time), and in this tape
+a 15-minute round mildly mean-reverts, so each trend vote is slightly wrong and stacking them makes
+the call confidently wrong: an edge of +8 or more was followed by an up round 44.8% of the time.
+Every family taken alone points the wrong way except the bounce/rejection pair (51.2%).
+
+The engine is kept exactly as ported — it is a published script, and the chart overlay prints its
+labels — but the window no longer lets it stand alone. It adds the odds below, and a scorecard so
+the call's record is always on screen.
+
+## This round: the odds
+
+The V17 call is about the **next** round. Once a round is under way, the question a 15-minute
+up/down contract asks is about **this** one: does it close above the price it opened at? The
+**THIS ROUND** line answers it from the two things that decide it — how far price has moved from
+the open, and how much time is left for it to come back:
+
+```
+P(close > open) = Φ(Δ / (σ · √(τ / S)))
+```
+
+`Δ` is the engine's `round.move` (close minus the round open, in round ATR), `τ` the seconds left,
+`S` the round length, and `σ = 0.63` one round's close-to-close spread in round ATR — a
+maximum-likelihood fit on the same tape (0.61 on a 5m chart, 0.65 on a 1m chart). While the round is
+open the odds are capped at 97/3: the walk is slightly overconfident in its tails, and the last
+Coinbase trade is not the print a contract settles on. Once the round has closed, the line reads
+`CLOSED ABOVE` or `CLOSED BELOW` until the next round's first bar arrives.
+
+The V17 score is deliberately **not** in the formula. In the same one-off analysis, a logistic fit on
+23,037 mid-round bar closes
+gave it a small negative weight once `Δ` and `τ` were known, and it improved the out-of-sample log
+loss by 0.0007 — nothing. When the V17 call disagreed with the side of the open, the round finished
+the V17 way only 30% of the time with 10 minutes left and 20% with 5.
+
+| 120 days, 5m chart | Odds favourite won | Brier (coin flip 0.250) |
+| ------------------ | ------------------ | ----------------------- |
+| 10 minutes left    | 70.4%              | 0.192                   |
+| 5 minutes left     | 81.9%              | 0.130                   |
+| All bar closes     | 76.2%              | 0.161                   |
+
+Calibrated within about five points in every decile: rounds the odds put at 70–80% finished above
+their open 78.9% of the time, rounds put at 30–40% finished above 29.7% of the time. `σ` was fitted
+on this same tape; fitted on its first 70% alone, the last 30% calibrated just as well (70–80%
+predictions finished above 75.8% of the time).
+
+The clock is the chart markers' clock (`chileMarkerNowSeconds`): wall time on a live feed, the
+data's own edge on demo history. A chart whose bar is longer than the round (a 1h chart on 15m
+rounds) holds several rounds in one bar and shows no odds.
+
+## The scorecard
+
+Two rows under the readouts grade the window against what the rounds actually did:
+
+- **V17 CALLS** — every round-close call (`official && confirmed`) graded against the next round's
+  open → close. WAIT is recorded and never scored; a flat round is not scored either.
+- **THIS-ROUND ODDS** — every closed bar's odds in the loaded history, graded against how its own
+  round finished, with the Brier score in the tooltip.
+
+A row turns green or red only when its 95% interval clears 50%; a short record reads neutral.
+Neither number repaints: a round-close call reads only closed higher-timeframe bars plus a 5m bar
+that closes with it, and a closed bar's odds are fixed, so grading the loaded history grades what
+the window said live. The V17 grades are also saved on the device, one journal per market, chart
+timeframe and score profile (the last 500 calls, twelve profiles), so the record outgrows the few
+hundred bars a chart loads. Offline demo data is graded but never saved.
+
+To measure a longer stretch than the bundled 15 days:
+
+```bash
+CHILE_BACKTEST_DAYS=120 npx vitest run src/lib/chile-backtest.test.ts
+```
+
 ## Profile
 
 The window borrows the whole profile of the chart's **Chile Reversal** indicator — pivots, distance
@@ -122,11 +209,17 @@ momentum read is always 5m, as in the original.
 
 The score is a tally of evidence that has already printed, mostly on a higher timeframe than the
 chart you are watching. It places no orders, has no entry, stop or target, and the +3 reversal
-events are pattern matches against lagging pivot levels. Atlas has no alerting hook for it: unlike
-the Pine script's `alertcondition`s, the panel only ever describes the current bar.
+events are pattern matches against lagging pivot levels. Measured, it calls the next round slightly
+worse than a coin flip. The this-round odds are a random walk with a fitted spread: they know the
+distance and the clock, not news, fat tails or the settlement print. Atlas has no alerting hook for
+either: unlike the Pine script's `alertcondition`s, the panel only ever describes the current bar.
 
 ## Files
 
 - `src/lib/chile-reversal.ts` — the engine: levels, patterns, score, plots (`chile-reversal.test.ts`)
 - `src/lib/chile-panel.ts` — the readout layer over `ChileReversalResult.last` (`chile-panel.test.ts`)
+- `src/lib/chile-odds.ts` — the this-round odds (`chile-odds.test.ts`)
+- `src/lib/chile-scorecard.ts` — grading and the saved journal (`chile-scorecard.test.ts`)
+- `src/lib/chile-backtest.test.ts` — the harness behind the tables on this page, on the bundled
+  tape `src/lib/macd-training-data/btc-usd-5m-15d.json` or a fetched one
 - `src/components/ChilePanelWindow.tsx` — the floating window (`ChilePanelWindow.test.tsx`)

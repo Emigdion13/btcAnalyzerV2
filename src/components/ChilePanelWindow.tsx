@@ -1,12 +1,46 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, GripVertical, Info, Minus, Plus, RotateCcw, X } from 'lucide-react'
-import type { ChileReversalSettings, ConnectionState, DataSource } from '../lib/types'
-import type { ChileLevelState, ChileReversalResult } from '../lib/chile-reversal'
+import { INTERVAL_SECONDS } from '../../shared/coinbase'
+import type { ChileReversalSettings, ConnectionState, DataSource, Timeframe } from '../lib/types'
+import {
+  chileMarkerNowSeconds,
+  type ChileLevelState,
+  type ChileReversalResult,
+} from '../lib/chile-reversal'
+import { chileRoundOdds, type ChileRoundOdds } from '../lib/chile-odds'
 import { chilePanelSnapshot } from '../lib/chile-panel'
+import {
+  chileCallStats,
+  chileOddsStats,
+  chileScorecardKey,
+  gradeChileCalls,
+  gradeChileOdds,
+  mergeChileCalls,
+  recordChileCalls,
+  sanitizeChileScorecardJournal,
+} from '../lib/chile-scorecard'
 import { useFloatingWindow } from '../lib/floating-window'
+import { formatPrice } from '../lib/market'
 import { useLocalState } from '../lib/storage'
 
 const POSITION_KEY = 'chile-panel-pos'
+const SCORECARD_KEY = 'chile-scorecard'
+
+const percent = (value: number) => `${Math.round(value * 100)}%`
+
+/** The odds headline: which side of the open is favoured, and how strongly. */
+function oddsText(odds: ChileRoundOdds): string {
+  if (odds.probabilityAbove === null) return '··'
+  if (odds.state === 'closed')
+    return odds.favoured === 'above'
+      ? 'CLOSED ABOVE'
+      : odds.favoured === 'below'
+        ? 'CLOSED BELOW'
+        : 'CLOSED FLAT'
+  return odds.probabilityAbove >= 0.5
+    ? `ABOVE ${percent(odds.probabilityAbove)}`
+    : `BELOW ${percent(1 - odds.probabilityAbove)}`
+}
 
 /** English labels for the Pine `srTexto` states; the Pine string stays in the tooltip. */
 const LEVEL_TEXT: Record<ChileLevelState, string> = {
@@ -30,6 +64,8 @@ const VOLUME_TEXT = { normal: 'NORMAL', high: 'HIGH', 'very-high': 'VERY HIGH' }
 export interface ChilePanelWindowProps {
   ticker: string
   source: DataSource
+  /** The chart timeframe the engine ran on: it times the odds and grades the scorecard. */
+  timeframe: Timeframe
   /** The profile the window scores with: the chart's Chile indicator, or the published defaults. */
   settings: ChileReversalSettings
   /** The engine's own result for these candles — the same one the overlay draws. */
@@ -54,10 +90,14 @@ export interface ChilePanelWindowProps {
  * from the same candles the overlay and the indicators read, and the reversal points come from the
  * overlay engine itself, so the panel can never cheer a marker that is not on the chart. The call
  * is a summary of evidence that has already printed, not a forecast, and the window says so.
+ *
+ * Beside the call it shows the odds that THIS round finishes above its open (`lib/chile-odds.ts`)
+ * and a scorecard of how both have done on this market (`lib/chile-scorecard.ts`).
  */
 export function ChilePanelWindow({
   ticker,
   source,
+  timeframe,
   settings,
   result,
   roundState,
@@ -84,7 +124,49 @@ export function ChilePanelWindow({
     [result, settings, now],
   )
 
+  // The odds run on the chart markers' clock: wall time on a live feed, the data's own edge on
+  // demo history, which is pinned away from the wall clock.
+  const chartSeconds = INTERVAL_SECONDS[timeframe] ?? 60
+  const odds = useMemo(
+    () =>
+      chileRoundOdds({
+        bar: result.last,
+        nowSeconds: result.last ? chileMarkerNowSeconds(now, result.last.time, chartSeconds) : now,
+        resolution: settings.resolution,
+        chartTimeframe: timeframe,
+      }),
+    [result.last, now, chartSeconds, settings.resolution, timeframe],
+  )
+
   const demo = source === 'demo'
+
+  // The scorecard. Loaded history is graded on every update; real-market V17 grades are also
+  // saved per profile so the record outlives the chart's window. Synthetic data is never saved.
+  const gradedCalls = useMemo(
+    () => gradeChileCalls(result, timeframe, settings.resolution),
+    [result, timeframe, settings.resolution],
+  )
+  const oddsStats = useMemo(
+    () => chileOddsStats(gradeChileOdds(result, timeframe, settings.resolution)),
+    [result, timeframe, settings.resolution],
+  )
+  const [storedJournal, setStoredJournal] = useLocalState<unknown>(SCORECARD_KEY, null)
+  const journal = useMemo(() => sanitizeChileScorecardJournal(storedJournal), [storedJournal])
+  const profileKey = chileScorecardKey(source, ticker, timeframe, settings)
+  useEffect(() => {
+    if (demo) return
+    const next = recordChileCalls(journal, profileKey, gradedCalls, Date.now())
+    if (next !== journal) setStoredJournal(next)
+  }, [demo, journal, profileKey, gradedCalls, setStoredJournal])
+  const callStats = useMemo(
+    () =>
+      chileCallStats(
+        demo
+          ? gradedCalls
+          : mergeChileCalls(journal.profiles[profileKey]?.calls ?? [], gradedCalls),
+      ),
+    [demo, gradedCalls, journal, profileKey],
+  )
   const roundUnfed = result.missingFeed
   const degraded = !demo && (roundState !== 'live' || momentumState !== 'live')
   const dotColor =
@@ -166,6 +248,25 @@ export function ChilePanelWindow({
   ]
 
   const topFactors = snapshot.factors.slice(0, 6)
+
+  const oddsShown = odds.state !== 'unavailable' && odds.probabilityAbove !== null
+  const oddsTitle = oddsShown
+    ? `Odds this ${settings.resolution} round closes above its open (${formatPrice(odds.strike)}): the move from the open against the time left, as a random walk fitted on 120 days of Coinbase BTC-USD. The V17 score is not in it — once distance and time were known it added nothing.`
+    : ''
+
+  /** Coloured only when the 95% interval clears a coin flip; a short record reads neutral. */
+  const verdictTone = (hitRate: number | null, margin: number | null) =>
+    hitRate === null || margin === null
+      ? ''
+      : hitRate - margin > 0.5
+        ? 'is-up'
+        : hitRate + margin < 0.5
+          ? 'is-down'
+          : ''
+  const oddsMargin =
+    oddsStats.hitRate === null
+      ? null
+      : 1.96 * Math.sqrt((oddsStats.hitRate * (1 - oddsStats.hitRate)) / oddsStats.graded)
 
   return (
     <section
@@ -257,6 +358,14 @@ export function ChilePanelWindow({
           >
             {snapshot.clock.text}
           </span>
+          {oddsShown ? (
+            <span
+              className={`chile-panel-min-odds mono is-${odds.favoured ?? 'even'}`}
+              title={oddsTitle}
+            >
+              {oddsText(odds)}
+            </span>
+          ) : null}
           <span className="chile-panel-min-force mono">
             {snapshot.fuerzaArriba}/{snapshot.fuerzaAbajo}
           </span>
@@ -306,6 +415,26 @@ export function ChilePanelWindow({
             </p>
           ) : (
             <>
+              {oddsShown ? (
+                <div
+                  className={`chile-panel-odds is-${odds.favoured ?? 'even'}${
+                    odds.state === 'closed' ? ' is-closed' : ''
+                  }`}
+                  data-testid="chile-panel-odds"
+                  title={oddsTitle}
+                >
+                  <span className="chile-panel-odds-label">THIS ROUND</span>
+                  <span className="chile-panel-odds-value mono">{oddsText(odds)}</span>
+                  <span className="chile-panel-odds-bar" aria-hidden="true">
+                    <i style={{ width: percent(odds.probabilityAbove!) }} />
+                  </span>
+                  <span className="chile-panel-odds-strike mono">
+                    open {formatPrice(odds.strike)} · {odds.deltaAtr! >= 0 ? '+' : ''}
+                    {odds.deltaAtr!.toFixed(2)} ATR
+                  </span>
+                </div>
+              ) : null}
+
               <div className="chile-panel-force" title="Each side's share of the total score">
                 <span className="chile-panel-force-bar">
                   <i style={{ width: `${snapshot.fuerzaArriba}%` }} />
@@ -340,6 +469,41 @@ export function ChilePanelWindow({
                   ))}
                 </div>
               ) : null}
+
+              <dl className="chile-panel-score" aria-label="Scorecard">
+                <div
+                  className={`chile-panel-score-row ${verdictTone(callStats.hitRate, callStats.margin)}`}
+                  data-testid="chile-panel-score-calls"
+                  title={
+                    callStats.hitRate === null
+                      ? 'No round-close call has been graded yet: each one is graded when the round after it closes.'
+                      : `Round-close calls graded against the next round's open → close: ${callStats.correct} of ${callStats.scored} right, ±${percent(callStats.margin!)} at 95%. UP ${callStats.up.correct}/${callStats.up.scored}, DOWN ${callStats.down.correct}/${callStats.down.scored}; ${callStats.waits} WAIT not scored. A coin flip is 50%.${demo ? ' Synthetic data — not saved.' : ' Saved on this device per market, chart and profile.'}`
+                  }
+                >
+                  <dt>V17 CALLS</dt>
+                  <dd className="mono">
+                    {callStats.hitRate === null
+                      ? '—'
+                      : `${percent(callStats.hitRate)} right · ${callStats.correct}/${callStats.scored}`}
+                  </dd>
+                </div>
+                <div
+                  className={`chile-panel-score-row ${verdictTone(oddsStats.hitRate, oddsMargin)}`}
+                  data-testid="chile-panel-score-odds"
+                  title={
+                    oddsStats.hitRate === null
+                      ? 'No finished round in the loaded history to grade the odds against yet.'
+                      : `Every closed ${timeframe} bar's this-round odds in the loaded history, graded against how its round finished: the favoured side won ${oddsStats.correct} of ${oddsStats.graded}. Brier ${oddsStats.brier!.toFixed(3)} — a coin flip scores 0.250, lower is better.`
+                  }
+                >
+                  <dt>THIS-ROUND ODDS</dt>
+                  <dd className="mono">
+                    {oddsStats.hitRate === null
+                      ? '—'
+                      : `${percent(oddsStats.hitRate)} right · ${oddsStats.graded}`}
+                  </dd>
+                </div>
+              </dl>
             </>
           )}
 
@@ -369,7 +533,10 @@ export function ChilePanelWindow({
               bounce, a rejection or a break of the pivot levels the overlay draws. Each side needs{' '}
               {settings.minScore} points and a {settings.minEdge}-point lead, and a sideways market
               scores nothing at all. It is a summary of what has already printed, not a forecast,
-              and it places no orders.
+              and it places no orders. On 120 days of Coinbase BTC-USD it called the next round
+              right 47% of the time — check the scorecard before leaning on it. THIS ROUND is
+              separate: the odds the current round closes above its open, from how far price has
+              moved and how much time is left.
             </p>
           ) : null}
         </>

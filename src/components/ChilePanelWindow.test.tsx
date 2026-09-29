@@ -4,9 +4,11 @@
  * and the eight readouts of the Pine panel. The window must say what it knows and what it does
  * not — a feed that has not answered reads "loading", never a scored zero.
  */
-import { createElement } from 'react'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { ChilePanelWindow } from './ChilePanelWindow'
 import type { ChilePanelWindowProps } from './ChilePanelWindow'
 import { calculateChileReversal } from '../lib/chile-reversal'
@@ -61,6 +63,7 @@ function props(overrides: Partial<ChilePanelWindowProps> = {}): ChilePanelWindow
   return {
     ticker: 'BTC-USD',
     source: 'coinbase',
+    timeframe: '1m',
     settings: { ...CHILE_REVERSAL_DEFAULTS },
     result: engine(),
     roundState: 'live',
@@ -148,5 +151,67 @@ describe('ChilePanelWindow', () => {
     const html = render({ settings: { ...CHILE_REVERSAL_DEFAULTS, resolution: '1h' } })
     expect(html).toContain('next 1h round')
     expect(html).toContain('>RSI 1h</dt>')
+  })
+})
+
+describe('ChilePanelWindow · this round and the scorecard', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows the odds this round closes above its open', () => {
+    // The newest bar opened a round at 139 and closed a bar higher: a rising round, 14 minutes left
+    // on the data's own clock.
+    const html = render()
+    expect(html).toContain('data-testid="chile-panel-odds"')
+    expect(html).toContain('>THIS ROUND</span>')
+    expect(html).toMatch(/chile-panel-odds is-above[^"]*"/)
+    expect(html).toMatch(/>ABOVE \d{2}%</)
+    expect(html).toContain('open 139')
+  })
+
+  it('has no round to play when one chart bar spans several rounds', () => {
+    expect(render({ timeframe: '1h' })).not.toContain('data-testid="chile-panel-odds"')
+  })
+
+  it('grades the V17 call and the odds on the loaded history', () => {
+    const html = render()
+    // Two round-close calls have a finished round after them; the third is still being played.
+    expect(html).toContain('>V17 CALLS</dt>')
+    expect(html).toMatch(/>\d+% right · \d\/2</)
+    expect(html).toContain('>THIS-ROUND ODDS</dt>')
+    // Every 1m bar inside those two rounds, bar the one that closes each: 2 × 14.
+    expect(html).toContain('>100% right · 28<')
+  })
+
+  it('keeps the odds on the minimized row', () => {
+    localStorage.setItem('atlas.v1.chile-panel-min', 'true')
+    const html = render()
+    expect(html).toContain('chile-panel-min-row')
+    expect(html).toMatch(/chile-panel-min-odds mono is-above"[^>]*>ABOVE \d{2}%</)
+  })
+
+  const mounted = (overrides: Partial<ChilePanelWindowProps>) => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(createElement(ChilePanelWindow, props(overrides))))
+    return () => {
+      act(() => root.unmount())
+      container.remove()
+    }
+  }
+
+  it('saves real-market grades per profile, and never synthetic ones', () => {
+    const unmountLive = mounted({})
+    const saved = JSON.parse(localStorage.getItem('atlas.v1.chile-scorecard') ?? 'null')
+    unmountLive()
+    expect(saved.version).toBe(1)
+    const [key] = Object.keys(saved.profiles)
+    expect(key).toBe('coinbase|BTC-USD|1m|15m|6|2|2.4|10|2|2|2.5')
+    expect(saved.profiles[key!].calls).toHaveLength(2)
+
+    localStorage.clear()
+    const unmountDemo = mounted({ source: 'demo' })
+    expect(localStorage.getItem('atlas.v1.chile-scorecard')).toBeNull()
+    unmountDemo()
   })
 })

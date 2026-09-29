@@ -126,10 +126,20 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
       context.fillStyle = bar.barColor
       const top = Math.min(yValue, yBase) * ry
       const height = Math.max(1, Math.abs(yValue - yBase) * ry)
-      context.fillRect(Math.round(bar.x * rx - width / 2), Math.round(top), width, Math.round(height))
+      context.fillRect(
+        Math.round(bar.x * rx - width / 2),
+        Math.round(top),
+        width,
+        Math.round(height),
+      )
     }
   }
-  /** Pine `style=area`: the line, plus the region between it and the zero line. */
+  /**
+   * Pine `style=area`: the line, plus the region between it and the base line. Pine paints the
+   * segment ending at a bar in that bar's colour, so a per-bar colour series — nQQE's lime above
+   * 60, red below 40, yellow between — recolours the fill and the edge from that bar on. Each run
+   * of one colour is one shape, so a single-colour area is still drawn as a single polygon.
+   */
   private area(
     context: CanvasRenderingContext2D,
     points: { x: number; y: number; color: string }[],
@@ -137,27 +147,34 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
     rx: number,
   ) {
     const transparency = Math.min(100, Math.max(0, this.options.transp))
+    const runs = colorRuns(points.map((point) => point.color))
     context.save()
-    context.beginPath()
-    context.moveTo(points[0].x, zero)
-    for (const point of points) context.lineTo(point.x, point.y)
-    context.lineTo(points[points.length - 1].x, zero)
-    context.closePath()
     context.globalAlpha = 1 - transparency / 100
-    context.fillStyle = this.options.color
-    context.fill()
+    for (const run of runs) {
+      context.beginPath()
+      context.moveTo(points[run.from].x, zero)
+      for (let i = run.from; i <= run.to; i++) context.lineTo(points[i].x, points[i].y)
+      context.lineTo(points[run.to].x, zero)
+      context.closePath()
+      context.fillStyle = run.color
+      context.fill()
+    }
+    // Every fill first, so a colour change never lays one run's fill over the next run's edge.
     context.globalAlpha = 1
-    context.beginPath()
-    context.moveTo(points[0].x, points[0].y)
-    for (const point of points.slice(1)) context.lineTo(point.x, point.y)
     context.lineWidth = Math.max(1, Math.round(this.options.lineWidth * rx))
-    context.strokeStyle = this.options.color
-    context.stroke()
+    for (const run of runs) {
+      context.beginPath()
+      context.moveTo(points[run.from].x, points[run.from].y)
+      for (let i = run.from + 1; i <= run.to; i++) context.lineTo(points[i].x, points[i].y)
+      context.strokeStyle = run.color
+      context.stroke()
+    }
     context.restore()
   }
   priceValueBuilder(data: PointData) {
     if (this.style === 'columns') {
-      const base = typeof data.base === 'number' && Number.isFinite(data.base) ? data.base : data.value
+      const base =
+        typeof data.base === 'number' && Number.isFinite(data.base) ? data.base : data.value
       return [base, data.value]
     }
     if (this.style === 'histogram') return [0, data.value]
@@ -180,6 +197,22 @@ export class IndicatorPlotSeries implements ICustomSeriesPaneView<Time, PointDat
   destroy() {
     this.data = null
   }
+}
+
+/**
+ * Split a line into runs of one colour, by Pine's rule that the segment ending at point `k` takes
+ * point `k`'s colour. Each run spans points `from..to` (inclusive, `from` shared with the run
+ * before it), so drawing every run joins up into the whole line. A lone point is a run of its own.
+ */
+export function colorRuns(colors: string[]): { from: number; to: number; color: string }[] {
+  if (colors.length === 1) return [{ from: 0, to: 0, color: colors[0]! }]
+  const runs: { from: number; to: number; color: string }[] = []
+  for (let k = 1; k < colors.length; k++) {
+    const last = runs.at(-1)
+    if (last && last.color === colors[k]) last.to = k
+    else runs.push({ from: k - 1, to: k, color: colors[k]! })
+  }
+  return runs
 }
 
 /**

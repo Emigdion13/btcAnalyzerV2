@@ -21,6 +21,7 @@ import {
 } from '../lib/osc-hud'
 import type { OscHudModel, OscHudTrace } from '../lib/osc-hud'
 import { useFloatingWindow, useHistoryDrag } from '../lib/floating-window'
+import { colorRuns } from '../lib/indicator-plot-series'
 import { historyStep } from '../lib/history-pan'
 import type { WindowHistory } from '../lib/history-pan'
 import { formatPrice } from '../lib/market'
@@ -309,7 +310,7 @@ export function OscHudCard({
                             cx={geometry.x[model.activeIndex!]}
                             cy={geometry.y(value)}
                             r={2.6}
-                            fill={trace.color}
+                            fill={trace.colors?.[model.activeIndex!] ?? trace.color}
                           />
                         )
                       })}
@@ -430,7 +431,7 @@ function OscHudTraceShape({
               cx={geometry.x[index]}
               cy={geometry.y(value)}
               r={trace.width / 2}
-              fill={trace.color}
+              fill={trace.colors?.[index] ?? trace.color}
               fillOpacity={activeIndex === index ? 1 : 0.9}
             />
           ),
@@ -487,17 +488,32 @@ function OscHudTraceShape({
       />
     )
   }
-  return (
+  const line = (key: string, coordinates: string[], color: string) => (
     <polyline
+      key={key}
       className="osc-hud-line"
-      points={points.join(' ')}
+      points={coordinates.join(' ')}
       fill="none"
-      stroke={trace.color}
+      stroke={color}
       strokeWidth={trace.width}
       strokeLinejoin="round"
       strokeLinecap="round"
       strokeDasharray={trace.dash}
       vectorEffect="non-scaling-stroke"
     />
+  )
+  if (!trace.colors) return line(trace.title, points, trace.color)
+  // A per-bar coloured line (nQQE across 60/40, MACD across its signal) is one polyline per run
+  // of a colour, so it changes colour on the bar that crossed — the pane's colours, not one flat one.
+  const drawn = trace.values
+    .map((value, index) => (value === null ? null : index))
+    .filter((index): index is number => index !== null)
+  const colors = drawn.map((index) => trace.colors![index] ?? trace.color)
+  return (
+    <g className="osc-hud-colored-line">
+      {colorRuns(colors).map((run) =>
+        line(`${trace.title}-${run.from}`, points.slice(run.from, run.to + 1), run.color),
+      )}
+    </g>
   )
 }

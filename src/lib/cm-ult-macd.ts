@@ -78,6 +78,13 @@ export interface CmMacdValues {
   macd: Values
   signal: Values
   histogram: Values
+  /**
+   * The histogram of the bar before, on the MACD's own resolution — what each bar's colour is
+   * judged against. On a higher-timeframe MACD every chart bar inside one 15m bar repeats the same
+   * value, so the chart bar before is the wrong reference; this is the 15m bar before. Omitted, the
+   * chart bar before is used.
+   */
+  histogramPrevious?: Values
 }
 
 export function isCmMacdSettings(value: unknown): value is CmMacdSettings {
@@ -198,17 +205,34 @@ export function calculateCmMacd(
   const source =
     resolution === context.timeframe ? chart : (context.timeframes?.[resolution]?.candles ?? [])
   const empty = () => chart.map(() => null)
-  if (!source.length || !chart.length) return { macd: empty(), signal: empty(), histogram: empty() }
+  if (!source.length || !chart.length)
+    return { macd: empty(), signal: empty(), histogram: empty(), histogramPrevious: empty() }
   const native = nativeValues(source, settings)
   if (resolution === context.timeframe)
-    return { macd: native.macd, signal: native.signal, histogram: native.histogram }
+    return {
+      macd: native.macd,
+      signal: native.signal,
+      histogram: native.histogram,
+      histogramPrevious: native.histogram.map((_, i) => native.histogram[i - 1] ?? null),
+    }
 
   const chartStep = INTERVAL_SECONDS[context.timeframe]
   const sourceStep = INTERVAL_SECONDS[resolution]
   const cutoff = chart.at(-1)!.time + chartStep
-  const result: CmMacdValues = { macd: [], signal: [], histogram: [] }
+  const result = {
+    macd: [],
+    signal: [],
+    histogram: [],
+    histogramPrevious: [],
+  } as Required<CmMacdValues>
   let cursor = -1
-  const append = (macd: number | null, signal: number | null) => {
+  // `previous` is the source bar before this one; by default, the chart bar before.
+  const append = (
+    macd: number | null,
+    signal: number | null,
+    previous: number | null = result.histogram.at(-1) ?? null,
+  ) => {
+    result.histogramPrevious.push(previous)
     result.macd.push(macd)
     result.signal.push(signal)
     result.histogram.push(macd === null || signal === null ? null : macd - signal)
@@ -245,8 +269,9 @@ export function calculateCmMacd(
           prior.length === settings.signalLength - 1
             ? (prior.reduce((sum, value) => sum + value, 0) + macd) / settings.signalLength
             : null
-        append(macd, signal)
-      } else append(native.macd[cursor], native.signal[cursor])
+        append(macd, signal, native.histogram[cursor - 1] ?? null)
+      } else
+        append(native.macd[cursor], native.signal[cursor], native.histogram[cursor - 1] ?? null)
     } else {
       // v1 historical LTF security selects the FIRST intrabar, not the last.
       // On realtime bars it instead reports the latest available intrabar.
@@ -281,13 +306,36 @@ export function cmHistogramColor(
   // Strict comparisons in the original: flat and unavailable comparisons are yellow.
   return CM_COLORS.yellow
 }
-export function cmMacdPlots(values: CmMacdValues, settings: CmMacdSettings): Plot[] {
-  const { macd, signal, histogram } = values
-  const colors = macd.map((value, i) =>
+/**
+ * The four histogram colours, each bar judged against the bar before it on the MACD's own
+ * resolution. A 15m MACD on a 1m chart therefore paints every 1m bar in its 15m bar's colour,
+ * instead of turning yellow on each 1m bar where the 15m value merely repeats.
+ */
+export function cmHistogramColors(values: CmMacdValues, change = true): string[] {
+  const real = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  return values.histogram.map((value, i) =>
+    cmHistogramColor(
+      real(value),
+      real(values.histogramPrevious ? values.histogramPrevious[i] : values.histogram[i - 1]),
+      change,
+    ),
+  )
+}
+
+/** `macd_color`: lime while MACD is at or above its signal, red below — or red throughout when off. */
+export function cmMacdLineColors(values: CmMacdValues, settings: CmMacdSettings): string[] {
+  const { macd, signal } = values
+  return macd.map((value, i) =>
     settings.macdColorChange && value !== null && signal[i] !== null && value >= signal[i]!
       ? CM_COLORS.lime
       : CM_COLORS.red,
   )
+}
+
+export function cmMacdPlots(values: CmMacdValues, settings: CmMacdSettings): Plot[] {
+  const { macd, signal, histogram } = values
+  const colors = cmMacdLineColors(values, settings)
   const crosses = macd.map((value, i) => {
     if (
       !settings.showDots ||
@@ -336,9 +384,7 @@ export function cmMacdPlots(values: CmMacdValues, settings: CmMacdSettings): Plo
         4,
       ),
       style: 'histogram',
-      colors: histogram.map((v, i) =>
-        cmHistogramColor(v, histogram[i - 1] ?? null, settings.histogramColorChange),
-      ),
+      colors: cmHistogramColors(values, settings.histogramColorChange),
     },
     {
       ...plot('Cross', crosses, settings.macdColorChange ? CM_COLORS.lime : CM_COLORS.red, 4),

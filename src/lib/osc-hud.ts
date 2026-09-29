@@ -23,7 +23,7 @@ import type { TrendPressureSettings } from './types'
  *    the picture exactly when the oscillator gets close enough for them to matter.
  */
 import { INTERVAL_SECONDS } from '../../shared/coinbase'
-import { CM_COLORS, cmHistogramColor, cmMacdSettings } from './cm-ult-macd'
+import { CM_COLORS, cmHistogramColors, cmMacdLineColors, cmMacdSettings } from './cm-ult-macd'
 import type { CmMacdValues } from './cm-ult-macd'
 import { WT_COLORS } from './wave-trend'
 import type { WaveTrendValues } from './wave-trend'
@@ -341,6 +341,12 @@ export interface OscHudTrace {
   color: string
   /** Already sliced to the window, oldest first. */
   values: (number | null)[]
+  /**
+   * Per-bar colours for a series whose original recolours it bar by bar (nQQE's lime/yellow/red,
+   * MACD's lime/red and its dots), aligned with `values`; a line's segment ending at a bar takes
+   * that bar's colour, as in Pine.
+   */
+  colors?: string[]
   width: number
   style: 'line' | 'dots' | 'area' | 'tri-up' | 'tri-down'
   /** Pine `transp`, for the area fills the originals used. */
@@ -578,17 +584,10 @@ export function cmMacdHudModel(
   const macd = finite(cut(values.macd))
   const signal = finite(cut(values.signal))
   const histogram = finite(cut(values.histogram))
-  // Colour is decided against the previous bar of the full series, across the window edge: a bar
-  // is aqua because it rose, and the bar it rose from can sit outside the twenty minutes.
-  const colors = cut(
-    values.histogram.map((value, index) =>
-      cmHistogramColor(
-        Number.isFinite(value) ? value : null,
-        Number.isFinite(values.histogram[index - 1]) ? values.histogram[index - 1] : null,
-        settings.histogramColorChange,
-      ),
-    ),
-  )
+  // Colours come from the pane's own rules over the full series, so a bar at the window's edge is
+  // still judged against the bar it rose from — on the MACD's resolution, not the chart's.
+  const colors = cut(cmHistogramColors(values, settings.histogramColorChange))
+  const lineColors = cut(cmMacdLineColors(values, settings))
   const domain = oscHudDomain([
     macd,
     signal,
@@ -611,6 +610,8 @@ export function cmMacdHudModel(
       title: 'MACD',
       color: settings.macdColorChange ? CM_COLORS.lime : CM_COLORS.red,
       values: macd,
+      // Lime at or above the signal, red below — the pane's macd_color, bar for bar.
+      colors: lineColors,
       width: 2,
       style: 'line',
       z: 2,
@@ -647,6 +648,7 @@ export function cmMacdHudModel(
       title: 'Cross',
       color: settings.macdColorChange ? CM_COLORS.lime : CM_COLORS.red,
       values: dots,
+      colors: lineColors,
       width: 3.4,
       style: 'dots',
       z: 3,
@@ -675,7 +677,11 @@ export function cmMacdHudModel(
     bars: times.length,
     spanLabel: oscHudSpan(times.length, input.timeframe),
     readouts: [
-      { label: 'MACD', value: trim(activeMacd), color: CM_COLORS.lime },
+      {
+        label: 'MACD',
+        value: trim(activeMacd),
+        color: activeMacd === null ? undefined : lineColors[activeIndex],
+      },
       { label: 'Signal', value: trim(activeSignal), color: CM_COLORS.yellow },
       {
         label: 'Hist',
@@ -1627,6 +1633,8 @@ export function bayesianNqqeHudModel(
       title: 'nQQE',
       color: BAYES_COLORS.nqqeYellow,
       values: nqqe,
+      // The pane's regime colours, bar for bar: lime above 60, red below 40, yellow between.
+      colors: cut(values.nqqeColors),
       width: 1.6,
       style: 'line',
       z: 3,
@@ -1664,6 +1672,13 @@ export function bayesianNqqeHudModel(
       { value: -10, color: BAYES_COLORS.nqqeRed, label: '-10', dashed: true },
       { value: 25, color: BAYES_COLORS.bankerYellow, label: '25', dashed: true },
       { value: 100, color: BAYES_COLORS.gray, label: '100', dashed: false },
+      // The pane's hline(40)/hline(60): the lines nQQE turns red and lime across.
+      ...(settings.showNqqe
+        ? [
+            { value: 40, color: BAYES_COLORS.gray, label: '40', dashed: true },
+            { value: 60, color: BAYES_COLORS.gray, label: '60', dashed: true },
+          ]
+        : []),
     ],
     domain,
   )

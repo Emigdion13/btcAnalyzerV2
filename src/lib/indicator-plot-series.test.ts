@@ -6,7 +6,7 @@ import type {
   UTCTimestamp,
   Coordinate,
 } from 'lightweight-charts'
-import { IndicatorPlotSeries, indicatorPlotData } from './indicator-plot-series'
+import { colorRuns, IndicatorPlotSeries, indicatorPlotData } from './indicator-plot-series'
 import type { Candle, Plot } from './types'
 
 const sample = (
@@ -144,6 +144,8 @@ describe('CM plot rendering', () => {
   it('fills an area from the zero line at the Pine transparency and strokes its edge', () => {
     const renderer = new IndicatorPlotSeries('area')
     const data = sample(10)
+    // A single-colour area: every bar carries the plot colour, as indicatorPlotData gives it.
+    for (const bar of data.bars) bar.barColor = '#0000ff'
     renderer.update(data, {
       ...renderer.defaultOptions(),
       color: '#0000ff',
@@ -196,6 +198,40 @@ describe('CM plot rendering', () => {
       [40, 100],
       [40, 120],
     ])
+  })
+  it('recolours an area from the bar that changed colour, as nQQE turns lime above 60', () => {
+    const renderer = new IndicatorPlotSeries('area')
+    const yellow = '#ffeb3b'
+    const lime = '#00e676'
+    const values = [50, 55, 62, 65, 58]
+    const colors = [yellow, yellow, lime, lime, yellow]
+    const data = sample(10)
+    data.bars = values.map((value, i) => ({
+      x: 10 * (i + 1),
+      time: i as UTCTimestamp,
+      originalData: { time: i as UTCTimestamp, value },
+      barColor: colors[i]!,
+    }))
+    data.visibleRange = { from: 0, to: values.length }
+    renderer.update(data, { ...renderer.defaultOptions(), color: yellow, transp: 30 })
+    const draw = drawing()
+    renderer.renderer().draw(draw.target, draw.priceToY, false)
+    // One fill and one edge per run: yellow up to bar 1, lime for the segments ending on
+    // bars 2–3, yellow again for the segment ending on bar 4 — never one flat plot colour.
+    expect(draw.colors).toEqual([yellow, lime, yellow])
+    expect(draw.strokes).toEqual([yellow, lime, yellow])
+    expect(draw.context.closePath).toHaveBeenCalledTimes(3)
+    expect(draw.context.globalAlpha).toBe(1)
+  })
+  it('splits a colour series into runs by the colour of the bar each segment ends on', () => {
+    expect(colorRuns(['a', 'a', 'b', 'b', 'a'])).toEqual([
+      { from: 0, to: 1, color: 'a' },
+      { from: 1, to: 3, color: 'b' },
+      { from: 3, to: 4, color: 'a' },
+    ])
+    expect(colorRuns(['a', 'a', 'a'])).toEqual([{ from: 0, to: 2, color: 'a' }])
+    expect(colorRuns(['a'])).toEqual([{ from: 0, to: 0, color: 'a' }])
+    expect(colorRuns([])).toEqual([])
   })
   it('includes zero in area autoscaling but not as a marker value', () => {
     const area = new IndicatorPlotSeries('area')

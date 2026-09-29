@@ -665,4 +665,65 @@ describe('bayesian floating window', () => {
       true,
     )
   })
+
+  it('paints nQQE lime above 60 and red below 40 in the window, as the pane does', () => {
+    const nqqe = [50, 55, 62, 65, 58, 38, 35, 45]
+    const count = nqqe.length
+    const fill = <T>(value: T): T[] => Array(count).fill(value)
+    const values: BayesianNqqeValues = {
+      probDown: fill(20),
+      probUp: fill(30),
+      prime: fill(40),
+      nqqe,
+      nqqeTrail: fill(50),
+      nqqeAtr: fill(1),
+      fundtrend: fill(80),
+      bullbear: fill(40),
+      longSignal: fill(null),
+      shortSignal: fill(null),
+      entry: fill(null),
+      ao: fill(1),
+      ac: fill(1),
+      lips: fill(1),
+      teeth: fill(1),
+      jaw: fill(1),
+      nqqeColors: nqqe.map((value) => nqqeColor(value)),
+      bankerColors: fill(BAYES_COLORS.bankerGreen),
+    }
+    const model = bayesianNqqeHudModel(values, defaults, {
+      times: Array.from({ length: count }, (_, i) => i * 60),
+      timeframe: '1m',
+      bars: count,
+      index: count - 1,
+    })
+    const trace = model.traces.find((item) => item.title === 'nQQE')!
+    expect(trace.colors).toEqual(values.nqqeColors)
+    // The pane's dashed 40/60 guides, so the crossings the colours mark are visible.
+    expect(model.levels.map((level) => level.value)).toEqual(expect.arrayContaining([40, 60]))
+
+    const markup = renderToStaticMarkup(
+      createElement(OscHudCard, {
+        model,
+        dock: 'bayes',
+        indicator: null,
+        bars: count,
+        onZoom: () => {},
+        history: { behind: 0, older: 0, label: null },
+        onPan: () => {},
+        onEditIndicator: () => {},
+        onAddIndicator: () => {},
+        onClose: () => {},
+      }),
+    )
+    const line = /<g class="osc-hud-colored-line">(.*?)<\/g>/.exec(markup)?.[1] ?? ''
+    const strokes = [...line.matchAll(/stroke="(#[0-9a-f]+)"/g)].map((match) => match[1])
+    // Yellow to 55, lime through 65, yellow at 58, red through 35, yellow again at 45.
+    expect(strokes).toEqual([
+      BAYES_COLORS.nqqeYellow,
+      BAYES_COLORS.nqqeGreen,
+      BAYES_COLORS.nqqeYellow,
+      BAYES_COLORS.nqqeRed,
+      BAYES_COLORS.nqqeYellow,
+    ])
+  })
 })

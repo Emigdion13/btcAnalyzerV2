@@ -73,4 +73,8 @@ goes negative, so a symmetric oscillator scale would waste half the card. The
 histogram keeps the lime/gray rule, the aqua upper band and the orange
 range-high appear exactly when the pane's own toggles draw them, and the card's
 verdict names a fresh lime bar a potential bottom, warns within 15% of the
-nearest trigger, and otherwise calls the tape quiet.
+nearest trigger, and otherwise calls the tape quiet. Its three readouts are
+**WVF** (the histogram value), **Upper** (the Bollinger upper band) and
+**RangeHi** (the percentile range-high) for the bar in view; hover one for its
+definition. Drag the plot sideways, or use ‹ ›, to scroll the card back
+through history, and ⏭ to return to the live bar.

@@ -212,6 +212,17 @@ describe('peekWindow', () => {
     // A corrupt stored count still cannot ask for more than the clamp allows.
     expect(peekWindow(series(60), 9_999)).toHaveLength(PEEK_BARS_MAX)
   })
+
+  it('ends where a scrolled-back window stops, and stays full near the oldest bar', () => {
+    const candles = series(20)
+    expect(peekWindow(candles, 5, 12).map((c) => c.time)).toEqual(
+      candles.slice(7, 12).map((c) => c.time),
+    )
+    expect(peekWindow(candles, 5, 2).map((c) => c.time)).toEqual(
+      candles.slice(0, 5).map((c) => c.time),
+    )
+    expect(peekWindow(candles, 5, 99)).toEqual(candles.slice(-5))
+  })
 })
 
 describe('forming-bar detection', () => {

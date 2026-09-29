@@ -93,7 +93,7 @@ describe('the chart hands both oscillator windows their own view', () => {
     const markup = render()
     expect(markup).toContain('aria-label="CM_Ult_MacD_MTF window"')
     expect(markup).toContain('aria-label="WaveTrend [LazyBear] window"')
-    expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(2)
+    expect(markup.match(/class="osc-hud-svg[ "]/g)).toHaveLength(2)
     expect(markup.match(/20 bars \/ 20 min/g)).toHaveLength(2)
   })
 
@@ -115,7 +115,7 @@ describe('the chart hands both oscillator windows their own view', () => {
     const markup = render({ rsiDivHud: true })
     expect(markup).toContain('aria-label="RSI Divergence window"')
     expect(markup).toContain('data-testid="osc-hud-rsi-divergence"')
-    expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(3)
+    expect(markup.match(/class="osc-hud-svg[ "]/g)).toHaveLength(3)
   })
 
   it('opens the Williams VIX Fix window when vixFixHud is set', () => {
@@ -124,7 +124,7 @@ describe('the chart hands both oscillator windows their own view', () => {
     expect(markup).toContain('data-testid="osc-hud-cm-williams-vix-fix"')
     expect(markup).toContain('WVF (22, 20, 2, 50, 0.85, 1.01)')
     expect(markup).toContain('Add the CM_Williams_Vix_Fix pane to the chart')
-    expect(markup.match(/class="osc-hud-svg"/g)).toHaveLength(3)
+    expect(markup.match(/class="osc-hud-svg[ "]/g)).toHaveLength(3)
   })
 
   it('says which settings each window is using, and offers the matching control', () => {

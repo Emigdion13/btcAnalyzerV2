@@ -416,7 +416,12 @@ export interface OscHudModelInput {
   times: number[]
   timeframe: Timeframe
   bars: number
-  /** Full-length index to read the numbers from — the hovered bar, or the latest one. */
+  /**
+   * Exclusive full-length index the window ends at, when it has been scrolled back through
+   * history (see `historyEnd`); omitted, the window ends on the newest bar.
+   */
+  end?: number
+  /** Full-length index to read the numbers from — the hovered bar, or the window's newest one. */
   index: number
   /** True when that index is a hovered historical bar. */
   hovered?: boolean
@@ -425,9 +430,17 @@ export interface OscHudModelInput {
   settingsSource?: 'chart' | 'defaults'
 }
 
-/** Window start, so every series and the times are cut on the same line. */
-function windowStart(length: number, bars: number): number {
-  return Math.max(0, length - bars)
+/**
+ * Window start, so every series and the times are cut on the same line. The end is clamped so
+ * the window stays full, which keeps `start + bars` the window's end in every model's cut.
+ */
+function windowStart(input: OscHudModelInput): number {
+  const length = input.times.length
+  const end =
+    input.end === undefined || !Number.isFinite(input.end)
+      ? length
+      : Math.min(length, Math.max(Math.min(length, input.bars), Math.round(input.end)))
+  return Math.max(0, end - input.bars)
 }
 
 /**
@@ -559,7 +572,7 @@ export function cmMacdHudModel(
   settings: CmMacdSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const macd = finite(cut(values.macd))
@@ -697,7 +710,7 @@ export function waveTrendHudModel(
   settings: WaveTrendSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const wt1 = finite(cut(values.wt1))
@@ -880,7 +893,7 @@ export function rsiDivergenceHudModel(
   settings: { period: number; divergence: DivergenceSettings },
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const close = candles.map((c) => c.close)
@@ -1070,7 +1083,7 @@ export function williamsVixFixHudModel(
   settings: WilliamsVixFixSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const wvf = finite(cut(values.wvf))
@@ -1147,9 +1160,20 @@ export function williamsVixFixHudModel(
         label: 'WVF',
         value: fixed(activeWvf),
         color: activeWvf === null ? undefined : activeGreen ? WVF_COLORS.lime : WVF_COLORS.gray,
+        title: `Williams VIX Fix: how far this bar's low is below the highest close of the last ${settings.pd} bars, in % — a synthetic fear gauge`,
       },
-      { label: 'Upper', value: fixed(activeUpper), color: WVF_COLORS.aqua },
-      { label: 'RangeHi', value: fixed(activeRange), color: WVF_COLORS.orange },
+      {
+        label: 'Upper',
+        value: fixed(activeUpper),
+        color: WVF_COLORS.aqua,
+        title: `Bollinger upper band of WVF: its ${settings.bbl}-bar average + ${settings.mult} standard deviations. WVF at or above it is a lime fear spike`,
+      },
+      {
+        label: 'RangeHi',
+        value: fixed(activeRange),
+        color: WVF_COLORS.orange,
+        title: `Range high: ${Math.round(settings.ph * 100)}% of the highest WVF of the last ${settings.lb} bars. WVF at or above it is a lime fear spike too`,
+      },
     ],
     verdict: williamsVixFixVerdict(
       activeWvf,
@@ -1238,7 +1262,7 @@ export function tmoScalperHudModel(
   settings: TmoScalperSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const main1 = finite(cut(values.main1))
@@ -1540,7 +1564,7 @@ export function bayesianNqqeHudModel(
   settings: BayesianNqqeSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(source: T[]): T[] => source.slice(start, start + input.bars)
   const times = cut(input.times)
   const probDown = finite(cut(values.probDown))
@@ -1725,7 +1749,7 @@ export function trendPressureHudModel(
   s: TrendPressureSettings,
   input: OscHudModelInput,
 ): OscHudModel {
-  const start = windowStart(input.times.length, input.bars)
+  const start = windowStart(input)
   const cut = <T>(values: T[]) => values.slice(start, start + input.bars)
   const times = cut(input.times),
     pulse = finite(cut(v.pulse)),

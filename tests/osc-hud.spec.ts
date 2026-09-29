@@ -217,3 +217,54 @@ test('minimizing, dragging and adding the pane all behave like furniture you own
   await expect(page.getByRole('dialog', { name: 'WaveTrend [LazyBear]' })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('dragging the plot scrolls a window back through history, and live brings it back', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await closeFloatingWindows(page, ['wave-trend'])
+  await openDemoChart(page)
+  const wave = waveWindow(page)
+  const tag = wave.locator('.osc-hud-tag')
+  const sub = wave.locator('.osc-hud-sub')
+  await expect(tag).toHaveText('LIVE')
+  await expect(
+    wave.getByRole('button', { name: 'Scroll WaveTrend [LazyBear] toward the live bar' }),
+  ).toBeDisabled()
+  const liveReadout = await wave.locator('.osc-hud-readout b').first().textContent()
+
+  // Pulling the plot to the right brings older bars in, the way a chart pans: one bar per bar
+  // width of drag, and the window says how far back it is looking.
+  const card = await wave.boundingBox()
+  const plot = await wave.locator('.osc-hud-svg').boundingBox()
+  const perBar = plot!.width / 20
+  // Start mid-plot, low down: the chart's own zoom toolbar can float over the card's left edge.
+  const y = plot!.y + plot!.height * 0.8
+  const x = plot!.x + plot!.width * 0.4
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + perBar * 6, y, { steps: 12 })
+  await page.mouse.up()
+  await expect(tag).toHaveText('HISTORY')
+  await expect(sub).toContainText('6 bars back')
+  await expect(wave.locator('.osc-hud-svg')).toBeVisible()
+  // The bars moved, not the card: the header is still the only thing that relocates it.
+  expect((await wave.boundingBox())!.x).toBe(card!.x)
+
+  // The buttons step a quarter of the window at a time.
+  await wave
+    .getByRole('button', { name: 'Scroll WaveTrend [LazyBear] back through history' })
+    .click()
+  await expect(sub).toContainText('11 bars back')
+  await wave
+    .getByRole('button', { name: 'Scroll WaveTrend [LazyBear] toward the live bar' })
+    .click()
+  await expect(sub).toContainText('6 bars back')
+
+  await wave.getByRole('button', { name: 'Back to the live bar in WaveTrend [LazyBear]' }).click()
+  await expect(tag).toHaveText('LIVE')
+  await expect(sub).not.toContainText('bars back')
+  await expect(wave.locator('.osc-hud-readout b').first()).toHaveText(liveReadout!)
+  expect(errors).toEqual([])
+})

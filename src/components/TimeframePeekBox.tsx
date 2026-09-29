@@ -1,8 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, GripVertical, Info, Minus, Plus, RotateCcw, Timer, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+  GripVertical,
+  Info,
+  Minus,
+  Plus,
+  RotateCcw,
+  Timer,
+  X,
+} from 'lucide-react'
 import type { Candle, ConnectionState, DataSource, Timeframe } from '../lib/types'
 import { compactNumber, formatPrice, INTERVAL } from '../lib/market'
-import { useFloatingWindow } from '../lib/floating-window'
+import { useFloatingWindow, useHistoryDrag } from '../lib/floating-window'
+import { historyEnd, historyStep, panHistory, windowHistory } from '../lib/history-pan'
+import type { HistoryAnchor } from '../lib/history-pan'
 import { useLocalState } from '../lib/storage'
 import {
   clampPeekBars,
@@ -95,6 +109,9 @@ interface Props {
  * Now supports 30m and 2h (and every other timeframe in TIMEFRAMES) and is resizable by dragging
  * the corner handle: width controls how much horizontal room the candles have, height controls
  * the price pane. Both dimensions persist across reloads.
+ *
+ * Dragging the candles sideways (or ‹ ›) scrolls back through that resolution's history; the
+ * window then says so in its state chip and timer, and ⏭ returns it to the forming bar.
  */
 export function TimeframePeekBox({
   ticker,
@@ -125,7 +142,22 @@ export function TimeframePeekBox({
   }, [])
 
   const { resolution, chartTimeframe, candles, state, message, retry } = feed
-  const bars = useMemo(() => peekWindow(candles, settings.bars), [candles, settings.bars])
+  // Looking back is a moment in time, not a preference: a reload opens on the live bars again.
+  const [anchor, setAnchor] = useState<HistoryAnchor>(null)
+  const windowBars = clampPeekBars(settings.bars)
+  const times = useMemo(() => candles.map((candle) => candle.time), [candles])
+  const end = historyEnd(times, anchor, windowBars)
+  const history = windowHistory(times, end, windowBars)
+  const lookingBack = history.behind > 0
+  const pan = useCallback(
+    (delta: number | 'live') =>
+      setAnchor((current) =>
+        delta === 'live' ? null : panHistory(times, current, windowBars, delta),
+      ),
+    [times, windowBars],
+  )
+  const bars = useMemo(() => peekWindow(candles, windowBars, end), [candles, windowBars, end])
+  const { panning, startPan } = useHistoryDrag(pan, bars.length)
   const last = bars[bars.length - 1]
   const forming = peekIsForming(last, resolution, now)
   const remaining = peekTimeRemaining(last, resolution, now)
@@ -155,7 +187,11 @@ export function TimeframePeekBox({
   const markTop = Math.min(Math.max(7, layout.lastCloseY), Math.max(7, layout.height - 7))
   // Momentum of the watched resolution: the full candle history of that timeframe, the
   // forming bar's live close included — the same honesty rule as every other readout here.
-  const rsiValue = useMemo(() => peekRsi(candles), [candles])
+  // Scrolled back, it is the momentum as of the newest bar in view — never a later close.
+  const rsiValue = useMemo(
+    () => peekRsi(end < candles.length ? candles.slice(0, end) : candles),
+    [candles, end],
+  )
   const rsiZone = peekRsiZone(rsiValue)
 
   const startResize = useCallback(
@@ -240,9 +276,11 @@ export function TimeframePeekBox({
           </select>
           <ChevronDown size={9} aria-hidden="true" />
         </label>
-        <span className={`peek-state${forming ? ' is-live' : ''}`}>
+        <span
+          className={`peek-state${forming ? ' is-live' : ''}${lookingBack ? ' is-history' : ''}`}
+        >
           {forming ? <i aria-hidden="true" /> : null}
-          {forming ? 'forming' : offline ? state : 'closed'}
+          {lookingBack ? 'history' : forming ? 'forming' : offline ? state : 'closed'}
         </span>
         {position ? (
           <button
@@ -273,7 +311,11 @@ export function TimeframePeekBox({
           className="peek-button"
           aria-label={minimized ? 'Expand the peek window' : 'Minimize the peek window'}
           title={minimized ? 'Expand' : 'Minimize'}
-          onClick={() => setMinimized(!minimized)}
+          onClick={() => {
+            // The one-line view has no room to say it is looking back, so it always reads live.
+            if (!minimized) pan('live')
+            setMinimized(!minimized)
+          }}
         >
           {minimized ? <Plus size={11} /> : <Minus size={11} />}
         </button>
@@ -319,7 +361,8 @@ export function TimeframePeekBox({
           {bars.length ? (
             <div className="peek-plot">
               <svg
-                className="peek-svg"
+                className={`peek-svg is-pannable${panning ? ' is-panning' : ''}`}
+                onPointerDown={startPan}
                 width={layout.width}
                 height={layout.height}
                 viewBox={`0 0 ${layout.width} ${layout.height}`}
@@ -485,11 +528,13 @@ export function TimeframePeekBox({
           <div className="peek-timer">
             <Timer size={11} aria-hidden="true" />
             <span className="peek-timer-text mono">
-              {forming
-                ? `${formatPeekCountdown(remaining)} to the ${resolution} close`
-                : last
-                  ? `${resolution} bar closed ${peekBarTime(last.time, resolution)} UTC`
-                  : 'no bars yet'}
+              {lookingBack
+                ? `history to ${history.label} UTC · ${history.behind} bars back`
+                : forming
+                  ? `${formatPeekCountdown(remaining)} to the ${resolution} close`
+                  : last
+                    ? `${resolution} bar closed ${peekBarTime(last.time, resolution)} UTC`
+                    : 'no bars yet'}
             </span>
             <span className="peek-timer-track">
               <i style={{ width: `${(forming ? progress : 1) * 100}%` }} />
@@ -515,6 +560,37 @@ export function TimeframePeekBox({
               >
                 <Plus size={10} />
               </button>
+            </span>
+            <span className="peek-pan">
+              <button
+                type="button"
+                aria-label="Scroll the peek window back through history"
+                title="Older candles — or drag the candles to the right"
+                disabled={history.older <= 0}
+                onClick={() => pan(-historyStep(windowBars))}
+              >
+                <ChevronLeft size={10} />
+              </button>
+              <button
+                type="button"
+                aria-label="Scroll the peek window toward the live bar"
+                title="Newer candles — or drag the candles to the left"
+                disabled={!lookingBack}
+                onClick={() => pan(historyStep(windowBars))}
+              >
+                <ChevronRight size={10} />
+              </button>
+              {lookingBack ? (
+                <button
+                  type="button"
+                  className="is-live"
+                  aria-label="Back to the live bar in the peek window"
+                  title="Back to live"
+                  onClick={() => pan('live')}
+                >
+                  <ChevronsRight size={10} />
+                </button>
+              ) : null}
             </span>
             <button
               type="button"

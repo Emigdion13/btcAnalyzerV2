@@ -643,6 +643,8 @@ describe('bayesian floating window', () => {
         indicator: null,
         bars: count,
         onZoom: () => {},
+        history: { behind: 0, older: 0, label: null },
+        onPan: () => {},
         onEditIndicator: () => {},
         onAddIndicator: () => {},
         onClose: () => {},

@@ -192,11 +192,15 @@ export function peekSynchronizedHorizon({
   }
 }
 
-/** The most recent `bars` candles, oldest first. Short feeds are returned whole. */
-export function peekWindow(candles: Candle[], bars: number): Candle[] {
+/**
+ * The `bars` candles ending before index `end` (the most recent ones by default), oldest first.
+ * A scrolled-back window stays full; short feeds are returned whole.
+ */
+export function peekWindow(candles: Candle[], bars: number, end = candles.length): Candle[] {
   if (!candles.length) return []
   const size = clampPeekBars(bars)
-  return candles.length <= size ? [...candles] : candles.slice(-size)
+  const stop = Math.min(candles.length, Math.max(Math.min(candles.length, size), Math.round(end)))
+  return candles.slice(Math.max(0, stop - size), stop)
 }
 
 /** A bar is still forming while the clock is inside its bucket — the same rule the chart uses. */

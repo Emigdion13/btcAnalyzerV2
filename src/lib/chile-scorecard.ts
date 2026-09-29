@@ -1,5 +1,10 @@
 import { INTERVAL_SECONDS, bucketStart, type DataSource } from '../../shared/coinbase'
-import { chileAboveProbability } from './chile-odds'
+import {
+  CHILE_KALSHI_AVERAGE_SECONDS,
+  chileAboveProbability,
+  chileKalshiStrike,
+  type ChileKalshiBoundaries,
+} from './chile-odds'
 import type { ChileBarState, ChileCall, ChileReversalResult } from './chile-reversal'
 import type { ChileReversalSettings, Timeframe } from './types'
 
@@ -13,13 +18,15 @@ import type { ChileReversalSettings, Timeframe } from './types'
  *    its label on) is about the round that opens as that bar closes. It is graded against that
  *    round's open → close. WAIT is recorded as an abstention and never scored.
  * 2. **The this-round odds.** Every closed chart bar inside a round carried a probability that the
- *    round would finish above its open (`chile-odds.ts`); each one is graded against how the round
- *    did finish.
+ *    round would finish above its strike (`chile-odds.ts`); each one is graded against how the
+ *    round did finish. On a Kalshi window that is the strike and the settlement Kalshi published;
+ *    elsewhere the round's own open → close.
  *
  * Neither repaints: a round-close call reads only closed higher-timeframe bars plus a 5m bar that
  * closes with it, and a bar's odds are fixed once the bar has closed, so grading the loaded history
  * grades what the window said live. The V17 grades are also kept in a small saved journal per
- * profile, so the record outgrows the few hundred bars a chart loads.
+ * profile, so the record outgrows the few hundred bars a chart loads. The RSI extremes have a
+ * journal of their own (`chile-rsi-extreme.ts`).
  */
 
 export interface ChileGradedCall {
@@ -90,6 +97,19 @@ function finishedRound(bars: RoundBars, roundStart: number) {
   return { open: closer.round.open, close: closer.close }
 }
 
+/**
+ * The finished rounds in the engine's loaded history, by open time: each one's open and close, or
+ * null while it is unfinished or only partly loaded. Null when a chart bar spans several rounds.
+ */
+export function chileFinishedRounds(
+  result: ChileReversalResult,
+  chartTimeframe: Timeframe,
+  resolution: Timeframe,
+): ((roundStart: number) => { open: number; close: number } | null) | null {
+  const bars = roundBars(result, chartTimeframe, resolution)
+  return bars ? (roundStart) => finishedRound(bars, roundStart) : null
+}
+
 export function gradeChileCalls(
   result: ChileReversalResult,
   chartTimeframe: Timeframe,
@@ -116,13 +136,21 @@ export function gradeChileCalls(
   return graded
 }
 
+/**
+ * Every closed bar's odds, graded. With Kalshi's boundaries each bar is played against the strike
+ * Kalshi published and graded on the settlement it published (a tie resolves up, as Kalshi's does)
+ * — the same numbers the live window showed — and rounds Kalshi has no record of are left out
+ * rather than graded some other way.
+ */
 export function gradeChileOdds(
   result: ChileReversalResult,
   chartTimeframe: Timeframe,
   resolution: Timeframe,
+  kalshi?: ChileKalshiBoundaries | null,
 ): ChileOddsSample[] {
   const bars = roundBars(result, chartTimeframe, resolution)
   if (!bars) return []
+  const kalshiRounds = kalshi && bars.roundSeconds === 900 ? kalshi : null
   const samples: ChileOddsSample[] = []
   for (const bar of result.bars) {
     if (!bar.ready || !bar.confirmed || bar.round.move === null) continue
@@ -130,6 +158,24 @@ export function gradeChileOdds(
     const secondsLeft = roundStart + bars.roundSeconds - (bar.time + bars.chartSeconds)
     // The bar that closes the round has nothing left to forecast.
     if (secondsLeft <= 0) continue
+    if (kalshiRounds) {
+      const strike = chileKalshiStrike(kalshiRounds, roundStart, bars.roundSeconds)
+      const settlement = kalshiRounds.get(roundStart + bars.roundSeconds)
+      const atr = result.atr[bar.index]
+      if (strike === null || settlement === undefined || !(atr && atr > 0)) continue
+      samples.push({
+        roundStart,
+        secondsLeft,
+        probabilityAbove: chileAboveProbability(
+          (bar.close - strike) / atr,
+          secondsLeft,
+          bars.roundSeconds,
+          CHILE_KALSHI_AVERAGE_SECONDS,
+        ),
+        finishedAbove: settlement >= strike,
+      })
+      continue
+    }
     const round = finishedRound(bars, roundStart)
     if (!round || round.close === round.open) continue
     samples.push({

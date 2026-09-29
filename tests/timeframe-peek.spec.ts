@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { closeFloatingWindows } from './floating-windows'
 
 /**
  * The floating timeframe-peek window: a second resolution on the chart, forming bar included.
@@ -100,4 +101,30 @@ test('steps down when the chart is already the largest resolution', async ({ pag
   await expect(peek).toContainText('1D')
   await expect(peek).toContainText('7 bars = 1 chart bar')
   await expect(peek.locator('.peek-bar')).toHaveCount(12)
+})
+
+test('scrolls back through the peek resolution history and returns to live', async ({ page }) => {
+  await closeFloatingWindows(page, ['timeframe-peek'])
+  const peek = await openDemoChart(page)
+  const state = peek.locator('.peek-state')
+  const timer = peek.locator('.peek-timer-text')
+  await expect(state).toContainText('closed')
+
+  await peek.getByRole('button', { name: 'Scroll the peek window back through history' }).click()
+  await expect(state).toHaveText('history')
+  await expect(timer).toContainText('3 bars back')
+  // Still a full window of candles — it is the same twelve-bar view, just earlier.
+  await expect(peek.locator('.peek-bar')).toHaveCount(12)
+
+  // Dragging the candles left walks forward again, and stops at the live bar.
+  const plot = await peek.locator('.peek-svg').boundingBox()
+  await page.mouse.move(plot!.x + plot!.width - 10, plot!.y + plot!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(plot!.x + 10, plot!.y + plot!.height / 2, { steps: 12 })
+  await page.mouse.up()
+  await expect(state).toContainText('closed')
+  await expect(timer).not.toContainText('bars back')
+  await expect(
+    peek.getByRole('button', { name: 'Scroll the peek window toward the live bar' }),
+  ).toBeDisabled()
 })

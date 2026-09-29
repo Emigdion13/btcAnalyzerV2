@@ -1,5 +1,15 @@
 import { useMemo } from 'react'
-import { GripVertical, Minus, Plus, RotateCcw, Settings2, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+  GripVertical,
+  Minus,
+  Plus,
+  RotateCcw,
+  Settings2,
+  X,
+} from 'lucide-react'
 import type { Indicator } from '../lib/types'
 import {
   OSC_HUD_BAR_STEP,
@@ -10,7 +20,9 @@ import {
   oscHudGeometry,
 } from '../lib/osc-hud'
 import type { OscHudModel, OscHudTrace } from '../lib/osc-hud'
-import { useFloatingWindow } from '../lib/floating-window'
+import { useFloatingWindow, useHistoryDrag } from '../lib/floating-window'
+import { historyStep } from '../lib/history-pan'
+import type { WindowHistory } from '../lib/history-pan'
 import { formatPrice } from '../lib/market'
 import { oscHudScaleLabel } from '../lib/osc-hud'
 import { useLocalState } from '../lib/storage'
@@ -28,6 +40,10 @@ interface Props {
   onClose: () => void
   bars: number
   onZoom: (delta: number) => void
+  /** Where the window sits in the chart's history — live, or scrolled back. */
+  history: WindowHistory
+  /** Scroll the window through history, in bars (negative is back in time), or back to live. */
+  onPan: (delta: number | 'live') => void
 }
 
 /**
@@ -38,7 +54,8 @@ interface Props {
  * It is deliberately a view and not a copy of the pane: the y scale is the window's own extremes
  * (symmetric about zero, so a bar's sign still reads), the bars are wide enough to see the shape
  * of a single wave, and the level lines appear only once the window's scale can show them. Drag
- * it by the header, minimize it to one line, or close it with the button that opened it.
+ * it by the header, minimize it to one line, or close it with the button that opened it. Drag the
+ * plot itself sideways (or use ‹ ›) to scroll back through history; ⏭ returns it to the live bar.
  */
 export function OscHudCard({
   model,
@@ -49,10 +66,14 @@ export function OscHudCard({
   onClose,
   bars,
   onZoom,
+  history,
+  onPan,
 }: Props) {
   const widget = OSC_HUD_WIDGETS[model.kind]
   const [minimized, setMinimized] = useLocalState(widget.minimizedKey, false)
   const { boxRef, position, dragging, startDrag, reset } = useFloatingWindow(widget.positionKey, 8)
+  const { panning, startPan } = useHistoryDrag(onPan, model.times.length)
+  const lookingBack = history.behind > 0
   const geometry = useMemo(
     () =>
       oscHudGeometry(model.times.length, model.domain, OSC_HUD_LAYOUT.width, OSC_HUD_LAYOUT.height),
@@ -95,6 +116,13 @@ export function OscHudCard({
         <span className="osc-hud-title">{model.title}</span>
         {model.hovered ? (
           <span className="osc-hud-tag is-bar">BAR</span>
+        ) : lookingBack ? (
+          <span
+            className="osc-hud-tag is-history"
+            title={`Scrolled back ${history.behind} bars — the newest bar in view opened ${history.label} UTC`}
+          >
+            HISTORY
+          </span>
         ) : (
           <span className="osc-hud-tag is-live">LIVE</span>
         )}
@@ -136,7 +164,11 @@ export function OscHudCard({
           className="osc-hud-button"
           aria-label={minimized ? `Expand ${model.title} window` : `Minimize ${model.title} window`}
           title={minimized ? 'Expand' : 'Minimize'}
-          onClick={() => setMinimized(!minimized)}
+          onClick={() => {
+            // The one-line view has no room to say it is looking back, so it always reads live.
+            if (!minimized) onPan('live')
+            setMinimized(!minimized)
+          }}
         >
           {minimized ? <Plus size={11} /> : <Minus size={11} />}
         </button>
@@ -161,13 +193,15 @@ export function OscHudCard({
       ) : (
         <>
           <p className="osc-hud-sub">
+            {lookingBack ? `to ${history.label} UTC · ${history.behind} bars back · ` : null}
             {model.subtitle} · {model.bars} bars / {model.spanLabel} ·{' '}
             {model.settingsSource === 'chart' ? 'your indicator' : 'default settings'}
           </p>
           {model.ready ? (
             <div className="osc-hud-plot">
               <svg
-                className="osc-hud-svg"
+                className={`osc-hud-svg is-pannable${panning ? ' is-panning' : ''}`}
+                onPointerDown={startPan}
                 width={geometry.width}
                 height={geometry.height}
                 viewBox={`0 0 ${geometry.width} ${geometry.height}`}
@@ -313,6 +347,37 @@ export function OscHudCard({
               title={model.verdict.detail}
             >
               {model.verdict.text}
+            </span>
+            <span className="osc-hud-pan">
+              <button
+                type="button"
+                aria-label={`Scroll ${model.title} back through history`}
+                title="Older bars — or drag the chart to the right"
+                disabled={history.older <= 0}
+                onClick={() => onPan(-historyStep(bars))}
+              >
+                <ChevronLeft size={10} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Scroll ${model.title} toward the live bar`}
+                title="Newer bars — or drag the chart to the left"
+                disabled={!lookingBack}
+                onClick={() => onPan(historyStep(bars))}
+              >
+                <ChevronRight size={10} />
+              </button>
+              {lookingBack ? (
+                <button
+                  type="button"
+                  className="is-live"
+                  aria-label={`Back to the live bar in ${model.title}`}
+                  title="Back to live"
+                  onClick={() => onPan('live')}
+                >
+                  <ChevronsRight size={10} />
+                </button>
+              ) : null}
             </span>
             <span className="osc-hud-zoom">
               <button

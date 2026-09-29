@@ -8030,6 +8030,10 @@ input[type='color']::-webkit-color-swatch {
   background: rgba(144, 182, 255, 0.18);
   color: #90b6ff;
 }
+.osc-hud-tag.is-history {
+  background: rgba(245, 166, 35, 0.16);
+  color: #f5a623;
+}
 .osc-hud-head-space {
   margin-left: auto;
 }
@@ -8070,6 +8074,16 @@ input[type='color']::-webkit-color-swatch {
   display: block;
   width: 100%;
   height: auto;
+}
+/* The plot pans through history; the header, not the plot, moves the window. */
+.osc-hud-svg.is-pannable,
+.peek-svg.is-pannable {
+  cursor: grab;
+  touch-action: none;
+}
+.osc-hud-svg.is-panning,
+.peek-svg.is-panning {
+  cursor: grabbing;
 }
 .osc-hud-cursor line {
   stroke: rgba(255, 255, 255, 0.22);
@@ -8195,6 +8209,29 @@ input[type='color']::-webkit-color-swatch {
 .osc-hud-zoom button:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.07);
+}
+.osc-hud-pan,
+.peek-pan {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.osc-hud-pan button,
+.peek-pan button {
+  display: flex;
+  padding: 2px;
+  border-radius: 3px;
+  color: var(--dim);
+}
+.osc-hud-pan button:hover:not(:disabled),
+.peek-pan button:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.osc-hud-pan button.is-live,
+.peek-pan button.is-live {
+  color: #2bb99b;
 }
 
 .osc-hud-min-row {
@@ -8983,6 +9020,9 @@ input[type='color']::-webkit-color-swatch {
 }
 .peek-state.is-live {
   color: var(--green);
+}
+.peek-state.is-history {
+  color: #f5a623;
 }
 .peek-state i {
   width: 4px;

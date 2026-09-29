@@ -95,6 +95,8 @@ import {
   williamsVixFixHudModel,
 } from '../lib/osc-hud'
 import type { OscHudKind } from '../lib/osc-hud'
+import { historyEnd, panHistory, windowHistory } from '../lib/history-pan'
+import type { HistoryAnchor } from '../lib/history-pan'
 import { RSI_DIVERGENCE_DEFAULTS } from '../lib/rsi-divergence'
 import {
   calculateCmMacd,
@@ -1594,6 +1596,25 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       ...previous,
       [kind]: clampOscHudBars(oscHudBars(timeframe, previous[kind]) + delta, timeframe),
     }))
+  // Scrolling back through history is a look, not a preference: each window keeps the time of its
+  // newest bar while you study it, and a reload opens every window on live candles again.
+  const [oscHudAnchors, setOscHudAnchors] = useState<Partial<Record<OscHudKind, HistoryAnchor>>>({})
+  const oscHudEnd = (kind: OscHudKind, bars: number) =>
+    historyEnd(candleTimes, oscHudAnchors[kind] ?? null, bars)
+  const panOscHud = (kind: OscHudKind, bars: number, delta: number | 'live') =>
+    setOscHudAnchors((previous) => ({
+      ...previous,
+      [kind]:
+        delta === 'live' ? null : panHistory(candleTimes, previous[kind] ?? null, bars, delta),
+    }))
+  // Off the crosshair, each model reads its window's own newest bar (`end - 1`) — the live one, or
+  // the last bar in view once it has been scrolled back — so the numbers speak about a bar you see.
+  const pressureHudEnd = oscHudEnd('zeiierman-trend-pressure', pressureHudBars)
+  const cmHudEnd = oscHudEnd('cm-ult-macd', cmHudBars)
+  const waveHudEnd = oscHudEnd('wave-trend', waveHudBars)
+  const vixFixHudEnd = oscHudEnd('cm-williams-vix-fix', vixFixHudBars)
+  const tmoHudEnd = oscHudEnd('tmo-scalper', tmoHudBars)
+  const bayesHudEnd = oscHudEnd('bayesian-nqqe-bankfunds', bayesHudBars)
   // An alt-timeframe MACD with no source candles has nothing honest to draw; say so with the same
   // words the pane uses rather than showing an empty box.
   const cmHudNotice = props.cmMacdHud && cmHudIndicator ? cmNotice(cmHudIndicator) : ''
@@ -1609,7 +1630,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               times: candleTimes,
               timeframe,
               bars: pressureHudBars,
-              index: hoverIndex,
+              end: pressureHudEnd,
+              index: hovered ? hoverIndex : pressureHudEnd - 1,
               hovered: hovered !== null,
               settingsSource: pressureHudIndicator ? 'chart' : 'defaults',
             },
@@ -1623,6 +1645,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candleTimes,
       timeframe,
       pressureHudBars,
+      pressureHudEnd,
       hoverIndex,
       hovered,
       pressureHudIndicator,
@@ -1644,7 +1667,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               times: candleTimes,
               timeframe,
               bars: cmHudBars,
-              index: hoverIndex,
+              end: cmHudEnd,
+              index: hovered ? hoverIndex : cmHudEnd - 1,
               hovered: hovered !== null,
               note: cmHudNotice,
               settingsSource: cmHudIndicator ? 'chart' : 'defaults',
@@ -1661,6 +1685,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       realtimeFrom,
       candleTimes,
       cmHudBars,
+      cmHudEnd,
       hoverIndex,
       hovered,
       cmHudIndicator,
@@ -1674,7 +1699,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             times: candleTimes,
             timeframe,
             bars: waveHudBars,
-            index: hoverIndex,
+            end: waveHudEnd,
+            index: hovered ? hoverIndex : waveHudEnd - 1,
             hovered: hovered !== null,
             settingsSource: waveHudIndicator ? 'chart' : 'defaults',
           })
@@ -1686,6 +1712,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candleTimes,
       timeframe,
       waveHudBars,
+      waveHudEnd,
       hoverIndex,
       hovered,
       waveHudIndicator,
@@ -1712,7 +1739,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               times: candleTimes,
               timeframe,
               bars: vixFixHudBars,
-              index: hoverIndex,
+              end: vixFixHudEnd,
+              index: hovered ? hoverIndex : vixFixHudEnd - 1,
               hovered: hovered !== null,
               settingsSource: vixFixHudIndicator ? 'chart' : 'defaults',
             },
@@ -1725,12 +1753,14 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candleTimes,
       timeframe,
       vixFixHudBars,
+      vixFixHudEnd,
       hoverIndex,
       hovered,
       vixFixHudIndicator,
     ],
   )
   const rsiDivHudBars = oscHudBars(timeframe, oscHudBarsOverride['rsi-divergence'])
+  const rsiDivHudEnd = oscHudEnd('rsi-divergence', rsiDivHudBars)
   // The TMO window reads the pane's own wheels: the same settings, the same feeds, the same
   // gated crosses — the note names the missing feed instead of drawing a guessed wheel.
   const tmoHudNotice = props.tmoScalperHud ? tmoNotice(tmoHudSettings) : ''
@@ -1748,7 +1778,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               times: candleTimes,
               timeframe,
               bars: tmoHudBars,
-              index: hoverIndex,
+              end: tmoHudEnd,
+              index: hovered ? hoverIndex : tmoHudEnd - 1,
               hovered: hovered !== null,
               note: tmoHudNotice,
               settingsSource: tmoHudIndicator ? 'chart' : 'defaults',
@@ -1764,6 +1795,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       replay,
       candleTimes,
       tmoHudBars,
+      tmoHudEnd,
       hoverIndex,
       hovered,
       tmoHudNotice,
@@ -1780,7 +1812,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
               times: candleTimes,
               timeframe,
               bars: bayesHudBars,
-              index: hoverIndex,
+              end: bayesHudEnd,
+              index: hovered ? hoverIndex : bayesHudEnd - 1,
               hovered: hovered !== null,
               settingsSource: bayesHudIndicator ? 'chart' : 'defaults',
             },
@@ -1793,6 +1826,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candleTimes,
       timeframe,
       bayesHudBars,
+      bayesHudEnd,
       hoverIndex,
       hovered,
       bayesHudIndicator,
@@ -1805,7 +1839,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             times: candleTimes,
             timeframe,
             bars: rsiDivHudBars,
-            index: hoverIndex,
+            end: rsiDivHudEnd,
+            index: hovered ? hoverIndex : rsiDivHudEnd - 1,
             hovered: hovered !== null,
             settingsSource: rsiDivHudIndicator ? 'chart' : 'defaults',
           })
@@ -1817,6 +1852,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       candleTimes,
       timeframe,
       rsiDivHudBars,
+      rsiDivHudEnd,
       hoverIndex,
       hovered,
       rsiDivHudIndicator,
@@ -4170,6 +4206,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={cmHudIndicator}
           bars={cmHudBars}
           onZoom={(delta) => zoomOscHud('cm-ult-macd', delta)}
+          history={windowHistory(candleTimes, cmHudEnd, cmHudBars)}
+          onPan={(delta) => panOscHud('cm-ult-macd', cmHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('cm-ult-macd')}
@@ -4182,6 +4220,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={waveHudIndicator}
           bars={waveHudBars}
           onZoom={(delta) => zoomOscHud('wave-trend', delta)}
+          history={windowHistory(candleTimes, waveHudEnd, waveHudBars)}
+          onPan={(delta) => panOscHud('wave-trend', waveHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('wave-trend')}
@@ -4194,6 +4234,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={rsiDivHudIndicator}
           bars={rsiDivHudBars}
           onZoom={(delta) => zoomOscHud('rsi-divergence', delta)}
+          history={windowHistory(candleTimes, rsiDivHudEnd, rsiDivHudBars)}
+          onPan={(delta) => panOscHud('rsi-divergence', rsiDivHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('rsi-divergence')}
@@ -4206,6 +4248,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={vixFixHudIndicator}
           bars={vixFixHudBars}
           onZoom={(delta) => zoomOscHud('cm-williams-vix-fix', delta)}
+          history={windowHistory(candleTimes, vixFixHudEnd, vixFixHudBars)}
+          onPan={(delta) => panOscHud('cm-williams-vix-fix', vixFixHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('cm-williams-vix-fix')}
@@ -4218,6 +4262,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={tmoHudIndicator}
           bars={tmoHudBars}
           onZoom={(delta) => zoomOscHud('tmo-scalper', delta)}
+          history={windowHistory(candleTimes, tmoHudEnd, tmoHudBars)}
+          onPan={(delta) => panOscHud('tmo-scalper', tmoHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('tmo-scalper')}
@@ -4230,6 +4276,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={pressureHudIndicator}
           bars={pressureHudBars}
           onZoom={(delta) => zoomOscHud('zeiierman-trend-pressure', delta)}
+          history={windowHistory(candleTimes, pressureHudEnd, pressureHudBars)}
+          onPan={(delta) => panOscHud('zeiierman-trend-pressure', pressureHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('zeiierman-trend-pressure')}
@@ -4242,6 +4290,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
           indicator={bayesHudIndicator}
           bars={bayesHudBars}
           onZoom={(delta) => zoomOscHud('bayesian-nqqe-bankfunds', delta)}
+          history={windowHistory(candleTimes, bayesHudEnd, bayesHudBars)}
+          onPan={(delta) => panOscHud('bayesian-nqqe-bankfunds', bayesHudBars, delta)}
           onEditIndicator={props.onIndicatorEdit}
           onAddIndicator={(kind) => props.onIndicatorAdd?.(kind)}
           onClose={() => props.onOscHudClose?.('bayesian-nqqe-bankfunds')}

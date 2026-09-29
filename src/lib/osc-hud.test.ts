@@ -241,6 +241,24 @@ describe('cmMacdHudModel — the CM window shows the pane’s own numbers', () =
     expect(live.hovered).toBe(false)
   })
 
+  it('scrolled back through history, shows the bars before the end and reads the newest of them', () => {
+    const values = cmValues({ macd: Array.from({ length: 100 }, (_, i) => i) })
+    const model = cmMacdHudModel(values, CM_MACD_DEFAULTS, modelInput({ end: 60, index: 59 }))
+    expect(model.times).toEqual(times(100).slice(40, 60))
+    expect(model.activeIndex).toBe(19)
+    expect(model.readouts[0]!.value).toBe('59.00')
+    // An end too early for a full window still shows a full one, from the oldest bar.
+    const early = cmMacdHudModel(values, CM_MACD_DEFAULTS, modelInput({ end: 5, index: 19 }))
+    expect(early.times).toEqual(times(100).slice(0, 20))
+    // A hovered bar outside the scrolled window has nothing to point at.
+    const outside = cmMacdHudModel(
+      values,
+      CM_MACD_DEFAULTS,
+      modelInput({ end: 60, index: 90, hovered: true }),
+    )
+    expect(outside.activeIndex).toBeNull()
+  })
+
   it('marks the bar where MACD crossed the signal, which is what the dots are for', () => {
     const macd = [-2, -1, 1, 2, -1]
     const values = cmValues({ macd, signal: [0, 0, 0, 0, 0], histogram: macd })

@@ -341,6 +341,8 @@ describe('williamsVixFixHudModel', () => {
         onClose: noop,
         bars: 20,
         onZoom: noop,
+        history: { behind: 0, older: 0, label: null },
+        onPan: noop,
       }),
     )
     expect(markup).toContain('aria-label="CM_Williams_Vix_Fix window"')

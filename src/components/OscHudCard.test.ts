@@ -52,6 +52,9 @@ const base = {
   onClose: noop,
   bars: 20,
   onZoom: noop,
+  // A live window with history behind it to scroll back to.
+  history: { behind: 0, older: 80, label: null },
+  onPan: noop,
 }
 const card = (model: unknown, override: Record<string, unknown> = {}) =>
   renderToStaticMarkup(createElement(OscHudCard, { model, ...base, ...override } as never))
@@ -65,6 +68,21 @@ describe('the floating oscillator card', () => {
     expect(markup).toContain('20 bars / 20 min')
     expect(markup).toContain('default settings')
     expect(markup).toContain('LIVE')
+    // Live, there is history to scroll back to and nothing newer to scroll toward.
+    expect(markup).toMatch(/aria-label="Scroll CM_Ult_MacD_MTF back through history"(?![^>]*disabled)/)
+    expect(markup).toMatch(/aria-label="Scroll CM_Ult_MacD_MTF toward the live bar"[^>]*disabled/)
+    expect(markup).not.toContain('Back to the live bar')
+  })
+
+  it('says when it is looking back through history, and offers the way back to live', () => {
+    const markup = card(modelOf(cmValues(swing)), {
+      history: { behind: 12, older: 30, label: '14:32' },
+    })
+    expect(markup).toContain('HISTORY')
+    expect(markup).not.toContain('>LIVE<')
+    expect(markup).toContain('to 14:32 UTC · 12 bars back')
+    expect(markup).toContain('aria-label="Back to the live bar in CM_Ult_MacD_MTF"')
+    expect(markup).toMatch(/aria-label="Scroll CM_Ult_MacD_MTF toward the live bar"(?![^>]*disabled)/)
   })
 
   it('draws one histogram bar per bar in the window, hung from the zero line', () => {

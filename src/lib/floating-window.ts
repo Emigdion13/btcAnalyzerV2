@@ -129,6 +129,58 @@ export function useFloatingWindow(storageKey: string, padding = DEFAULT_PADDING)
   return { boxRef, position, dragging, startDrag, reset }
 }
 
+export interface HistoryDrag {
+  /** Whether a pan drag is in progress, for the grabbing cursor. */
+  panning: boolean
+  /** Put this on the plot that pans — its rendered width is what one bar of drag is measured on. */
+  startPan: (event: React.PointerEvent<Element>) => void
+}
+
+/**
+ * Drag a window's plot sideways to walk it through history, the way a chart pans: pulling right
+ * brings older bars into view. One bar's width of drag is one bar of history, and `onPan` hears
+ * each whole-bar step as it happens (negative is back in time). The caller clamps each step, so a
+ * drag past the oldest bar stops there, and dragging back moves forward straight away.
+ */
+export function useHistoryDrag(onPan: (delta: number) => void, bars: number): HistoryDrag {
+  const [panning, setPanning] = useState(false)
+  const onPanRef = useRef(onPan)
+  useEffect(() => {
+    onPanRef.current = onPan
+  }, [onPan])
+
+  const startPan = useCallback(
+    (event: React.PointerEvent<Element>) => {
+      if (event.button !== 0 || bars < 1) return
+      const width = event.currentTarget.getBoundingClientRect().width
+      if (!(width > 0)) return
+      event.preventDefault()
+      const step = width / bars
+      const startX = event.clientX
+      let applied = 0
+      setPanning(true)
+      const move = (moveEvent: PointerEvent) => {
+        const total = Math.round((moveEvent.clientX - startX) / step)
+        if (total === applied) return
+        onPanRef.current(applied - total)
+        applied = total
+      }
+      const stop = () => {
+        setPanning(false)
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', stop)
+        window.removeEventListener('pointercancel', stop)
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', stop)
+      window.addEventListener('pointercancel', stop)
+    },
+    [bars],
+  )
+
+  return { panning, startPan }
+}
+
 /**
  * Where the AI decision window starts.
  *

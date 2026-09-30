@@ -89,6 +89,7 @@ import { CHILE_RSI_EXTREME_TIMEFRAME, chileRsiRounds } from './lib/chile-rsi-ext
 import { useKalshiStrike } from './lib/useKalshiStrike'
 import { useKalshiFloat } from './lib/useKalshiFloat'
 import { BookStrengthBox } from './components/BookStrengthBox'
+import { useLevelTouchJournal } from './lib/useLevelTouchJournal'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
 import { HeapMemoryMeter } from './components/HeapMemoryMeter'
@@ -618,6 +619,15 @@ export default function App() {
     () => (replayIndex === null ? baseCandles : baseCandles.slice(0, replayIndex)),
     [baseCandles, replayIndex],
   )
+  // Grades every live test of the chart's nearest levels (and random control prices) against the
+  // resting book behind them. Real Coinbase book only: never demo, replay or a metal chart.
+  const levelTouches = useLevelTouchJournal({
+    product: symbol,
+    timeframe,
+    candles,
+    book: live.book ?? null,
+    enabled: source === 'coinbase' && !isMetal && replayIndex === null,
+  })
   const peekTimeframe = useMemo(
     () => peekResolution(peekSettings, timeframe),
     [peekSettings, timeframe],
@@ -2576,7 +2586,15 @@ export default function App() {
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
                 )}
                 {venue === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
-                  <BookStrengthBox book={bookView} onClose={() => setBookBoxVisible(false)} />
+                  <BookStrengthBox
+                    book={bookView}
+                    onClose={() => setBookBoxVisible(false)}
+                    levelTests={
+                      source === 'coinbase'
+                        ? { stats: levelTouches.stats, timeframe, onReset: levelTouches.reset }
+                        : undefined
+                    }
+                  />
                 )}
                 {peekFeed && hasData && (
                   <TimeframePeekBox

@@ -8837,6 +8837,72 @@ input[type='color']::-webkit-color-swatch {
   color: var(--dim);
   line-height: 1.4;
 }
+.book-tests {
+  margin: 2px 2px 0;
+  padding: 5px 6px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.book-tests-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.book-tests-reset {
+  display: inline-flex;
+  padding: 1px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.book-tests-reset:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.book-tests-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.book-tests-table th,
+.book-tests-table td {
+  padding: 1px 0;
+  text-align: right;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.book-tests-table th:first-child {
+  text-align: left;
+}
+.book-tests-table thead th {
+  font-size: 7px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.book-tests-table tbody th {
+  color: var(--muted);
+}
+.book-tests-table td {
+  color: var(--text);
+}
+.book-tests-table td.book-tests-empty,
+.book-tests-rate {
+  color: var(--dim);
+}
+.book-tests-total th,
+.book-tests-total td {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 2px;
+}
+.book-tests-note {
+  margin: 4px 0 0;
+  font-size: 8px;
+  line-height: 1.4;
+  color: var(--dim);
+}
 .book-box-foot {
   margin-top: 4px;
   padding: 5px 9px 0;

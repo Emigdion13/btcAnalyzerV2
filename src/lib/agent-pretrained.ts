@@ -231,216 +231,216 @@ export const AGENT_PRETRAINED_LEARNING: AgentLearningState = {
     },
     "level-strength": {
       "overall": {
-        "skill": 0.8448,
+        "skill": 0.8759,
         "samples": 1852
       },
       "byRegime": {
         "chop": {
-          "skill": 0.7635,
+          "skill": 0.8152,
           "samples": 700
         },
         "range": {
-          "skill": 0.8148,
+          "skill": 0.8463,
           "samples": 936
         },
         "breakout": {
-          "skill": 0.6981,
+          "skill": 0.7062,
           "samples": 54
         },
         "breakdown": {
-          "skill": 0.7369,
+          "skill": 0.7766,
           "samples": 32
         },
         "trend-down": {
-          "skill": 0.7247,
+          "skill": 0.7726,
           "samples": 27
         },
         "trend-up": {
-          "skill": 0.7412,
+          "skill": 0.7924,
           "samples": 103
         }
       },
       "byTimeframe": {
         "1D": {
-          "skill": 0.669,
+          "skill": 0.6682,
           "samples": 284
         },
         "1h": {
-          "skill": 0.6964,
+          "skill": 0.6448,
           "samples": 501
         },
         "15m": {
-          "skill": 0.7143,
+          "skill": 0.7792,
           "samples": 279
         },
         "5m": {
-          "skill": 0.8055,
+          "skill": 0.8151,
           "samples": 279
         },
         "1m": {
-          "skill": 0.8448,
+          "skill": 0.8759,
           "samples": 509
         }
       }
     },
     "structure": {
       "overall": {
-        "skill": 0.7616,
+        "skill": 0.8759,
         "samples": 1852
       },
       "byRegime": {
         "chop": {
-          "skill": 0.7085,
+          "skill": 0.8152,
           "samples": 700
         },
         "range": {
-          "skill": 0.7424,
+          "skill": 0.8463,
           "samples": 936
         },
         "breakout": {
-          "skill": 0.6666,
+          "skill": 0.7062,
           "samples": 54
         },
         "breakdown": {
-          "skill": 0.712,
+          "skill": 0.7766,
           "samples": 32
         },
         "trend-down": {
-          "skill": 0.6483,
+          "skill": 0.7726,
           "samples": 27
         },
         "trend-up": {
-          "skill": 0.6618,
+          "skill": 0.7924,
           "samples": 103
         }
       },
       "byTimeframe": {
         "1D": {
-          "skill": 0.7017,
+          "skill": 0.6682,
           "samples": 284
         },
         "1h": {
-          "skill": 0.7413,
+          "skill": 0.6448,
           "samples": 501
         },
         "15m": {
-          "skill": 0.6734,
+          "skill": 0.7792,
           "samples": 279
         },
         "5m": {
-          "skill": 0.7298,
+          "skill": 0.8151,
           "samples": 279
         },
         "1m": {
-          "skill": 0.7616,
+          "skill": 0.8759,
           "samples": 509
         }
       }
     },
     "ensemble": {
       "overall": {
-        "skill": 0.8458,
+        "skill": 0.8455,
         "samples": 1852
       },
       "byRegime": {
         "chop": {
-          "skill": 0.7729,
+          "skill": 0.7622,
           "samples": 700
         },
         "range": {
-          "skill": 0.8273,
+          "skill": 0.8341,
           "samples": 936
         },
         "breakout": {
-          "skill": 0.6392,
+          "skill": 0.636,
           "samples": 54
         },
         "breakdown": {
-          "skill": 0.6473,
+          "skill": 0.6459,
           "samples": 32
         },
         "trend-down": {
-          "skill": 0.7114,
+          "skill": 0.7082,
           "samples": 27
         },
         "trend-up": {
-          "skill": 0.7212,
+          "skill": 0.7099,
           "samples": 103
         }
       },
       "byTimeframe": {
         "1D": {
-          "skill": 0.6607,
+          "skill": 0.66,
           "samples": 284
         },
         "1h": {
-          "skill": 0.6568,
+          "skill": 0.6354,
           "samples": 501
         },
         "15m": {
-          "skill": 0.7506,
+          "skill": 0.7557,
           "samples": 279
         },
         "5m": {
-          "skill": 0.7861,
+          "skill": 0.7942,
           "samples": 279
         },
         "1m": {
-          "skill": 0.8458,
+          "skill": 0.8455,
           "samples": 509
         }
       }
     },
     "context": {
       "overall": {
-        "skill": 0.8051,
+        "skill": 0.8542,
         "samples": 1317
       },
       "byRegime": {
         "chop": {
-          "skill": 0.7109,
+          "skill": 0.7583,
           "samples": 502
         },
         "range": {
-          "skill": 0.7995,
+          "skill": 0.8351,
           "samples": 632
         },
         "breakdown": {
-          "skill": 0.7975,
+          "skill": 0.7843,
           "samples": 20
         },
         "trend-down": {
-          "skill": 0.6788,
+          "skill": 0.7186,
           "samples": 20
         },
         "breakout": {
-          "skill": 0.6784,
+          "skill": 0.6782,
           "samples": 41
         },
         "trend-up": {
-          "skill": 0.7573,
+          "skill": 0.758,
           "samples": 102
         }
       },
       "byTimeframe": {
         "1D": {
-          "skill": 0.6479,
+          "skill": 0.6683,
           "samples": 135
         },
         "1h": {
-          "skill": 0.594,
+          "skill": 0.6302,
           "samples": 381
         },
         "15m": {
-          "skill": 0.7717,
+          "skill": 0.7512,
           "samples": 221
         },
         "5m": {
-          "skill": 0.7593,
+          "skill": 0.8,
           "samples": 250
         },
         "1m": {
-          "skill": 0.8051,
+          "skill": 0.8542,
           "samples": 330
         }
       }

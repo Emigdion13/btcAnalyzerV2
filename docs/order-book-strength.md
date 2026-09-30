@@ -6,7 +6,7 @@ currently willing to defend that price. This feature answers that second questio
 place the answer can be read in real time on a single venue: the resting **level2 order book**.
 
 It is built directly on the Coinbase feed Atlas already streams. No new vendor, no API key, and
-no synthetic data in Coinbase mode: the level2 channel (`snapshot` + `l2update`) rides the same
+no synthetic data in Coinbase mode: the unauthenticated `level2_batch` channel (`snapshot` + `l2update`, batched every 50ms) rides the same
 shared WebSocket as `ticker`/`matches`, is validated the same way, and is dropped from the SSE
 payload whenever it is unavailable so no stale depth can linger on screen.
 
@@ -86,7 +86,7 @@ tape, and its honest lead time is "until the size is pulled or filled".
 - `shared/coinbase.ts` — `OrderBookView`/`OrderBookWall`/`OrderBookBin` wire types, the
   `isOrderBookView` validator, and the optional `StreamPayload.book` field (mirroring the whale
   flow contract: absent = clear, never a zeroed reading).
-- `server/coinbase-service.ts` — subscribes `level2` for the product(s) with an open chart only
+- `server/coinbase-service.ts` — subscribes `level2_batch` (plain `level2` now requires API keys and is rejected) for the product(s) with an open chart only
   (never watchlist-only pairs), maintains one book per product, and attaches the analyzed view
   to the 1 Hz SSE payload. SSE-level tests cover subscribe/ignore/update behavior.
 - `src/lib/useCoinbaseMarket.ts` — browser-side validation and gating: the book is only exposed
@@ -110,3 +110,11 @@ exactly like the rest of the Coinbase integration — the feature is developed a
 through the real SSE path at the service level. Live depth should be validated from a
 network-enabled deployment before any production claim. Demo mode additionally provides a
 clearly-labeled synthetic book so the visual layer can be exercised anywhere.
+
+## Do the chips predict anything?
+
+A backtest of the chart's levels without the book found that tested pivots and SR boxes hold no more often than random prices on BTC-USD, so a level's own strength now reads 0. The book is the one part history cannot test, because Coinbase keeps no level2 history. The **Level tests** table at the bottom of the book readout measures it live: every test of the nearest levels and of random control prices, graded by the `strong`/`medium`/`weak`/none reading of the book defending that price just before price arrived. See [level strength](level-strength.md).
+
+## Checked against live Coinbase (2026-09-29)
+
+Until this date the book had only been exercised on fixtures, and against the real feed it never reached the chart: Coinbase answered the `level2` subscription with "level2, level3, and full channels now require authentication" (and the service reconnected on every rejection), and the unauthenticated snapshot is the whole book — over 20,000 bid levels down to a few dollars — so the profile tiled $0 to $146,000 and failed the client's own validation (a slice priced at 0). The service now subscribes `level2_batch`, and `OrderBook.view` analyses only levels within ±5% of mid (`VIEW_BAND_RATIO`). On the live BTC-USD feed the readout, walls and chips then stayed up continuously.

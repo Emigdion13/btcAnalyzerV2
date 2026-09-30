@@ -27,6 +27,8 @@ function level(overrides: Partial<LevelReference> = {}): LevelReference {
     bottom: PRICE,
     source: 'sr-zone',
     strength: 0.7,
+    holdRate: 0.53,
+    randomHoldRate: 0.46,
     distanceAtr: 0.4,
     touches: 8,
     state: 'intact',

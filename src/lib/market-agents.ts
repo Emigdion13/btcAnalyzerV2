@@ -1,4 +1,3 @@
-import { scoreZone, type BookStrengthBucket } from '../../shared/order-book'
 import {
   INTERVAL_SECONDS,
   type ConnectionState,
@@ -15,8 +14,8 @@ import {
 } from './kalshi-window'
 import { formatPrice } from './market'
 import { whaleLevelContext, type WhaleLevelFrame } from './whale-level-context'
-import { SR_BREAKS_RETESTS_DEFAULTS, type Candle, type Timeframe } from './types'
-import { calculateSrBreaksRetests } from './sr-breaks-retests'
+import type { Candle, Timeframe } from './types'
+import { nearestLevels, wilderAtr, type LevelReference } from './level-strength'
 import { AGENT_PRETRAINED_LEARNING } from './agent-pretrained'
 import {
   buildPriceForecast,
@@ -84,18 +83,7 @@ export type SpecializedOpinion<T extends SpecializedAgentId = SpecializedAgentId
   id: T
 }
 
-export interface LevelReference {
-  price: number
-  top: number
-  bottom: number
-  source: 'sr-zone' | 'pivot'
-  strength: number
-  distanceAtr: number
-  touches: number
-  state?: 'intact' | 'broken'
-  bookBucket?: BookStrengthBucket
-  bookNotional?: number
-}
+export type { LevelReference } from './level-strength'
 
 export interface LevelStrengthSummary {
   nearestSupport: LevelReference | null
@@ -249,38 +237,8 @@ const biasFromScore = (score: number, threshold = 0.18): AgentBias =>
   score >= threshold ? 'bullish' : score <= -threshold ? 'bearish' : 'neutral'
 const distanceWeight = (distanceAtr: number | null) =>
   distanceAtr === null ? 0 : clamp(1.3 - distanceAtr / 2.2, 0, 1)
-const bookBucketWeight = (bucket?: BookStrengthBucket) =>
-  bucket === 'strong' ? 1 : bucket === 'medium' ? 0.7 : bucket === 'weak' ? 0.35 : 0
 const TIMEFRAME_ORDER: Timeframe[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W']
 const timeframeRank = (timeframe: Timeframe) => TIMEFRAME_ORDER.indexOf(timeframe)
-
-function atr(candles: Candle[], period: number): (number | null)[] {
-  const ranges: (number | null)[] = candles.map((candle, index) => {
-    if (index === 0) return candle.high - candle.low
-    const previousClose = candles[index - 1].close
-    return Math.max(
-      candle.high - candle.low,
-      Math.abs(candle.high - previousClose),
-      Math.abs(candle.low - previousClose),
-    )
-  })
-  const out: (number | null)[] = new Array(candles.length).fill(null)
-  let seed = 0
-  let averageRange: number | null = null
-  for (let i = 0; i < ranges.length; i++) {
-    const value = ranges[i]!
-    if (i < period - 1) {
-      seed += value
-      continue
-    }
-    if (i === period - 1) {
-      seed += value
-      averageRange = seed / period
-    } else averageRange = (averageRange! * (period - 1) + value) / period
-    out[i] = averageRange
-  }
-  return out
-}
 
 function slopeScore(values: (number | null)[], lookback: number, normalizer: number): number {
   const endIndex = values.length - 1
@@ -306,136 +264,6 @@ function macd(close: number[]) {
     value === null || signal[index] === null ? null : value - signal[index]!,
   )
   return { line, signal, histogram }
-}
-
-function countTouches(
-  candles: Candle[],
-  level: number,
-  tolerance: number,
-  side: 'support' | 'resistance',
-): number {
-  let touches = 0
-  for (const candle of candles.slice(-80)) {
-    if (side === 'support') {
-      if (candle.low <= level + tolerance && candle.low >= level - tolerance) touches++
-    } else if (candle.high >= level - tolerance && candle.high <= level + tolerance) touches++
-  }
-  return touches
-}
-
-function pivotLevels(candles: Candle[], atrValue: number, currentPrice: number) {
-  const tolerance = atrValue * 0.25
-  const highs: LevelReference[] = []
-  const lows: LevelReference[] = []
-  for (let i = 3; i < candles.length - 3; i++) {
-    const value = candles[i]
-    const pivotHigh =
-      value.high > candles[i - 1].high &&
-      value.high >= candles[i - 2].high &&
-      value.high > candles[i + 1].high &&
-      value.high >= candles[i + 2].high
-    const pivotLow =
-      value.low < candles[i - 1].low &&
-      value.low <= candles[i - 2].low &&
-      value.low < candles[i + 1].low &&
-      value.low <= candles[i + 2].low
-    if (pivotHigh && value.high > currentPrice) {
-      const touches = countTouches(candles, value.high, tolerance, 'resistance')
-      highs.push({
-        price: value.high,
-        top: value.high + tolerance,
-        bottom: value.high - tolerance,
-        source: 'pivot',
-        strength: clamp(touches / 5, 0.2, 0.8),
-        distanceAtr: (value.high - currentPrice) / Math.max(atrValue, 1e-9),
-        touches,
-      })
-    }
-    if (pivotLow && value.low < currentPrice) {
-      const touches = countTouches(candles, value.low, tolerance, 'support')
-      lows.push({
-        price: value.low,
-        top: value.low + tolerance,
-        bottom: value.low - tolerance,
-        source: 'pivot',
-        strength: clamp(touches / 5, 0.2, 0.8),
-        distanceAtr: (currentPrice - value.low) / Math.max(atrValue, 1e-9),
-        touches,
-      })
-    }
-  }
-  return {
-    nearestResistance:
-      highs.sort((a, b) => a.distanceAtr - b.distanceAtr || b.strength - a.strength)[0] ?? null,
-    nearestSupport:
-      lows.sort((a, b) => a.distanceAtr - b.distanceAtr || b.strength - a.strength)[0] ?? null,
-  }
-}
-
-function levelFromSrZone(
-  candles: Candle[],
-  book: OrderBookView | null | undefined,
-  atrValue: number,
-  currentPrice: number,
-  side: 'support' | 'resistance',
-): LevelReference | null {
-  const result = calculateSrBreaksRetests(candles, SR_BREAKS_RETESTS_DEFAULTS)
-  const zone = result.zones
-    .filter((candidate) => candidate.side === side && candidate.state === 'intact')
-    .filter((candidate) =>
-      side === 'support' ? candidate.level < currentPrice : candidate.level > currentPrice,
-    )
-    .sort(
-      (a, b) =>
-        Math.abs(a.level - currentPrice) - Math.abs(b.level - currentPrice) ||
-        b.fillOpacity - a.fillOpacity,
-    )[0]
-  if (!zone) return null
-  const fallbackHalfWidth = Math.max(atrValue * 0.4, currentPrice * 0.001)
-  const bottom = side === 'support' ? (zone.boundary ?? zone.level - fallbackHalfWidth) : zone.level
-  const top = side === 'support' ? zone.level : (zone.boundary ?? zone.level + fallbackHalfWidth)
-  const touches = countTouches(candles, zone.level, atrValue * 0.25, side)
-  const bookScore = book
-    ? scoreZone(
-        book,
-        Math.max(top, bottom),
-        Math.min(top, bottom),
-        side === 'support' ? 'bid' : 'ask',
-      )
-    : null
-  const volumeBaseline = average(candles.slice(-30).map((candle) => candle.volume)) || 1
-  const volumeScore = clamp(Math.abs(zone.volume) / (volumeBaseline * 2.5), 0, 1)
-  const recency = clamp(1 - (candles.length - 1 - zone.createdIndex) / 100, 0.15, 1)
-  const zoneStrength = clamp(zone.fillOpacity / 0.7, 0, 1)
-  const strength = clamp(
-    0.35 * zoneStrength +
-      0.2 * recency +
-      0.2 * volumeScore +
-      0.15 * clamp(touches / 5, 0, 1) +
-      0.1 * bookBucketWeight(bookScore?.bucket),
-    0,
-    1,
-  )
-  return {
-    price: zone.level,
-    top: Math.max(top, bottom),
-    bottom: Math.min(top, bottom),
-    source: 'sr-zone',
-    strength,
-    distanceAtr:
-      side === 'support'
-        ? (currentPrice - zone.level) / Math.max(atrValue, 1e-9)
-        : (zone.level - currentPrice) / Math.max(atrValue, 1e-9),
-    touches,
-    state: zone.state,
-    bookBucket: bookScore?.bucket,
-    bookNotional: bookScore?.notional,
-  }
-}
-
-function chooseLevel(primary: LevelReference | null, fallback: LevelReference | null) {
-  if (primary) return primary
-  return fallback
 }
 
 /**
@@ -465,7 +293,7 @@ function analyzeRegime(
   const net = recent.length >= 2 ? Math.abs(last(recent) - recent[0]) : 0
   const gross = sumAbsDiff(recent)
   const efficiency = gross > 0 ? net / gross : 0
-  const atrSeries = atr(candles, 14)
+  const atrSeries = wilderAtr(candles, 14)
   const lastAtr = nonNullTail(atrSeries) ?? atrValue
   const atrMean =
     average(atrSeries.slice(-10).filter((value): value is number => value !== null)) || lastAtr
@@ -873,21 +701,35 @@ function analyzeMacd(
   }
 }
 
+/**
+ * What a level is worth, in words: where it sits and how often levels like it have held on this
+ * timeframe against a random price. A level with no measured edge is named but does not vote.
+ */
+function describeLevel(
+  level: LevelReference,
+  side: 'support' | 'resistance',
+  timeframe: Timeframe,
+  pressure: number,
+): string {
+  const kind = level.source === 'pivot' ? 'pivot' : 'SR box'
+  const where = `${level.distanceAtr.toFixed(2)} ATR ${side === 'support' ? 'below' : 'above'}`
+  const book = level.bookBucket ? `, book bucket ${level.bookBucket}` : ''
+  const record = `tested ${timeframe} ${kind}es held ${(level.holdRate * 100).toFixed(1)}% vs ${(level.randomHoldRate * 100).toFixed(1)}% for a random price`
+  const verdict =
+    level.strength > 0
+      ? `edge ${level.strength.toFixed(2)}, ${threatLabel(pressure)}`
+      : 'no measured edge, so it does not vote'
+  return `Nearest ${side} is ${kind === 'SR box' ? 'an SR box' : 'a pivot'} at ${level.price.toFixed(2)}, ${where}${book} — ${record}: ${verdict}.`
+}
+
 function analyzeLevelStrength(
   currentPrice: number,
   atrValue: number,
   candles: Candle[],
   book: OrderBookView | null | undefined,
+  timeframe: Timeframe,
 ): SpecializedOpinion<'level-strength'> & { summary: LevelStrengthSummary } {
-  const pivots = pivotLevels(candles, atrValue, currentPrice)
-  const support = chooseLevel(
-    levelFromSrZone(candles, book, atrValue, currentPrice, 'support'),
-    pivots.nearestSupport,
-  )
-  const resistance = chooseLevel(
-    levelFromSrZone(candles, book, atrValue, currentPrice, 'resistance'),
-    pivots.nearestResistance,
-  )
+  const { support, resistance } = nearestLevels(candles, atrValue, currentPrice, timeframe, book)
   const supportPressure = support ? support.strength * distanceWeight(support.distanceAtr) : 0
   const resistancePressure = resistance
     ? resistance.strength * distanceWeight(resistance.distanceAtr)
@@ -895,14 +737,9 @@ function analyzeLevelStrength(
   const imbalance = clamp(book?.imbalance ?? 0, -1, 1)
   const score = clamp(supportPressure - resistancePressure + imbalance * 0.18, -1, 1)
   const reasons: string[] = []
-  if (support)
-    reasons.push(
-      `Nearest support is ${support.source} at ${support.price.toFixed(2)} with strength ${support.strength.toFixed(2)}${support.bookBucket ? ` and book bucket ${support.bookBucket}` : ''} — ${support.distanceAtr.toFixed(2)} ATR below, ${threatLabel(supportPressure)}.`,
-    )
+  if (support) reasons.push(describeLevel(support, 'support', timeframe, supportPressure))
   if (resistance)
-    reasons.push(
-      `Nearest resistance is ${resistance.source} at ${resistance.price.toFixed(2)} with strength ${resistance.strength.toFixed(2)}${resistance.bookBucket ? ` and book bucket ${resistance.bookBucket}` : ''} — ${resistance.distanceAtr.toFixed(2)} ATR above, ${threatLabel(resistancePressure)}.`,
-    )
+    reasons.push(describeLevel(resistance, 'resistance', timeframe, resistancePressure))
   if (!support && !resistance)
     reasons.push('No nearby structure level could be confirmed from SR zones or pivots.')
   else {
@@ -931,6 +768,9 @@ function analyzeLevelStrength(
       resistancePrice: resistance?.price ?? null,
       resistanceStrength: resistance?.strength ?? null,
       resistanceDistanceAtr: resistance?.distanceAtr ?? null,
+      supportHoldRate: support?.holdRate ?? null,
+      resistanceHoldRate: resistance?.holdRate ?? null,
+      randomHoldRate: (support ?? resistance)?.randomHoldRate ?? null,
       supportThreat: supportPressure,
       resistanceThreat: resistancePressure,
       imbalance,
@@ -964,16 +804,19 @@ function analyzeStructure(
       metrics: {},
     }
 
+  // Every structure vote assumes levels push price back. Each one is scaled by the measured edge
+  // of the levels it leans on, so a range whose edges hold no better than random prices is silent.
   let score = 0
   const reasons: string[] = []
   const warnings: string[] = []
   if (support && resistance && resistance.price > support.price) {
+    const edge = (support.strength + resistance.strength) / 2
     const width = resistance.price - support.price
     const position = clamp((currentPrice - support.price) / Math.max(width, 1e-9), 0, 1)
     const roomUpAtr = (resistance.price - currentPrice) / Math.max(atrValue, 1e-9)
     const roomDownAtr = (currentPrice - support.price) / Math.max(atrValue, 1e-9)
-    score += clamp((0.5 - position) * 1.3, -0.65, 0.65)
-    score += clamp((roomUpAtr - roomDownAtr) / 4, -0.25, 0.25)
+    score += clamp((0.5 - position) * 1.3, -0.65, 0.65) * edge
+    score += clamp((roomUpAtr - roomDownAtr) / 4, -0.25, 0.25) * edge
     reasons.push(
       `Price sits ${(position * 100).toFixed(0)}% of the way from support to resistance; room up is ${roomUpAtr.toFixed(2)} ATR, room down is ${roomDownAtr.toFixed(2)} ATR.`,
     )
@@ -982,18 +825,22 @@ function analyzeStructure(
     if (position < 0.28)
       warnings.push('Price is trading in the lower portion of its nearest structure range.')
   } else if (resistance) {
-    score -= clamp(distanceWeight(resistance.distanceAtr) * 0.55, 0, 0.55)
+    score -= clamp(distanceWeight(resistance.distanceAtr) * 0.55, 0, 0.55) * resistance.strength
     reasons.push(
       `Nearest confirmed structure is resistance ${resistance.distanceAtr.toFixed(2)} ATR above.`,
     )
   } else if (support) {
-    score += clamp(distanceWeight(support.distanceAtr) * 0.55, 0, 0.55)
+    score += clamp(distanceWeight(support.distanceAtr) * 0.55, 0, 0.55) * support.strength
     reasons.push(
       `Nearest confirmed structure is support ${support.distanceAtr.toFixed(2)} ATR below.`,
     )
   }
   if (support && support.distanceAtr <= 0.8) score += support.strength * 0.22
   if (resistance && resistance.distanceAtr <= 0.8) score -= resistance.strength * 0.22
+  if (!(support?.strength ?? 0) && !(resistance?.strength ?? 0))
+    reasons.push(
+      'Neither level has held more often than a random price on this timeframe, so structure does not vote.',
+    )
   score = clamp(score, -1, 1)
   return {
     id: 'structure',
@@ -1517,12 +1364,18 @@ export function analyzeMarket(
   if (candles.length < 30)
     throw new Error('At least 30 candles are required for market-agent analysis.')
   const currentPrice = last(candles).close
-  const atrValue = nonNullTail(atr(candles, 14)) ?? Math.max(currentPrice * 0.003, 1)
+  const atrValue = nonNullTail(wilderAtr(candles, 14)) ?? Math.max(currentPrice * 0.003, 1)
   const regime = analyzeRegime(currentPrice, atrValue, candles)
   const trend = analyzeTrend(currentPrice, atrValue, candles)
   const momentum = analyzeMomentum(currentPrice, atrValue, candles, regime.regime)
   const macdOpinion = analyzeMacd(currentPrice, atrValue, candles)
-  const levelStrength = analyzeLevelStrength(currentPrice, atrValue, candles, snapshot.book)
+  const levelStrength = analyzeLevelStrength(
+    currentPrice,
+    atrValue,
+    candles,
+    snapshot.book,
+    snapshot.timeframe,
+  )
   const structure = analyzeStructure(currentPrice, atrValue, levelStrength.summary)
   // The whale agent only speaks while a sweep is live, but when it does it should know *where*
   // that money is going: the levels it just pinned and the resting book are both in scope here.

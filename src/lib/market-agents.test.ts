@@ -9,6 +9,20 @@ import {
   type ContextSignal,
 } from './market-agents'
 import type { Candle } from './types'
+import { LEVEL_HOLD_RATES } from './level-strength'
+
+/** Pretend the 5m tape had shown levels holding 12 points more often than random prices. */
+function withMeasuredEdge(run: () => void) {
+  const rates = LEVEL_HOLD_RATES['5m']
+  const saved = structuredClone(rates)
+  rates.pivot = { rate: rates.random.rate + 0.12, n: 30000 }
+  rates.srZone = { rate: rates.random.rate + 0.12, n: 30000 }
+  try {
+    run()
+  } finally {
+    LEVEL_HOLD_RATES['5m'] = saved
+  }
+}
 
 function buildBook(
   mid: number,
@@ -190,7 +204,7 @@ describe('market agents', () => {
     expect(opinion(result, 'ensemble').score).toBeGreaterThan(0.35)
   })
 
-  it('lets level-strength and structure override bullish internals near strong resistance', () => {
+  it('keeps a level with no measured edge from voting, however close it is', () => {
     const candles = rangeNearResistanceCandles()
     const result = analyzeMarket({
       candles,
@@ -198,14 +212,36 @@ describe('market agents', () => {
       book: buildBook(candles[candles.length - 1].close, { strongResistance: true }),
     })
 
-    expect(result.regime).toBe('range')
-    expect(result.bias).toBe('bearish')
     expect(result.summary.nearestResistance).not.toBeNull()
     expect(result.summary.nearestResistance!.distanceAtr).toBeLessThan(1)
-    expect(opinion(result, 'trend').bias).toBe('bullish')
-    expect(opinion(result, 'level-strength').bias).toBe('bearish')
-    expect(opinion(result, 'structure').bias).toBe('bearish')
-    expect(result.risks).toContain('A strong resistance level is very close above price.')
+    expect(result.summary.nearestResistance!.strength).toBe(0)
+    expect(Number(opinion(result, 'level-strength').metrics.resistanceThreat)).toBe(0)
+    expect(opinion(result, 'structure').score).toBe(0)
+    expect(opinion(result, 'level-strength').reasons.join(' ')).toContain(
+      'for a random price: no measured edge, so it does not vote',
+    )
+    expect(opinion(result, 'structure').reasons.join(' ')).toContain('structure does not vote')
+    expect(result.risks).not.toContain('A strong resistance level is very close above price.')
+  })
+
+  it('lets level-strength and structure override bullish internals near a level with a measured edge', () => {
+    const candles = rangeNearResistanceCandles()
+    withMeasuredEdge(() => {
+      const result = analyzeMarket({
+        candles,
+        timeframe: '5m',
+        book: buildBook(candles[candles.length - 1].close, { strongResistance: true }),
+      })
+
+      expect(result.regime).toBe('range')
+      expect(result.bias).toBe('bearish')
+      expect(result.summary.nearestResistance).not.toBeNull()
+      expect(result.summary.nearestResistance!.distanceAtr).toBeLessThan(1)
+      expect(opinion(result, 'trend').bias).toBe('bullish')
+      expect(opinion(result, 'level-strength').bias).toBe('bearish')
+      expect(opinion(result, 'structure').bias).toBe('bearish')
+      expect(result.risks).toContain('A strong resistance level is very close above price.')
+    })
   })
 
   it('lets higher-timeframe context directly pull the ensemble away from a conflicting chart setup', () => {
@@ -286,16 +322,18 @@ describe('market agents', () => {
 
   it('always says whether nearby resistance is going to be a problem', () => {
     const candles = rangeNearResistanceCandles()
-    const result = analyzeMarket({
-      candles,
-      timeframe: '5m',
-      book: buildBook(candles[candles.length - 1].close, { strongResistance: true }),
+    withMeasuredEdge(() => {
+      const result = analyzeMarket({
+        candles,
+        timeframe: '5m',
+        book: buildBook(candles[candles.length - 1].close, { strongResistance: true }),
+      })
+      const level = opinion(result, 'level-strength')
+      expect(level.reasons.join(' ')).toContain('a real problem')
+      expect(level.reasons.join(' ')).toContain('not a problem from this distance')
+      expect(Number(level.metrics.resistanceThreat ?? 0)).toBeGreaterThan(0.5)
+      expect(Number(level.metrics.supportThreat ?? 1)).toBe(0)
     })
-    const level = opinion(result, 'level-strength')
-    expect(level.reasons.join(' ')).toContain('a real problem')
-    expect(level.reasons.join(' ')).toContain('not a problem from this distance')
-    expect(Number(level.metrics.resistanceThreat ?? 0)).toBeGreaterThan(0.5)
-    expect(Number(level.metrics.supportThreat ?? 1)).toBe(0)
   })
 
   it('keeps the MACD specialist honest while its EMAs warm up', () => {
@@ -415,10 +453,7 @@ describe('market agents', () => {
 
   it('damps — but never flips — a sweep into a level the book cannot confirm', () => {
     const candles = rangeNearResistanceCandles()
-    const whale = opinion(
-      analyzeMarket({ candles, timeframe: '5m', whale: whaleFlow() }),
-      'whale',
-    )
+    const whale = opinion(analyzeMarket({ candles, timeframe: '5m', whale: whaleFlow() }), 'whale')
     expect(whale.metrics.levelVerdict).toBe('absorbed')
     expect(whale.metrics.levelBook).toBe(false)
     expect(whale.metrics.levelFlip).toBe(false)
@@ -481,14 +516,22 @@ describe('market agents', () => {
   it('frames the verdict as the UP/DOWN window call against the strike', () => {
     const candles = bullishTrendCandles()
     const close = candles[candles.length - 1].close
-    const holding = analyzeMarket({ candles, timeframe: '5m', strike: strikeInput({ price: close - 5 }) })
+    const holding = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      strike: strikeInput({ price: close - 5 }),
+    })
     expect(holding.summary.strike?.side).toBe('above')
     expect(holding.summary.strike?.delta).toBeCloseTo(5, 6)
     expect(holding.reasons[0]).toContain('above the')
     expect(holding.reasons[0]).toContain('strike with 5:00 to the 9:15 cut')
     expect(holding.reasons.join(' ')).toContain('hold-the-lead')
 
-    const crossing = analyzeMarket({ candles, timeframe: '5m', strike: strikeInput({ price: close + 5 }) })
+    const crossing = analyzeMarket({
+      candles,
+      timeframe: '5m',
+      strike: strikeInput({ price: close + 5 }),
+    })
     expect(crossing.summary.strike?.side).toBe('below')
     expect(crossing.risks.join(' ')).toContain('needs price to cross')
   })
@@ -502,11 +545,23 @@ describe('market agents', () => {
       // Fast money disagrees with the slow advisors: whale sweep down, HTF still up.
       whale: whaleFlow({ net: -800_000, bought: 40_000, sold: 840_000, intensity: 2.6 }),
       context: [
-        { timeframe: '15m' as const, bias: 'bullish' as const, score: 0.6, confidence: 0.7, regime: 'trend-up' as const },
+        {
+          timeframe: '15m' as const,
+          bias: 'bullish' as const,
+          score: 0.6,
+          confidence: 0.7,
+          regime: 'trend-up' as const,
+        },
       ],
     }
-    const early = analyzeMarket({ ...base, strike: strikeInput({ price: close - 5, secondsLeft: 870 }) })
-    const late = analyzeMarket({ ...base, strike: strikeInput({ price: close - 5, secondsLeft: 30 }) })
+    const early = analyzeMarket({
+      ...base,
+      strike: strikeInput({ price: close - 5, secondsLeft: 870 }),
+    })
+    const late = analyzeMarket({
+      ...base,
+      strike: strikeInput({ price: close - 5, secondsLeft: 30 }),
+    })
     const urgency = Number(opinion(late, 'ensemble').metrics.urgency ?? 0)
     expect(urgency).toBeCloseTo(1 - 30 / 900, 6)
     // Same tape, less clock: the bearish sweep outweighs the bullish context.
@@ -517,7 +572,11 @@ describe('market agents', () => {
   it('stays honest about coarse charts and coin-flip finishes', () => {
     const candles = bullishTrendCandles()
     const close = candles[candles.length - 1].close
-    const hourly = analyzeMarket({ candles, timeframe: '1h', strike: strikeInput({ price: close - 5 }) })
+    const hourly = analyzeMarket({
+      candles,
+      timeframe: '1h',
+      strike: strikeInput({ price: close - 5 }),
+    })
     expect(hourly.risks.join(' ')).toContain('1h candles for a 15-minute expiry')
 
     const coinFlip = analyzeMarket({
@@ -545,7 +604,13 @@ describe('market agents', () => {
       analyzeMarket({
         candles,
         timeframe: '1m',
-        whale: whaleFlow({ phase: 'building', net: 20_000, bought: 20_000, sold: 0, intensity: 0.5 }),
+        whale: whaleFlow({
+          phase: 'building',
+          net: 20_000,
+          bought: 20_000,
+          sold: 0,
+          intensity: 0.5,
+        }),
       }),
       'whale',
     )
@@ -589,7 +654,9 @@ describe('market agents', () => {
     // Horizon is a caller decision: fewer bars is a smaller expected move.
     const short = analyzeMarket({ candles, timeframe: '5m', horizonBars: 3 })
     expect(Math.abs(short.forecast.expectedMoveAtr)).toBeLessThan(
-      Math.abs(analyzeMarket({ candles, timeframe: '5m', horizonBars: 20 }).forecast.expectedMoveAtr),
+      Math.abs(
+        analyzeMarket({ candles, timeframe: '5m', horizonBars: 20 }).forecast.expectedMoveAtr,
+      ),
     )
     expect(short.forecast.targetHigh - short.forecast.targetLow).toBeLessThan(
       held.forecast.targetHigh - held.forecast.targetLow + 1e-9,

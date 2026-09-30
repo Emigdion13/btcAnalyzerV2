@@ -6,7 +6,7 @@
  * From Coinbase's `level2` channel (a full-book `snapshot` followed by `l2update` deltas) this
  * builds a price-ordered book and derives, at the 1 Hz SSE cadence:
  *
- * - a **depth profile** of thin price slices (`bins`) across the whole transmitted span, with
+ * - a **depth profile** of thin price slices (`bins`) across the book within ±5% of mid, with
  *   the USD resting on each side in every slice. Slicing the book lets any client sum arbitrary
  *   price ranges — an SMC order block, a fair value gap, an SR box — into "how much resting
  *   money is actually stacked inside this zone right now".
@@ -40,6 +40,13 @@ export const WALL_MAX_PER_SIDE = 3
 export const PROFILE_MAX_BINS = 280
 /** Smallest profile slice, as a ratio of the mid price. */
 export const MIN_BIN_WIDTH_RATIO = 0.00005
+/**
+ * Only levels within this share of mid are analysed. The unauthenticated `level2_batch` snapshot
+ * is the whole book — tens of thousands of levels, down to bids at a few dollars — and tiling that
+ * span would put the bottom slice at $0 and make every slice hundreds of dollars wide. ±5% keeps
+ * daily-chart zones in range at a slice width near 0.04% of price.
+ */
+export const VIEW_BAND_RATIO = 0.05
 
 export interface RawLevel {
   /** Price of the level, in quote currency. */
@@ -243,14 +250,17 @@ export class OrderBook {
   view(now: number) {
     const mid = this.mid
     if (mid === null || this.bids.size === 0 || this.asks.size === 0) return null
+    const floor = mid * (1 - VIEW_BAND_RATIO)
+    const ceiling = mid * (1 + VIEW_BAND_RATIO)
     const bidLevels = [...this.bids]
-      .filter(([, size]) => size > 0)
+      .filter(([price, size]) => size > 0 && price >= floor)
       .map(([price, size]) => ({ price, size }))
       .sort((a, b) => a.price - b.price)
     const askLevels = [...this.asks]
-      .filter(([, size]) => size > 0)
+      .filter(([price, size]) => size > 0 && price <= ceiling)
       .map(([price, size]) => ({ price, size }))
       .sort((a, b) => a.price - b.price)
+    if (!bidLevels.length || !askLevels.length) return null
     const low = bidLevels[0].price
     const high = askLevels[askLevels.length - 1].price
     const span = Math.max(0.01, high - low)

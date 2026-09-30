@@ -5,11 +5,15 @@ import {
   parseLevel2Update,
   scoreZone,
   PERSISTENCE_SECONDS,
+  VIEW_BAND_RATIO,
 } from './order-book'
 import { isOrderBookView } from './coinbase'
 
 /** Realistic BTC-USD book around $100,000: fine background levels plus obvious walls. */
-function btcBook(): { bids: { price: number; size: number }[]; asks: { price: number; size: number }[] } {
+function btcBook(): {
+  bids: { price: number; size: number }[]
+  asks: { price: number; size: number }[]
+} {
   const level = (side: 1 | -1, offset: number, size: number) => ({
     price: 100_000 + side * offset,
     size,
@@ -38,7 +42,10 @@ describe('level2 wire parsing', () => {
     const parsed = parseLevel2Snapshot({
       type: 'snapshot',
       product_id: 'BTC-USD',
-      bids: [['99.5', '2'], ['99', '1']],
+      bids: [
+        ['99.5', '2'],
+        ['99', '1'],
+      ],
       asks: [['100.5', '3']],
     })
     expect(parsed).toEqual({
@@ -52,9 +59,7 @@ describe('level2 wire parsing', () => {
   it('rejects malformed snapshots rather than corrupting the book', () => {
     expect(parseLevel2Snapshot({ type: 'snapshot', bids: 'x', asks: [] })).toBeNull()
     expect(parseLevel2Snapshot({ type: 'l2update', changes: [] })).toBeNull()
-    expect(
-      parseLevel2Snapshot({ type: 'snapshot', bids: [['bad', '2']], asks: [] }),
-    ).toBeNull()
+    expect(parseLevel2Snapshot({ type: 'snapshot', bids: [['bad', '2']], asks: [] })).toBeNull()
   })
   it('parses l2update deltas with buy/sell sides and zero-size removal', () => {
     const changes = parseLevel2Update({
@@ -221,5 +226,24 @@ describe('scoreZone — zone strength against the resting book', () => {
     // Until the hold metric warms, size alone may rate strong — it is what a trader sees.
     expect(score.bucket).toBe('strong')
     expect(score.notional).toBeGreaterThan(5_000_000)
+  })
+})
+
+describe('full-book snapshots', () => {
+  it('analyses only the book near mid, so stub orders far away cannot break the view', () => {
+    // level2_batch sends the whole book: real depth near mid plus stub bids down to a dollar.
+    const { bids, asks } = btcBook()
+    const book = new OrderBook('BTC-USD')
+    book.seed(
+      [...bids, { price: 1, size: 100 }, { price: 20_000, size: 50 }],
+      [...asks, { price: 1_000_000, size: 5 }],
+      1000,
+    )
+    const view = book.view(1001)!
+    expect(isOrderBookView(view)).toBe(true)
+    expect(view.bottom).toBeGreaterThanOrEqual(view.mid * (1 - VIEW_BAND_RATIO) - view.step)
+    expect(view.top).toBeLessThanOrEqual(view.mid * (1 + VIEW_BAND_RATIO) + view.step)
+    for (const wall of [...view.supports, ...view.resistances])
+      expect(Math.abs(wall.price - view.mid)).toBeLessThanOrEqual(view.mid * VIEW_BAND_RATIO)
   })
 })

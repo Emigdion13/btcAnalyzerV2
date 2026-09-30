@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { CoinbaseRestClient } from './rest-client'
-import { CoinbaseService } from './coinbase-service'
+import { BOOK_CHANNEL, CoinbaseService } from './coinbase-service'
 import { createMarketApi } from './api'
 
 const closers: (() => void)[] = []
@@ -194,14 +194,14 @@ it('subscribes level2 for the charted product and streams book walls + depth pro
     decoder = new TextDecoder()
   await reader.read()
   // level2 is subscribed for the charted product only, via its own channel message.
-  expect(socket!.sent.join('')).toContain('level2')
+  expect(socket!.sent.join('')).toContain(BOOK_CHANNEL)
   const level2Subscribe = socket!.sent
     .map((line) => JSON.parse(line))
     .find(
       (message) =>
         message.type === 'subscribe' &&
         Array.isArray(message.channels) &&
-        message.channels.includes('level2'),
+        message.channels.includes(BOOK_CHANNEL),
     )
   expect(level2Subscribe.product_ids).toEqual(['BTC-USD'])
   // Full-book snapshot: an ordinary background ladder plus a clearly larger wall below mid.

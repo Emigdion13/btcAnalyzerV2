@@ -36,6 +36,13 @@ type Subscriber = {
   revision: number
   needsReplace: boolean
 }
+/**
+ * The unauthenticated level2 feed. Coinbase rejects plain `level2` without API keys ("level2, level3,
+ * and full channels now require authentication"); `level2_batch` carries the same `snapshot` and
+ * `l2update` messages, batched every 50ms, with no credentials.
+ */
+export const BOOK_CHANNEL = 'level2_batch'
+
 export class CoinbaseService {
   private rest: CoinbaseRestClient
   private products: CoinbaseProduct[] = []
@@ -384,7 +391,7 @@ export class CoinbaseService {
       ['unsubscribe', removeBook],
     ] as const) {
       if (product_ids.length)
-        this.socket.send(JSON.stringify({ type, product_ids, channels: ['level2'] }))
+        this.socket.send(JSON.stringify({ type, product_ids, channels: [BOOK_CHANNEL] }))
     }
     this.subscribedBook = charted
     for (const product of this.orderBooks.keys())

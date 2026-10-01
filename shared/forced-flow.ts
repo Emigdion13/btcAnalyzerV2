@@ -259,7 +259,12 @@ export function classifyForcedFlow(input: ForcedInput): ForcedState {
 export class RollingDistribution {
   private values: number[] = []
   private sorted: number[] | null = null
-  constructor(readonly capacity = DISTRIBUTION_CAPACITY) {}
+  readonly capacity: number
+  // No parameter properties in shared/: the production server loads it under Node's
+  // strip-only TypeScript mode, which rejects them.
+  constructor(capacity = DISTRIBUTION_CAPACITY) {
+    this.capacity = capacity
+  }
   get size() {
     return this.values.length
   }
@@ -318,7 +323,11 @@ export class ForcedFlowTracker {
   private open: ForcedEvent | null = null
   feeds: ForcedFlow['feeds'] = {}
 
-  constructor(readonly product: string) {}
+  readonly product: string
+
+  constructor(product: string) {
+    this.product = product
+  }
 
   /** Seed the percentile distributions with venue history (non-overlapping five-minute changes). */
   seed(priceChanges: readonly number[], oiChanges: readonly number[]) {

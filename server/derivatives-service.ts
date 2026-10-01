@@ -424,6 +424,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  * One reconnecting public websocket. Tracks what it has subscribed so a reconnect replays exactly
  * the current set, and reports `live` only once a message has arrived.
  */
+interface LiveSocketHandlers {
+  onOpen: () => void
+  onMessage: (data: string) => void
+  keepalive: string | null
+}
+
 class LiveSocket {
   private socket: WebSocket | null = null
   private attempt = 0
@@ -433,17 +439,24 @@ class LiveSocket {
   private sent = new Set<string>()
   private closed = false
   state: 'live' | 'connecting' | 'down' = 'connecting'
+  readonly venue: LiquidationVenue
+  private url: string
+  private factory: (url: string) => WebSocket
+  private handlers: LiveSocketHandlers
 
+  // Plain fields, not parameter properties: `npm start` runs this file under Node's
+  // strip-only TypeScript mode, which rejects syntax that emits code.
   constructor(
-    readonly venue: LiquidationVenue,
-    private url: string,
-    private factory: (url: string) => WebSocket,
-    private handlers: {
-      onOpen: () => void
-      onMessage: (data: string) => void
-      keepalive: string | null
-    },
-  ) {}
+    venue: LiquidationVenue,
+    url: string,
+    factory: (url: string) => WebSocket,
+    handlers: LiveSocketHandlers,
+  ) {
+    this.venue = venue
+    this.url = url
+    this.factory = factory
+    this.handlers = handlers
+  }
 
   get isOpen() {
     return this.socket?.readyState === 1

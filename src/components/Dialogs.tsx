@@ -65,6 +65,7 @@ import { DivergenceSettingsSection } from './DivergenceSettingsSection'
 import { SmcSettingsDialog } from './SmcSettingsDialog'
 import { SrBreaksRetestsSettingsDialog } from './SrBreaksRetestsSettingsDialog'
 import { ChileReversalSettingsDialog } from './ChileReversalSettingsDialog'
+import { RandyV8SettingsDialog } from './RandyV8SettingsDialog'
 import { PivotPointsMissedReversalsSettingsDialog } from './PivotPointsMissedReversalsSettingsDialog'
 import { CoinbaseStrikeSettingsDialog } from './CoinbaseStrikeSettingsDialog'
 import { ScalpSwingSettingsDialog } from './ScalpSwingSettingsDialog'
@@ -558,6 +559,7 @@ export function IndicatorSettingsDialog(props: {
     return <CmWilliamsVixFixSettingsDialog {...props} />
   if (props.indicator.kind === 'smart-money-concepts') return <SmcSettingsDialog {...props} />
   if (props.indicator.kind === 'chile-reversal') return <ChileReversalSettingsDialog {...props} />
+  if (props.indicator.kind === 'randy-v8') return <RandyV8SettingsDialog {...props} />
   if (props.indicator.kind === 'zeiierman-trend-pressure')
     return <TrendPressureSettingsDialog {...props} />
   if (props.indicator.kind === 'wave-trend') return <WaveTrendSettingsDialog {...props} />
@@ -1148,6 +1150,7 @@ const SHORTCUTS = [
   ['Bayesian/nQQE/BankFunds window', 'Alt N'],
   ['MTF RSI window', 'Alt R'],
   ['Chile panel window', 'Alt L'],
+  ['Randy V8.10 window', 'Alt J'],
   ['Undo drawing', 'Ctrl / ⌘ Z'],
   ['Redo drawing', 'Ctrl / ⌘ Shift Z'],
   ['Cancel drawing / close dialog', 'Esc'],

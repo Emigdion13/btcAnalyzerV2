@@ -76,6 +76,7 @@ import type { TimeframePeekFeed } from './components/TimeframePeekBox'
 import { MtfRsiWindow } from './components/MtfRsiWindow'
 import type { MtfRsiRowFeed } from './components/MtfRsiWindow'
 import { ChilePanelWindow } from './components/ChilePanelWindow'
+import { RandyV8Window } from './components/RandyV8Window'
 import { KalshiFloatWindow } from './components/KalshiFloatWindow'
 import { MTF_RSI_TIMEFRAMES } from './lib/mtf-rsi'
 import {
@@ -85,6 +86,7 @@ import {
   chileReversalSettings,
 } from './lib/chile-reversal'
 import { chileKalshiEligible, chileKalshiView } from './lib/chile-kalshi'
+import { calculateRandyV8, randyV8RequestedTimeframes, randyV8Settings } from './lib/randy-v8'
 import { CHILE_RSI_EXTREME_TIMEFRAME, chileRsiRounds } from './lib/chile-rsi-extreme'
 import { useKalshiStrike } from './lib/useKalshiStrike'
 import { useKalshiFloat } from './lib/useKalshiFloat'
@@ -182,6 +184,7 @@ import {
   TUX_EMA_SCALPER_DEFAULTS,
   NEXT_PIVOT_DEFAULTS,
   CHILE_REVERSAL_DEFAULTS,
+  RANDY_V8_DEFAULTS,
 } from './lib/types'
 import { parseWorkspaceBackup, persistWorkspaceBackup } from './lib/workspace-backup'
 import type { WorkspaceBackup } from './lib/workspace-backup'
@@ -378,6 +381,13 @@ export default function App() {
   )
   const chilePanelOpen =
     chilePanelPreference ?? chilePanelDefaultVisible(window.innerWidth, window.innerHeight)
+  // The floating Randy V8.10 window: the Pine table (Target, clock, direction, strength, stage and
+  // the final call). It asks for the 5m / 15m / 1h feeds, so it starts closed until chosen.
+  const [randyPanelPreference, setRandyPanelPreference] = useLocalState<boolean | null>(
+    'randy-panel-visible',
+    null,
+  )
+  const randyPanelOpen = randyPanelPreference ?? false
   // The floating Kalshi 15m window: the running contract's target, the settlement
   // index it is measuring, and the odds, polled once a second. Same contract as
   // the other windows — null means "never chosen" and defers to the default.
@@ -661,6 +671,16 @@ export default function App() {
     [chilePanelIndicator],
   )
   const chilePanelActive = chilePanelOpen && replayIndex === null
+  /** The Randy window's profile: the chart's own indicator, or the published defaults. */
+  const randyPanelIndicator = useMemo(
+    () => indicators.find((indicator) => indicator.kind === 'randy-v8') ?? null,
+    [indicators],
+  )
+  const randyPanelSettings = useMemo(
+    () => (randyPanelIndicator ? randyV8Settings(randyPanelIndicator) : { ...RANDY_V8_DEFAULTS }),
+    [randyPanelIndicator],
+  )
+  const randyPanelActive = randyPanelOpen && replayIndex === null
   const indicatorTimeframes = useMemo(
     () =>
       requestedIndicatorTimeframes(indicators, timeframe, [
@@ -675,6 +695,8 @@ export default function App() {
         // The Chile panel's two reads off the chart resolution: its round (pivot) timeframe and
         // the 5m momentum bar. A visible indicator's own walk already asks for both.
         ...(chilePanelActive ? chileRequestedTimeframes(chilePanelSettings, timeframe) : []),
+        // The Randy window reads the 5m, 15m and 1h bars behind the chart.
+        ...(randyPanelActive ? randyV8RequestedTimeframes(timeframe) : []),
       ]),
     [
       indicators,
@@ -687,6 +709,7 @@ export default function App() {
       oscHudOpen,
       chilePanelActive,
       chilePanelSettings,
+      randyPanelActive,
     ],
   )
   const demoTimeframes = useMemo<IndicatorTimeframes>(
@@ -849,7 +872,12 @@ export default function App() {
   const chileKalshiOn =
     chilePanelActive &&
     chileKalshiEligible(symbol, source, chilePanelSettings.resolution, timeframe)
-  const chileKalshiStrike = useKalshiStrike({ product: symbol, enabled: chileKalshiOn })
+  // The Randy window can fill its Target from the same published strike, so one poll serves both.
+  const randyKalshiOn = randyPanelActive && chileKalshiEligible(symbol, source, '15m', timeframe)
+  const chileKalshiStrike = useKalshiStrike({
+    product: symbol,
+    enabled: chileKalshiOn || randyKalshiOn,
+  })
   const chileKalshiFloat = useKalshiFloat({ product: symbol, enabled: chileKalshiOn })
   const chileKalshi = useMemo(
     () =>
@@ -869,6 +897,56 @@ export default function App() {
       chileKalshiFloat.stale,
     ],
   )
+  /**
+   * Everything the Randy window reads: the engine on the same candles, feeds and profile the chart
+   * lines use, so the window and the lines cannot disagree. A feed that has not answered stays
+   * empty and the window says so rather than scoring against invented bars.
+   */
+  const randyPanelModel = useMemo(() => {
+    if (!randyPanelActive || !candles.length) return null
+    const states = randyV8RequestedTimeframes(timeframe).map(
+      (interval) => nativeTimeframes[interval]?.state ?? feedState,
+    )
+    return {
+      result: calculateRandyV8(candles, randyPanelSettings, {
+        timeframe,
+        timeframes: nativeTimeframes,
+        nowSeconds: Date.now() / 1000,
+      }),
+      feedState: states.find((state) => state !== 'live') ?? feedState,
+    }
+  }, [randyPanelActive, randyPanelSettings, candles, timeframe, nativeTimeframes, feedState])
+  const randyKalshiStrike =
+    randyKalshiOn &&
+    chileKalshiStrike.response?.product === symbol &&
+    chileKalshiStrike.response.strike &&
+    chileKalshiStrike.response.strike.windowStart === Math.floor(Date.now() / 900_000) * 900
+      ? chileKalshiStrike.response.strike.strike
+      : null
+  const setRandyTarget = (target: number) => {
+    setIndicators((previous) => {
+      if (previous.some((indicator) => indicator.kind === 'randy-v8'))
+        return previous.map((indicator) =>
+          indicator.kind === 'randy-v8'
+            ? { ...indicator, randyV8: { ...randyV8Settings(indicator), target } }
+            : indicator,
+        )
+      const item = INDICATOR_CATALOG.find((i) => i.kind === 'randy-v8')
+      if (!item || previous.length >= 16) return previous
+      return [
+        ...previous,
+        {
+          id: uid(),
+          kind: 'randy-v8',
+          name: 'Randy V8.10',
+          period: item.period,
+          color: item.color ?? '#22d3ee',
+          visible: true,
+          randyV8: { ...RANDY_V8_DEFAULTS, target },
+        },
+      ]
+    })
+  }
   const drawKey = `${symbol}:${timeframe}`
   const drawings = allDrawings[drawKey] ?? EMPTY_DRAWINGS
   const history = drawingHistory[drawKey]
@@ -1317,29 +1395,31 @@ export default function App() {
         name:
           item.kind === 'smart-money-concepts'
             ? 'Smart Money Concepts'
-            : item.kind === 'chile-reversal'
-              ? 'Chile Reversal'
-              : item.kind === 'sr-breaks-retests'
-                ? 'SR Breaks and Retests'
-                : item.kind === 'pivot-points-missed-reversals'
-                  ? 'Pivot Points High Low & Missed Reversal Levels'
-                  : item.kind === 'tux-ema-scalper'
-                    ? 'TUX EMA Scalper+SuperTrend'
-                    : item.kind === 'zeiierman-trend-pressure'
-                      ? 'Zeiierman Trend Pressure (Zeiierman)'
-                      : item.kind === 'wave-trend'
-                        ? 'WaveTrend [LazyBear]'
-                        : item.kind === 'tmo-scalper'
-                          ? 'TMO Scalper'
-                          : item.kind === 'rsi-divergence'
-                            ? 'RSI Divergence'
-                            : item.kind === 'cm-williams-vix-fix'
-                              ? 'CM_Williams_Vix_Fix'
-                              : item.kind === 'bayesian-nqqe-bankfunds'
-                                ? 'Bayesian/nQQE/BankFunds'
-                                : item.short === 'VOL'
-                                  ? 'Volume'
-                                  : item.short,
+            : item.kind === 'randy-v8'
+              ? 'Randy V8.10'
+              : item.kind === 'chile-reversal'
+                ? 'Chile Reversal'
+                : item.kind === 'sr-breaks-retests'
+                  ? 'SR Breaks and Retests'
+                  : item.kind === 'pivot-points-missed-reversals'
+                    ? 'Pivot Points High Low & Missed Reversal Levels'
+                    : item.kind === 'tux-ema-scalper'
+                      ? 'TUX EMA Scalper+SuperTrend'
+                      : item.kind === 'zeiierman-trend-pressure'
+                        ? 'Zeiierman Trend Pressure (Zeiierman)'
+                        : item.kind === 'wave-trend'
+                          ? 'WaveTrend [LazyBear]'
+                          : item.kind === 'tmo-scalper'
+                            ? 'TMO Scalper'
+                            : item.kind === 'rsi-divergence'
+                              ? 'RSI Divergence'
+                              : item.kind === 'cm-williams-vix-fix'
+                                ? 'CM_Williams_Vix_Fix'
+                                : item.kind === 'bayesian-nqqe-bankfunds'
+                                  ? 'Bayesian/nQQE/BankFunds'
+                                  : item.short === 'VOL'
+                                    ? 'Volume'
+                                    : item.short,
         period: item.period,
         color: item.color,
         visible: true,
@@ -1357,6 +1437,7 @@ export default function App() {
         ...(kind === 'tux-ema-scalper' ? { tuxEmaScalper: { ...TUX_EMA_SCALPER_DEFAULTS } } : {}),
         ...(kind === 'next-pivot' ? { nextPivot: { ...NEXT_PIVOT_DEFAULTS } } : {}),
         ...(kind === 'chile-reversal' ? { chileReversal: { ...CHILE_REVERSAL_DEFAULTS } } : {}),
+        ...(kind === 'randy-v8' ? { randyV8: { ...RANDY_V8_DEFAULTS } } : {}),
         ...(kind === 'zeiierman-trend-pressure'
           ? { trendPressure: { ...TREND_PRESSURE_DEFAULTS } }
           : {}),
@@ -1694,6 +1775,7 @@ export default function App() {
   const togglePulse = () => setPulsePreference(!pulseVisible)
   const toggleMtfRsi = () => setMtfRsiPreference(!mtfRsiOpen)
   const toggleChilePanel = () => setChilePanelPreference(!chilePanelOpen)
+  const toggleRandyPanel = () => setRandyPanelPreference(!randyPanelOpen)
   const toggleKalshiFloat = () => setKalshiFloatPreference(!kalshiFloatOpen)
   const commandsRef = useRef({
     saveScript,
@@ -1708,6 +1790,7 @@ export default function App() {
     togglePulse,
     toggleMtfRsi,
     toggleChilePanel,
+    toggleRandyPanel,
     toggleKalshiFloat,
     toggleOscHud,
     draft,
@@ -1727,6 +1810,7 @@ export default function App() {
     togglePulse,
     toggleMtfRsi,
     toggleChilePanel,
+    toggleRandyPanel,
     toggleKalshiFloat,
     toggleOscHud,
     draft,
@@ -1819,6 +1903,10 @@ export default function App() {
         event.preventDefault()
         cmd.toggleChilePanel()
       }
+      if (event.altKey && !mod && event.key.toLowerCase() === 'j') {
+        event.preventDefault()
+        cmd.toggleRandyPanel()
+      }
       if (event.altKey && !mod && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         cmd.toggleKalshiFloat()
@@ -1840,6 +1928,7 @@ export default function App() {
     (rsiMeterOpen ? 1 : 0) +
     (mtfRsiOpen ? 1 : 0) +
     (chilePanelOpen ? 1 : 0) +
+    (randyPanelOpen ? 1 : 0) +
     (kalshiFloatOpen ? 1 : 0) +
     (pressureHudOpen ? 1 : 0) +
     (cmHudOpen ? 1 : 0) +
@@ -1984,6 +2073,16 @@ export default function App() {
                   }}
                 >
                   {chilePanelOpen ? 'Hide Chile panel' : 'Show Chile panel'}
+                </MenuItem>
+                <MenuItem
+                  icon={Crosshair}
+                  selected={randyPanelOpen}
+                  onClick={() => {
+                    toggleRandyPanel()
+                    close()
+                  }}
+                >
+                  {randyPanelOpen ? 'Hide Randy V8.10' : 'Show Randy V8.10'}
                 </MenuItem>
                 <MenuItem
                   icon={ChartColumnBig}
@@ -2348,6 +2447,15 @@ export default function App() {
                     Chile panel
                   </MenuItem>
                   <MenuItem
+                    className="floating-randy-v8"
+                    icon={Crosshair}
+                    selected={randyPanelOpen}
+                    shortcut="Alt J"
+                    onClick={toggleRandyPanel}
+                  >
+                    Randy V8.10
+                  </MenuItem>
+                  <MenuItem
                     className="floating-kalshi-float"
                     icon={Crosshair}
                     selected={kalshiFloatOpen}
@@ -2655,6 +2763,21 @@ export default function App() {
                     hasIndicator={!!chilePanelIndicator}
                     onAddIndicator={() => addBuiltIn('chile-reversal')}
                     onClose={() => setChilePanelPreference(false)}
+                  />
+                )}
+                {randyPanelActive && hasData && randyPanelModel && (
+                  <RandyV8Window
+                    ticker={asset.ticker}
+                    source={source}
+                    timeframe={timeframe}
+                    settings={randyPanelSettings}
+                    result={randyPanelModel.result}
+                    feedState={randyPanelModel.feedState}
+                    hasIndicator={!!randyPanelIndicator}
+                    kalshiStrike={randyKalshiStrike}
+                    onAddIndicator={() => addBuiltIn('randy-v8')}
+                    onTargetChange={setRandyTarget}
+                    onClose={() => setRandyPanelPreference(false)}
                   />
                 )}
                 {/* The running 15-minute contract, live: the window polls its own

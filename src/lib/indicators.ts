@@ -15,6 +15,7 @@ import { rsiDivergencePlots } from './rsi-divergence'
 import { scalpSwingPlots } from './scalpswing'
 import { tuxEmaScalperPlots } from './tux-ema-scalper'
 import { calculateTmoScalper, tmoScalperPlots, tmoScalperSettings } from './tmo-scalper'
+import { calculateRandyV8, randyV8Plots, randyV8Settings } from './randy-v8'
 import {
   bayesianNqqePlots,
   bayesianNqqeSettings,
@@ -253,6 +254,16 @@ export const INDICATOR_CATALOG: {
     color: '#00e191',
   },
   {
+    kind: 'randy-v8',
+    name: 'Randy V8.10',
+    short: 'Randy V8.10',
+    description:
+      'BTC / Kalshi 15-minute DISCIPLINADO: type the contract’s Target and read an UP/DOWN meter, the impulse strength and a staged call (CHARGING → CHARGED → ENTER, with DON’T CHASE, SIT OUT and PROTECT). Best on a 1m chart.',
+    category: 'Price Action',
+    period: 1,
+    color: '#22d3ee',
+  },
+  {
     kind: 'macd',
     name: 'MACD',
     short: 'MACD',
@@ -343,6 +354,23 @@ export function builtInPlots(
   // Chile Reversal draws its S/R zones and reversal markers as a native SVG
   // price overlay; no Lightweight Charts series.
   if (indicator.kind === 'chile-reversal') return []
+  // Randy V8.10: its EMA, Target and S/R/map lines and ENTER dots are ordinary price plots; the
+  // decision itself is read in the floating Randy window and the legend.
+  if (indicator.kind === 'randy-v8') {
+    const settings = randyV8Settings(indicator)
+    const timeframe = context?.timeframe ?? '1m'
+    return randyV8Plots(
+      calculateRandyV8(candles, settings, {
+        timeframe,
+        timeframes: context?.timeframes,
+        replay: context?.replay,
+        nowSeconds: Date.now() / 1000,
+      }),
+      settings,
+      candles,
+      timeframe,
+    )
+  }
   const close = candles.map((c) => c.close)
   const { kind, period, color } = indicator
   const plot = (

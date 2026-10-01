@@ -10,6 +10,7 @@ import {
   METAL_INTERVALS,
 } from '../shared/kalshi.ts'
 import { CoinbaseService } from './coinbase-service.ts'
+import { DerivativesService } from './derivatives-service.ts'
 import { KalshiService } from './kalshi-service.ts'
 import { collectGarbage, parseMaintenanceMinutes, rssMegabytes } from './maintenance.ts'
 import { MarketError } from './rest-client.ts'
@@ -71,7 +72,7 @@ function kalshiCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): {
 }
 
 export function createMarketApi(
-  service = new CoinbaseService(),
+  service = new CoinbaseService({ derivatives: new DerivativesService() }),
   kalshi = new KalshiService({
     ...kalshiCredentialsFromEnv(),
     // The "Now" fallback for the floating window: only used when Kalshi's own

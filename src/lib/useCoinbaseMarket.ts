@@ -20,6 +20,7 @@ import type {
   StreamPayload,
   WhaleFlow,
 } from '../../shared/coinbase'
+import { isForcedFlow, type ForcedFlow } from '../../shared/forced-flow'
 import { coinbaseAsset, COINBASE_DEFAULTS } from './market'
 
 interface View {
@@ -82,6 +83,7 @@ export function useCoinbaseMarket({
   const [whaleFlow, setWhaleFlow] = useState<WhaleFlow | null>(null)
   const [book, setBook] = useState<OrderBookView | null>(null)
   const [tape, setTape] = useState<BarTape | null>(null)
+  const [forcedFlow, setForcedFlow] = useState<ForcedFlow | null>(null)
   const [retryId, setRetryId] = useState(0)
   const [visible, setVisible] = useState(!document.hidden)
   const cache = useRef(new Map<string, HistorySnapshot>())
@@ -101,6 +103,8 @@ export function useCoinbaseMarket({
   useEffect(() => setBook(null), [product])
   // So does the per-bar tape: it counts trades for ONE product's forming bar.
   useEffect(() => setTape(null), [product])
+  // And derivatives positioning: one product's perpetuals, never the previous chart's.
+  useEffect(() => setForcedFlow(null), [product])
   useEffect(() => {
     if (!enabled || !visible) return
     const controller = new AbortController()
@@ -160,12 +164,15 @@ export function useCoinbaseMarket({
               ? data.whaleFlow
               : null,
           )
-          setBook(
-            isOrderBookView(data.book) && data.book.product === product ? data.book : null,
-          )
+          setBook(isOrderBookView(data.book) && data.book.product === product ? data.book : null)
           // Independently validated; a malformed tape clears the readout rather than
           // rendering unverified flow next to real prices.
           setTape(isBarTape(data.tape) ? data.tape : null)
+          setForcedFlow(
+            isForcedFlow(data.forcedFlow) && data.forcedFlow.product === product
+              ? data.forcedFlow
+              : null,
+          )
           update((previous) => {
             if (!previous.snapshot) return previous
             const changed =
@@ -321,6 +328,8 @@ export function useCoinbaseMarket({
     book: state === 'live' ? book : null,
     // ...and for the bar tape, which would otherwise show a dead running total as "flow".
     tape: state === 'live' ? tape : null,
+    // ...and for derivatives positioning, whose OI and liquidation figures are just as perishable.
+    forcedFlow: state === 'live' ? forcedFlow : null,
     retry,
   }
 }

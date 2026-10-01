@@ -61,6 +61,7 @@ import type {
   Tool,
 } from '../lib/types'
 import type { OrderBookView, WhaleFlow } from '../../shared/coinbase'
+import type { ForcedEvent } from '../../shared/forced-flow'
 import { scoreZone } from '../../shared/order-book'
 import type { BookSide, BookStrengthBucket, ZoneBookScore } from '../../shared/order-book'
 import { formatNotional, summarizeWhalePrints } from '../../shared/whale-flow'
@@ -223,6 +224,8 @@ interface Props {
   book?: OrderBookView | null
   /** Exact executed-price map for the current Coinbase whale sweep, absent at rest/replay. */
   whale?: WhaleFlow | null
+  /** Recent long/short squeezes from the derivatives feed, marked on the bar each began in. */
+  forcedEvents?: ForcedEvent[]
 }
 interface IndicatorSeries {
   series: ISeriesApi<SeriesType>[]
@@ -259,6 +262,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     alerts,
     book,
     whale,
+    forcedEvents,
   } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const smcSvgRef = useRef<SVGSVGElement>(null)
@@ -1912,6 +1916,54 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     return x === null || x === undefined || y === null || y === undefined
       ? null
       : { x: Number(x), y: Number(y) }
+  }
+  /**
+   * Squeeze markers: one per forced-flow event, on the bar it began in — below the low for a long
+   * squeeze, above the high for a short squeeze. They explain the wick; they are not a signal.
+   */
+  const renderForcedFlowMarkers = () => {
+    if (!forcedEvents?.length || replay || !candles.length) return null
+    const seconds = INTERVAL[timeframe]
+    return forcedEvents.map((event) => {
+      let index = candles.length - 1
+      while (index > 0 && candles[index].time > event.start) index--
+      const candle = candles[index]
+      // Only on the bar that contains the event's start; never snapped onto a neighbour.
+      if (!candle || event.start < candle.time || event.start >= candle.time + seconds) return null
+      const longs = event.state === 'longs-liquidating'
+      const anchor = position({ time: candle.time, price: longs ? candle.low : candle.high })
+      if (!anchor) return null
+      const color = longs ? '#ed6773' : '#2bb99b'
+      const size = 5
+      const tipY = longs ? anchor.y + 6 : anchor.y - 6
+      const baseY = longs ? tipY + size * 1.6 : tipY - size * 1.6
+      const textY = longs ? baseY + 9 : baseY - 3
+      return (
+        <g key={event.id} data-testid="forced-flow-marker" data-state={event.state}>
+          <title>
+            {longs ? 'Long squeeze' : 'Short squeeze'} · price{' '}
+            {(event.priceChange * 100).toFixed(2)}%
+            {event.oiChange !== null ? ` · OI ${(event.oiChange * 100).toFixed(2)}%` : ''} in 5m
+          </title>
+          <path
+            d={`M ${anchor.x} ${tipY} L ${anchor.x - size} ${baseY} L ${anchor.x + size} ${baseY} Z`}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.2}
+          />
+          <text
+            x={anchor.x}
+            y={textY}
+            fill={color}
+            fontSize={8}
+            fontFamily="'JetBrains Mono', monospace"
+            textAnchor="middle"
+          >
+            LIQ
+          </text>
+        </g>
+      )
+    })
   }
   const renderDrawing = (drawing: Drawing) => {
     const start = position(drawing.start),
@@ -4500,6 +4552,18 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
         data-revision={revision}
       >
         {nextPivotOverlays.map(renderNextPivotOverlay)}
+      </svg>
+      <svg
+        className="forced-flow-overlay"
+        xmlns="http://www.w3.org/2000/svg"
+        width={geometry.width}
+        height={geometry.height}
+        viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
+        aria-hidden="true"
+        data-testid="forced-flow-overlay"
+        data-revision={revision}
+      >
+        {renderForcedFlowMarkers()}
       </svg>
       <svg
         ref={divSvgRef}

@@ -18,6 +18,7 @@ import type {
 } from '../shared/coinbase.ts'
 import { OrderBook } from '../shared/order-book.ts'
 import { WhaleFlowTracker, type WhaleFlowOptions } from '../shared/whale-flow.ts'
+import type { DerivativesFeed } from './derivatives-service.ts'
 import { CoinbaseRestClient, MarketError } from './rest-client.ts'
 
 type ChartEntry = {
@@ -35,6 +36,8 @@ type Subscriber = {
   send: (payload: StreamPayload) => void
   revision: number
   needsReplace: boolean
+  /** Releases the derivatives watch taken for this chart. */
+  releaseDerivatives: () => void
 }
 /**
  * The unauthenticated level2 feed. Coinbase rejects plain `level2` without API keys ("level2, level3,
@@ -71,16 +74,20 @@ export class CoinbaseService {
   private socketFactory: (url: string) => WebSocket
   /** Overrides for burst timing; exercised by tests that cannot wait out the real window. */
   private whaleFlowOptions: WhaleFlowOptions
+  /** Perpetual-futures positioning (OI, liquidations, funding) for charted products. */
+  private derivatives: DerivativesFeed | null
   constructor(
     options: {
       rest?: CoinbaseRestClient
       socketFactory?: (url: string) => WebSocket
       whaleFlow?: WhaleFlowOptions
+      derivatives?: DerivativesFeed
     } = {},
   ) {
     this.rest = options.rest ?? new CoinbaseRestClient()
     this.socketFactory = options.socketFactory ?? ((url) => new WebSocket(url))
     this.whaleFlowOptions = options.whaleFlow ?? {}
+    this.derivatives = options.derivatives ?? null
   }
   async getProducts() {
     const result = await this.rest.get('/products', 10 * 60 * 1000)
@@ -211,6 +218,7 @@ export class CoinbaseService {
       send,
       revision: -1,
       needsReplace: true,
+      releaseDerivatives: this.derivatives?.watch(product) ?? (() => {}),
     }
     this.subscribers.add(sub)
     clearTimeout(this.idleTimer)
@@ -220,6 +228,7 @@ export class CoinbaseService {
     this.emit(sub)
     return () => {
       this.subscribers.delete(sub)
+      sub.releaseDerivatives()
       this.updateSubscriptions()
       if (!this.subscribers.size)
         this.idleTimer = setTimeout(() => {
@@ -261,6 +270,8 @@ export class CoinbaseService {
       // Omitted until the first side-bearing trade since the latest REST receipt, so a client
       // never renders an empty tape as "zero flow".
       tape: entry.tracker.tape ?? undefined,
+      // Omitted when no derivatives feed is attached or the product lists no perpetuals.
+      forcedFlow: this.derivatives?.snapshot(sub.product, Date.now() / 1000),
     }
     sub.send(payload)
     sub.revision = entry.revision
@@ -466,6 +477,7 @@ export class CoinbaseService {
     this.whaleFlows.clear()
     this.orderBooks.clear()
     this.subscribedBook.clear()
+    this.derivatives?.close()
     const socket = this.socket
     this.socket = null
     socket?.close()

@@ -11737,3 +11737,209 @@ button.chile-panel-chip {
   overflow: hidden;
   z-index: 1;
 }
+
+/* Floating forced-flow readout: perpetual-futures OI, liquidations and funding behind the move. */
+.forced-box {
+  position: fixed;
+  right: 280px;
+  bottom: 78px;
+  z-index: 30;
+  width: 268px;
+  padding: 0 0 7px;
+  background: rgba(17, 21, 26, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  font-size: 11px;
+  user-select: none;
+  transition: border-color 180ms ease;
+}
+.forced-box-down {
+  border-color: rgba(237, 103, 115, 0.85);
+}
+.forced-box-up {
+  border-color: rgba(43, 185, 155, 0.85);
+}
+.forced-box-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 7px 7px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.forced-box-head > h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.forced-box-pill {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.forced-box-pill-down {
+  background: rgba(237, 103, 115, 0.16);
+  color: var(--red);
+}
+.forced-box-pill-up {
+  background: rgba(43, 185, 155, 0.16);
+  color: var(--green);
+}
+.forced-box-pill-notice {
+  background: rgba(245, 166, 35, 0.14);
+  color: #f5a623;
+}
+.forced-box-info {
+  margin: 8px 10px 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.forced-box-info p {
+  margin: 0 0 6px;
+}
+.forced-box-info strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.forced-box-headline {
+  padding: 8px 10px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.forced-box-headline[data-tone='down'] {
+  color: var(--red);
+}
+.forced-box-headline[data-tone='up'] {
+  color: var(--green);
+}
+.forced-box-headline[data-tone='notice'] {
+  color: var(--text);
+}
+.forced-box-explain {
+  margin: 4px 10px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.forced-box-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 8px;
+  margin: 0 10px 6px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.forced-box-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.forced-box-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.45px;
+  color: var(--dim);
+}
+.forced-box-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.forced-box-value[data-sign='1'] {
+  color: var(--green);
+}
+.forced-box-value[data-sign='-1'] {
+  color: var(--red);
+}
+.forced-box-crowded {
+  font-size: 9px;
+  color: #f5a623;
+}
+.forced-box .is-down {
+  color: var(--red);
+}
+.forced-box .is-up {
+  color: var(--green);
+}
+.forced-box-prints,
+.forced-box-events {
+  margin: 0 10px 5px;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.forced-box-prints li,
+.forced-box-events li {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr 0.8fr;
+  gap: 4px;
+  padding: 1px 0;
+}
+.forced-box-prints li > span:first-child,
+.forced-box-events li > span:first-child {
+  color: var(--muted);
+}
+.forced-box-events {
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.forced-box-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  margin: 0 10px;
+  font-size: 9px;
+  color: var(--dim);
+}
+.forced-box-feeds {
+  display: inline-flex;
+  gap: 5px;
+}
+.forced-box-feeds > span::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: var(--red);
+  vertical-align: 1px;
+}
+.forced-box-feeds > span[data-feed='live']::before {
+  background: var(--green);
+}
+.forced-box-feeds > span[data-feed='connecting']::before {
+  background: #f5a623;
+}
+.forced-box-calibrating {
+  width: 100%;
+  color: #f5a623;
+}
+
+/* Long/short squeeze markers on the bars where forced flow was observed. */
+.forced-flow-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}

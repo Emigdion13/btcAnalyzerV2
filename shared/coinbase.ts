@@ -1,4 +1,5 @@
 /** Pure transport/domain helpers shared by the API, browser and tests. */
+import type { ForcedFlow } from './forced-flow'
 export const INTERVAL_SECONDS = {
   '1m': 60,
   '3m': 180,
@@ -319,6 +320,11 @@ export interface StreamPayload {
   book?: OrderBookView
   /** Taker-flow totals for the forming bar. Absent until the first side-bearing trade. */
   tape?: BarTape
+  /**
+   * Perpetual-futures positioning for the charted product: OI change, liquidations, funding.
+   * Absent when no derivatives feed is attached or the product lists no perpetuals.
+   */
+  forcedFlow?: ForcedFlow
 }
 export const isProductId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Z0-9]{1,24}-USD$/.test(value)
@@ -587,7 +593,9 @@ export class CandleTracker {
    * side-bearing trade has been observed since the latest REST receipt.
    */
   get tape(): BarTape | null {
-    return this.tapeTime === null ? null : { time: this.tapeTime, bought: this.tapeBought, sold: this.tapeSold }
+    return this.tapeTime === null
+      ? null
+      : { time: this.tapeTime, bought: this.tapeBought, sold: this.tapeSold }
   }
   seed(bars: MarketCandle[], receivedAt: number) {
     this.bars = mergeCandles(this.bars, bars)

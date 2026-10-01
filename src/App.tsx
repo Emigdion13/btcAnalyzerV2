@@ -91,6 +91,7 @@ import { useKalshiFloat } from './lib/useKalshiFloat'
 import { BookStrengthBox } from './components/BookStrengthBox'
 import { useLevelTouchJournal } from './lib/useLevelTouchJournal'
 import { WhaleFlowBox } from './components/WhaleFlowBox'
+import { ForcedFlowBox } from './components/ForcedFlowBox'
 import { BarPulseBox } from './components/BarPulseBox'
 import { HeapMemoryMeter } from './components/HeapMemoryMeter'
 import { CoinIcon, Dropdown, IconButton, MenuItem, ToastHost } from './components/ui'
@@ -308,6 +309,7 @@ export default function App() {
   )
   const [whaleBoxVisible, setWhaleBoxVisible] = useLocalState('whale-box-visible', true)
   const [bookBoxVisible, setBookBoxVisible] = useLocalState('book-strength-box-visible', true)
+  const [forcedBoxVisible, setForcedBoxVisible] = useLocalState('forced-flow-box-visible', true)
   // The floating Candle Pulse HUD: null means "never chosen", deferring to viewport width.
   const [pulsePreference, setPulsePreference] = useLocalState<boolean | null>(
     'candle-pulse-visible',
@@ -1924,6 +1926,16 @@ export default function App() {
                   {whaleBoxVisible ? 'Hide whale flow box' : 'Show whale flow box'}
                 </MenuItem>
                 <MenuItem
+                  icon={Flame}
+                  selected={forcedBoxVisible}
+                  onClick={() => {
+                    setForcedBoxVisible(!forcedBoxVisible)
+                    close()
+                  }}
+                >
+                  {forcedBoxVisible ? 'Hide forced flow box' : 'Show forced flow box'}
+                </MenuItem>
+                <MenuItem
                   icon={PictureInPicture2}
                   selected={peekVisible}
                   onClick={() => {
@@ -2062,6 +2074,7 @@ export default function App() {
                     setSidePanel('watchlist')
                     setWhaleBoxVisible(true)
                     setBookBoxVisible(true)
+                    setForcedBoxVisible(true)
                     setPeekPreference(null)
                     setPulsePreference(null)
                     setRsiMeterPreference(null)
@@ -2560,6 +2573,11 @@ export default function App() {
                   onIndicatorAdd={addBuiltIn}
                   book={bookView}
                   whale={venue === 'coinbase' && replayIndex === null ? live.whaleFlow : null}
+                  forcedEvents={
+                    source === 'coinbase' && !isMetal && forcedBoxVisible && replayIndex === null
+                      ? live.forcedFlow?.events
+                      : undefined
+                  }
                 />
                 {hasData && replayIndex === null && pulseVisible && (
                   <BarPulseBox
@@ -2584,6 +2602,13 @@ export default function App() {
                     here and no honest substitute to draw. */}
                 {venue === 'coinbase' && whaleBoxVisible && replayIndex === null && (
                   <WhaleFlowBox flow={live.whaleFlow} onClose={() => setWhaleBoxVisible(false)} />
+                )}
+                {/* Perpetual-futures positioning: real venues only, so never on the demo feed. */}
+                {source === 'coinbase' && !isMetal && forcedBoxVisible && replayIndex === null && (
+                  <ForcedFlowBox
+                    flow={live.forcedFlow}
+                    onClose={() => setForcedBoxVisible(false)}
+                  />
                 )}
                 {venue === 'coinbase' && bookBoxVisible && replayIndex === null && bookView && (
                   <BookStrengthBox

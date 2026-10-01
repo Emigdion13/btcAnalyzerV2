@@ -150,6 +150,7 @@ import {
   chileReversalSettings,
   displayedChileSignals,
 } from '../lib/chile-reversal'
+import { calculateRandyV8, randyV8Settings } from '../lib/randy-v8'
 import { calculateNextPivot, nextPivotSettings } from '../lib/next-pivot'
 import { ta } from '../lib/indicator-runtime'
 import { IndicatorPlotSeries, indicatorPlotData } from '../lib/indicator-plot-series'
@@ -462,6 +463,27 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
             }),
           }
         }),
+    [candles, indicators, timeframe, indicatorTimeframes, replay],
+  )
+  /**
+   * The newest bar of each visible Randy V8.10 indicator, for its legend: the decision reads there
+   * (the lines and ENTER dots come from the ordinary plot path).
+   */
+  const randyV8Legends = useMemo(
+    () =>
+      Object.fromEntries(
+        indicators
+          .filter((indicator) => indicator.visible && indicator.kind === 'randy-v8')
+          .map((indicator) => [
+            indicator.id,
+            calculateRandyV8(candles, randyV8Settings(indicator), {
+              timeframe,
+              timeframes: indicatorTimeframes,
+              replay,
+              nowSeconds: Date.now() / 1000,
+            }).last,
+          ]),
+      ),
     [candles, indicators, timeframe, indicatorTimeframes, replay],
   )
   /**
@@ -3167,6 +3189,13 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     return `${signal.kind === 'arriba' ? 'ARRIBA' : 'ABAJO'} ${signal.scoreUp}/${signal.scoreDown}${age}${state}`
   }
 
+  const randyLegendValue = (bar: (typeof randyV8Legends)[string]) =>
+    !bar || !bar.ready
+      ? 'WAIT'
+      : bar.targetValid
+        ? `${bar.decisionText} · ${bar.dirUpPct}/${bar.dirDownPct}`
+        : bar.decisionText
+
   const renderChileReversalOverlay = (overlay: (typeof chileReversalOverlays)[number]) => {
     const { indicator, settings, result } = overlay
     if (!candles.length) return null
@@ -4073,31 +4102,33 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
                                         (item) => item.indicator.id === indicator.id,
                                       )?.result,
                                     )
-                                  : indicator.kind === 'chile-reversal'
-                                    ? chileReversalLegendValue(
-                                        chileReversalOverlays.find(
-                                          (item) => item.indicator.id === indicator.id,
-                                        ),
-                                        chileNowSeconds,
-                                        chileBarSeconds,
-                                      )
-                                    : indicator.kind === 'coinbase-strike'
-                                      ? formatPrice(
-                                          strikeOverlays.find(
+                                  : indicator.kind === 'randy-v8'
+                                    ? randyLegendValue(randyV8Legends[indicator.id])
+                                    : indicator.kind === 'chile-reversal'
+                                      ? chileReversalLegendValue(
+                                          chileReversalOverlays.find(
                                             (item) => item.indicator.id === indicator.id,
-                                          )?.resolved.price ??
+                                          ),
+                                          chileNowSeconds,
+                                          chileBarSeconds,
+                                        )
+                                      : indicator.kind === 'coinbase-strike'
+                                        ? formatPrice(
                                             strikeOverlays.find(
                                               (item) => item.indicator.id === indicator.id,
-                                            )?.result.currentStrike ??
-                                            null,
-                                        )
-                                      : indicator.kind === 'next-pivot'
-                                        ? nextPivotLegendValue(
-                                            nextPivotOverlays.find(
-                                              (item) => item.indicator.id === indicator.id,
-                                            )?.result,
+                                            )?.resolved.price ??
+                                              strikeOverlays.find(
+                                                (item) => item.indicator.id === indicator.id,
+                                              )?.result.currentStrike ??
+                                              null,
                                           )
-                                        : plotValue(group?.plots[0])}
+                                        : indicator.kind === 'next-pivot'
+                                          ? nextPivotLegendValue(
+                                              nextPivotOverlays.find(
+                                                (item) => item.indicator.id === indicator.id,
+                                              )?.result,
+                                            )
+                                          : plotValue(group?.plots[0])}
                     </span>
                     {indicator.kind === 'sr-breaks-retests' && candles.length < SR_ATR_LENGTH && (
                       <span className="cm-indicator-notice" role="status">

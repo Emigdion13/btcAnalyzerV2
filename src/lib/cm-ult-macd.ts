@@ -19,6 +19,7 @@ import {
 import { pivotPointsMissedReversalsIndicatorLabel } from './pivot-points-missed-reversals'
 import { tuxEmaScalperIndicatorLabel } from './tux-ema-scalper'
 import { tmoScalperFeeds, tmoScalperIndicatorLabel, tmoScalperSettings } from './tmo-scalper'
+import { randyV8IndicatorLabel, randyV8RequestedTimeframes } from './randy-v8'
 import type { Candle, CmMacdSettings, ConnectionState, Indicator, Plot, Timeframe } from './types'
 
 export const CM_MACD_SOURCE =
@@ -123,6 +124,7 @@ export function indicatorLabel(indicator: Indicator): string {
   if (indicator.kind === 'tux-ema-scalper') return tuxEmaScalperIndicatorLabel(indicator)
   if (indicator.kind === 'tmo-scalper') return tmoScalperIndicatorLabel(indicator)
   if (indicator.kind === 'chile-reversal') return chileReversalIndicatorLabel(indicator)
+  if (indicator.kind === 'randy-v8') return randyV8IndicatorLabel(indicator)
   if (indicator.kind === 'wave-trend') return waveTrendIndicatorLabel(indicator)
   if (indicator.kind === 'bayesian-nqqe-bankfunds') return bayesianNqqeIndicatorLabel(indicator)
   if (indicator.kind === 'cm-williams-vix-fix') return williamsVixFixIndicatorLabel(indicator)
@@ -156,6 +158,10 @@ export function requestedIndicatorTimeframes(
   const chileResolutions = indicators
     .filter((indicator) => indicator.kind === 'chile-reversal' && indicator.visible)
     .flatMap((indicator) => chileRequestedTimeframes(chileReversalSettings(indicator), chart))
+  // Randy V8.10 reads the 5m, 15m and 1h bars behind a 1m chart.
+  const randyResolutions = indicators
+    .filter((indicator) => indicator.kind === 'randy-v8' && indicator.visible)
+    .flatMap(() => randyV8RequestedTimeframes(chart))
   const tmoResolutions = indicators
     .filter((indicator) => indicator.kind === 'tmo-scalper' && indicator.visible)
     .flatMap((indicator) => tmoScalperFeeds(tmoScalperSettings(indicator)))
@@ -165,6 +171,7 @@ export function requestedIndicatorTimeframes(
         ...cmResolutions,
         ...smcFvgResolutions,
         ...chileResolutions,
+        ...randyResolutions,
         ...tmoResolutions,
         ...extra,
       ].filter((resolution) => resolution !== chart),

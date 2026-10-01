@@ -8,6 +8,7 @@ import { isPivotPointsMissedReversalsSettings } from './pivot-points-missed-reve
 import { isCoinbaseStrikeSettings } from './coinbase-strike'
 import { isTuxEmaScalperSettings } from './tux-ema-scalper'
 import { isTmoScalperSettings } from './tmo-scalper'
+import { isRandyV8Settings, randyV8Settings } from './randy-v8'
 import { isWaveTrendSettings } from './wave-trend'
 import { isBayesianNqqeBankfundsSettings } from './bayesian-nqqe-bankfunds'
 import { isWilliamsVixFixSettings } from './cm-williams-vix-fix'
@@ -124,6 +125,7 @@ function indicator(value: unknown): Indicator {
       'coinbase-strike',
       'tux-ema-scalper',
       'tmo-scalper',
+      'randy-v8',
       'wave-trend',
       'bayesian-nqqe-bankfunds',
       'vwap',
@@ -159,7 +161,10 @@ function indicator(value: unknown): Indicator {
     }
     result.period = result.cmMacd.fastLength
   }
-  if ((kind === 'macd' || kind === 'cm-ult-macd' || kind === 'rsi-divergence') && i.divergence !== undefined) {
+  if (
+    (kind === 'macd' || kind === 'cm-ult-macd' || kind === 'rsi-divergence') &&
+    i.divergence !== undefined
+  ) {
     const settings = i.divergence
     if (!isDivergenceSettings(settings)) invalid('divergence settings')
     result.divergence = {
@@ -293,6 +298,11 @@ function indicator(value: unknown): Indicator {
       showLines: settings.showLines,
     }
     result.period = result.tmoScalper.tmoLength
+  }
+  if (kind === 'randy-v8' && i.randyV8 !== undefined) {
+    if (!isRandyV8Settings(i.randyV8)) invalid('Randy V8.10 settings')
+    // Copy only the keys the engine knows, so an imported file cannot smuggle extras in.
+    result.randyV8 = randyV8Settings({ randyV8: i.randyV8 } as Indicator)
   }
   if (kind === 'wave-trend' && i.waveTrend !== undefined) {
     const settings = i.waveTrend

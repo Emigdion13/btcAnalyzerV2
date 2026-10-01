@@ -18,6 +18,7 @@ export const FLOATING_WINDOW_KEYS = {
   'candle-pulse': 'candle-pulse-visible',
   'mtf-rsi': 'mtf-rsi-visible',
   'chile-panel': 'chile-panel-visible',
+  'randy-v8': 'randy-panel-visible',
   'kalshi-float': 'kalshi-float-visible',
 } as const
 

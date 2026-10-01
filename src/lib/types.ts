@@ -26,6 +26,7 @@ export type IndicatorKind =
   | 'tmo-scalper'
   | 'next-pivot'
   | 'chile-reversal'
+  | 'randy-v8'
   | 'zeiierman-trend-pressure'
   | 'wave-trend'
   | 'bayesian-nqqe-bankfunds'
@@ -604,6 +605,99 @@ export const CHILE_REVERSAL_DEFAULTS: Readonly<ChileReversalSettings> = {
 }
 
 /**
+ * Settings for Randy V8.10 DISCIPLINADO — the Atlas port of the 15-minute BTC/Kalshi Pine
+ * indicator. Every field except the `show*` toggles is a Pine input of the same meaning; the
+ * Spanish input label is in `RANDY_V8_FIELDS` (lib/randy-v8.ts), which also holds each range.
+ */
+export interface RandyV8Settings {
+  /** "TARGET KALSHI / TO BEAT" — the contract's strike. 0 = not entered. */
+  target: number
+  emaCtxFast: number
+  emaCtxSlow: number
+  ema1Fast: number
+  ema1Slow: number
+  rsiLength: number
+  volLength: number
+  atrLength: number
+  atrAvgLength: number
+  volMultiplier: number
+  atrMin: number
+  srLookback5: number
+  srLookback15: number
+  minEdgePct: number
+  noEdgePct: number
+  confirmBars: number
+  momentumMin: number
+  crashBodyAtr: number
+  crash3Atr: number
+  maxExtensionAtr: number
+  scalpThreshold: number
+  scalpEvidenceMin: number
+  preAlertThreshold: number
+  scalpNoTradeLastSec: number
+  scalpExtremeExtensionAtr: number
+  chargedThreshold: number
+  chargedEvidenceMin: number
+  enterStrengthMin: number
+  lateBlockAtr: number
+  lateTargetRatio: number
+  sitOutLastSec: number
+  mapLookback1H: number
+  mapLookback15: number
+  mapZone1HAtr: number
+  mapZone15Atr: number
+  mapBreakAtr: number
+  showEmas: boolean
+  showTarget: boolean
+  showLevels: boolean
+  showMarkers: boolean
+}
+
+/** Defaults taken from the Pine script's own input defaults. */
+export const RANDY_V8_DEFAULTS: Readonly<RandyV8Settings> = {
+  target: 0,
+  emaCtxFast: 20,
+  emaCtxSlow: 50,
+  ema1Fast: 9,
+  ema1Slow: 20,
+  rsiLength: 14,
+  volLength: 20,
+  atrLength: 14,
+  atrAvgLength: 20,
+  volMultiplier: 1.15,
+  atrMin: 0.85,
+  srLookback5: 12,
+  srLookback15: 8,
+  minEdgePct: 64,
+  noEdgePct: 57,
+  confirmBars: 2,
+  momentumMin: 24,
+  crashBodyAtr: 0.85,
+  crash3Atr: 1.35,
+  maxExtensionAtr: 0.95,
+  scalpThreshold: 36,
+  scalpEvidenceMin: 2,
+  preAlertThreshold: 26,
+  scalpNoTradeLastSec: 30,
+  scalpExtremeExtensionAtr: 2.2,
+  chargedThreshold: 32,
+  chargedEvidenceMin: 3,
+  enterStrengthMin: 42,
+  lateBlockAtr: 1.35,
+  lateTargetRatio: 1.15,
+  sitOutLastSec: 75,
+  mapLookback1H: 12,
+  mapLookback15: 16,
+  mapZone1HAtr: 0.28,
+  mapZone15Atr: 0.24,
+  mapBreakAtr: 0.05,
+  showEmas: true,
+  showTarget: true,
+  showLevels: true,
+  showMarkers: true,
+}
+
+/**
  * Similarity measures supported by "The Next Pivot" indicator.
  * Mirrors Kioseff Trading's published options plus Atlas's own additions.
  */
@@ -743,6 +837,7 @@ export interface Indicator {
   tmoScalper?: TmoScalperSettings
   nextPivot?: NextPivotSettings
   chileReversal?: ChileReversalSettings
+  randyV8?: RandyV8Settings
   trendPressure?: TrendPressureSettings
   waveTrend?: WaveTrendSettings
   williamsVixFix?: WilliamsVixFixSettings
